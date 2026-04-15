@@ -1,0 +1,9 @@
+name: yantrikdb
+version: 0.1.0
+description: "YantrikDB — cognitive memory with consolidation, contradiction detection, temporal decay, and a knowledge graph. Self-hosted Rust backend; the plugin connects to a user-managed server over HTTP."
+pip_dependencies:
+  - requests>=2.31
+hooks:
+  - on_session_end
+  - on_pre_compress
+  - on_memory_write
