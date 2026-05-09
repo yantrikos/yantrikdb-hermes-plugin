@@ -1,6 +1,15 @@
 # yantrikdb-hermes-plugin
 
-> **YantrikDB as a memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent).** Self-maintaining memory — canonicalizes duplicates, surfaces contradictions, explains recall — in a 700-line drop-in plugin.
+[![CI](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-96%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.7.4-orange)](https://github.com/yantrikos/yantrikdb-server)
+[![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)
+
+> **YantrikDB as a memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent).** Self-maintaining memory — canonicalizes duplicates, surfaces contradictions, explains recall — in a drop-in plugin. As of **v0.2.0** the default backend is **in-process** (`pip install` and go, no separate server).
 
 This repository tracks the plugin as a standalone artifact so users can install it immediately, without waiting on upstream review. [Issue NousResearch/hermes-agent#9975](https://github.com/NousResearch/hermes-agent/issues/9975) asks whether upstream would welcome it; a PR is in flight. Until that lands, install from here.
 
