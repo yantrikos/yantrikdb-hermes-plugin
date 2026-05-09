@@ -3,6 +3,33 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project aims for semantic versioning once merged into Hermes.
 
+## [0.3.1] — 2026-05-09 — PyPI distribution
+
+Tooling-only release. Plugin behavior unchanged from v0.3.0 — same 8 default tools, same 3 opt-in skill tools, same feature flag, same 128 tests.
+
+### Added
+
+- **PyPI distribution via `yantrikdb-hermes-plugin`.** `pip install yantrikdb-hermes-plugin` installs the source under the importable package `yantrikdb_hermes_plugin` (avoids the namespace collision with the existing `yantrikdb` engine package on PyPI).
+- **`yantrikdb-hermes` CLI** — bridges the pip → filesystem gap. Hermes loads plugins from `$HERMES_ROOT/plugins/memory/<name>/`, which pip can't write to directly. Two subcommands:
+  - `yantrikdb-hermes install <hermes_root>` — copy the plugin source into the Hermes checkout's `plugins/memory/yantrikdb/`. `--force` overwrites an existing install.
+  - `yantrikdb-hermes path` — print the on-disk path of the installed package (for users who'd rather symlink: `ln -s "$(yantrikdb-hermes path)" ~/hermes-agent/plugins/memory/yantrikdb`).
+- **`.github/workflows/publish.yml`** — automated PyPI publishing pipeline triggered by tag pushes matching `v*`. Builds wheel + sdist after running ruff + mypy + pytest as a gate. Uses PyPI Trusted Publisher (no API token in repo secrets); one-time config on PyPI's web UI.
+
+### Net install flow (post v0.3.1 publish)
+
+```bash
+pip install yantrikdb-hermes-plugin           # the plugin source + CLI
+yantrikdb-hermes install ~/hermes-agent       # copy into plugins/memory/
+hermes config set memory.provider yantrikdb
+echo "YANTRIKDB_MODE=embedded" >> ~/.hermes/.env
+```
+
+`yantrikdb` (the engine, ~10 MB with bundled embedder) is pulled automatically as a dependency.
+
+### Internal
+
+- `yantrikdb/__init__.py` now wraps `from agent.memory_provider import MemoryProvider` and `from tools.registry import tool_error` in try/except so the package imports successfully outside a Hermes runtime (e.g. when the CLI invokes `from yantrikdb_hermes_plugin.cli import main`). Stub `MemoryProvider` and `tool_error` are used in that path; they're never the ones Hermes sees because Hermes loads the plugin via fresh filesystem import from `plugins/memory/yantrikdb/`.
+
 ## [0.3.0] — 2026-05-09 — Skill substrate + feature flag
 
 ### Added

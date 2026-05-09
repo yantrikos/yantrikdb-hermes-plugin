@@ -1,8 +1,7 @@
 name: yantrikdb
-version: 0.3.0
-description: "YantrikDB — self-maintaining memory for Hermes with canonicalization, contradiction tracking, recency-aware ranking, and explainable recall. As of v0.2.0 the default backend is in-process (`pip install` and go); HTTP-to-server is optional for HA cluster setups."
+version: 0.1.0
+description: "YantrikDB — cognitive memory with consolidation, contradiction detection, temporal decay, and a knowledge graph. Self-hosted Rust backend; the plugin connects to a user-managed server over HTTP."
 pip_dependencies:
-  - yantrikdb>=0.7.6
   - requests>=2.31
 hooks:
   - on_session_end

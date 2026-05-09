@@ -39,8 +39,33 @@ import time
 from pathlib import Path
 from typing import Any
 
-from agent.memory_provider import MemoryProvider
-from tools.registry import tool_error
+try:
+    from agent.memory_provider import MemoryProvider
+    from tools.registry import tool_error
+    _HERMES_AVAILABLE = True
+except ImportError:
+    # Plugin is being imported outside a Hermes runtime — typically because
+    # `yantrikdb-hermes-plugin` was pip-installed and the user is invoking
+    # the CLI installer (`yantrikdb-hermes install <hermes_root>`). The
+    # provider class never runs in this path; we just need module load to
+    # succeed so the CLI's `from yantrikdb_hermes_plugin.cli import main`
+    # works. Inside Hermes, the real imports take over.
+    _HERMES_AVAILABLE = False
+
+    class MemoryProvider:  # type: ignore[no-redef]
+        """Stub used only when the plugin is imported outside Hermes.
+
+        Real `agent.memory_provider.MemoryProvider` is an ABC; this stub is
+        a plain class so the YantrikDBMemoryProvider subclass below still
+        defines successfully when Hermes isn't on the import path. Hermes
+        instantiates the provider via filesystem-loaded source (a fresh
+        import from `plugins/memory/yantrikdb/`), so this stub is never
+        the one Hermes sees in practice.
+        """
+
+    def tool_error(message: str) -> str:  # type: ignore[no-redef]
+        import json
+        return json.dumps({"error": message})
 
 from .client import (
     DEFAULT_NAMESPACE,

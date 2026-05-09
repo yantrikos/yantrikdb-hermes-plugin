@@ -1,0 +1,100 @@
+name: Publish to PyPI
+
+# Triggered by tag pushes matching v* (e.g. v0.3.1, v0.4.0).
+# The build step runs ruff + mypy + pytest first as a gate; PyPI publish
+# only fires if all checks pass. Uses PyPI Trusted Publisher (no API
+# token in repo secrets) — configure once via PyPI's web UI:
+#   https://pypi.org/manage/project/yantrikdb-hermes-plugin/settings/publishing/
+#
+# Trusted Publisher config to set on PyPI:
+#   Owner:        yantrikos
+#   Repo:         yantrikdb-hermes-plugin
+#   Workflow:     publish.yml
+#   Environment:  pypi
+#
+# That's the entire setup — no secrets to rotate, no tokens to leak.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build deps + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install build ruff mypy types-requests pytest requests
+
+      - name: Read version from tag
+        id: version
+        run: |
+          tag="${GITHUB_REF##*/}"
+          version="${tag#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Sanity check: tag must match pyproject.toml version
+          pyproject_version=$(grep -E '^version = ' pyproject.toml | head -1 | awk -F'"' '{print $2}')
+          if [ "$version" != "$pyproject_version" ]; then
+            echo "::error::tag $tag does not match pyproject.toml version $pyproject_version"
+            exit 1
+          fi
+
+      - name: Lint (ruff)
+        run: ruff check yantrikdb/ tests/
+
+      - name: Type check (mypy)
+        run: mypy --ignore-missing-imports yantrikdb/
+
+      - name: Run tests
+        run: python -m pytest tests/ -v
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Inspect distributions
+        run: |
+          ls -la dist/
+          # Sanity: wheel filename should embed the right version
+          ls dist/yantrikdb_hermes_plugin-${{ steps.version.outputs.version }}*.whl >/dev/null
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # required for PyPI Trusted Publisher (OIDC)
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # No password/token — Trusted Publisher exchanges the OIDC token
+          # from GitHub Actions for a short-lived PyPI scoped token.
+          # Configure on PyPI: https://docs.pypi.org/trusted-publishers/
+          packages-dir: dist/
+          skip-existing: true   # idempotent re-runs of the same tag don't fail

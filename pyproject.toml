@@ -1,3 +1,84 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yantrikdb-hermes-plugin"
+version = "0.3.1"
+description = "Self-maintaining memory plugin for Hermes Agent — embedded YantrikDB engine, ~10 MB, no server, no token, no GPU. Canonicalizes duplicates, surfaces contradictions, ranks with recency awareness, and explains recall."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+  { name = "Pranab Sarkar", email = "developer@pranab.co.in" },
+]
+keywords = [
+  "hermes-agent",
+  "memory",
+  "ai-memory",
+  "llm-agent",
+  "yantrikdb",
+  "knowledge-graph",
+  "rag",
+  "plugin",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "yantrikdb>=0.7.6",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "types-requests",
+]
+
+[project.urls]
+Homepage = "https://github.com/yantrikos/yantrikdb-hermes-plugin"
+Repository = "https://github.com/yantrikos/yantrikdb-hermes-plugin"
+Changelog = "https://github.com/yantrikos/yantrikdb-hermes-plugin/blob/main/yantrikdb/CHANGELOG.md"
+Issues = "https://github.com/yantrikos/yantrikdb-hermes-plugin/issues"
+"Hermes Agent" = "https://github.com/NousResearch/hermes-agent"
+"YantrikDB Server" = "https://github.com/yantrikos/yantrikdb-server"
+
+[project.scripts]
+# CLI entry point — users run this AFTER `pip install yantrikdb-hermes-plugin`
+# to copy the plugin source into their hermes-agent's plugins/memory/.
+# Hermes plugins load from the filesystem; pip alone can't drop the source
+# in the right place, so this CLI is the bridge.
+yantrikdb-hermes = "yantrikdb_hermes_plugin.cli:main"
+
+# ---------------------------------------------------------------------------
+# Packaging — install the plugin source under a Pythonic name that does NOT
+# conflict with the `yantrikdb` engine package on PyPI. The CLI copies the
+# files into <hermes_root>/plugins/memory/yantrikdb/ where Hermes loads
+# them under the canonical plugin name `yantrikdb`.
+# ---------------------------------------------------------------------------
+
+[tool.setuptools]
+packages = ["yantrikdb_hermes_plugin"]
+package-dir = {"yantrikdb_hermes_plugin" = "yantrikdb"}
+
+[tool.setuptools.package-data]
+yantrikdb_hermes_plugin = ["*.yaml", "*.md"]
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
