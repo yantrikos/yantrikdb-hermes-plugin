@@ -54,13 +54,20 @@ _USER_AGENT = "hermes-yantrikdb-plugin/0.1"
 
 @dataclass
 class YantrikDBConfig:
+    # Backend selector — "embedded" (default in v0.2.0+) or "http"
+    mode: str = "embedded"
+    # HTTP-only fields
     url: str = DEFAULT_URL
     token: str = ""
-    namespace: str = DEFAULT_NAMESPACE
-    top_k: int = DEFAULT_TOP_K
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT
     read_timeout: float = DEFAULT_READ_TIMEOUT
     retry_total: int = DEFAULT_RETRY_TOTAL
+    # Embedded-only fields
+    db_path: str = ""               # default $HERMES_HOME/yantrikdb-memory.db
+    embedder_name: str = ""         # bundled potion-2M when empty; "potion-base-8M" / "potion-base-32M" for tier 2/3
+    # Shared fields
+    namespace: str = DEFAULT_NAMESPACE
+    top_k: int = DEFAULT_TOP_K
     max_text_len: int = DEFAULT_MAX_TEXT_LEN
     auto_think_on_session_end: bool = True
     sync_user_messages: bool = True
@@ -68,8 +75,11 @@ class YantrikDBConfig:
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
+            mode=os.environ.get("YANTRIKDB_MODE", "embedded").strip().lower(),
             url=os.environ.get("YANTRIKDB_URL", DEFAULT_URL).rstrip("/"),
             token=os.environ.get("YANTRIKDB_TOKEN", ""),
+            db_path=os.environ.get("YANTRIKDB_DB_PATH", ""),
+            embedder_name=os.environ.get("YANTRIKDB_EMBEDDER", ""),
             namespace=os.environ.get("YANTRIKDB_NAMESPACE", DEFAULT_NAMESPACE),
             top_k=_parse_int(os.environ.get("YANTRIKDB_TOP_K"), DEFAULT_TOP_K),
             connect_timeout=_parse_float(

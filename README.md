@@ -4,7 +4,7 @@
 [![Tests](https://img.shields.io/badge/tests-96%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.7.4-orange)](https://github.com/yantrikos/yantrikdb-server)
+[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.7.6-orange)](https://github.com/yantrikos/yantrikdb-server)
 [![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)
@@ -13,34 +13,29 @@
 
 This repository tracks the plugin as a standalone artifact so users can install it immediately, without waiting on upstream review. [Issue NousResearch/hermes-agent#9975](https://github.com/NousResearch/hermes-agent/issues/9975) asks whether upstream would welcome it; a PR is in flight. Until that lands, install from here.
 
-## Install
+## Install (default — embedded backend)
 
-Hermes discovers memory plugins under `plugins/memory/<name>/` in its source tree, so installation is a file copy:
+The v0.2.0 default backend is **in-process**: `pip install` and go, no separate server.
+
+Step 1 — drop the plugin into your Hermes checkout:
 
 ```bash
-# In your hermes-agent checkout
 cd path/to/hermes-agent/plugins/memory
 git clone https://github.com/yantrikos/yantrikdb-hermes-plugin tmp
 mv tmp/yantrikdb .
 rm -rf tmp
 ```
 
-Or as a one-liner:
+Step 2 — install the engine:
 
 ```bash
-curl -sSL https://github.com/yantrikos/yantrikdb-hermes-plugin/archive/refs/heads/main.tar.gz \
-  | tar -xz -C path/to/hermes-agent/plugins/memory --strip-components=1 \
-    yantrikdb-hermes-plugin-main/yantrikdb
+pip install yantrikdb        # ~10 MB; pulls only uuid-utils + click
 ```
 
-Then configure:
+Step 3 — activate:
 
 ```bash
 hermes config set memory.provider yantrikdb
-cat >> ~/.hermes/.env <<EOF
-YANTRIKDB_URL=http://localhost:7438
-YANTRIKDB_TOKEN=ydb_...
-EOF
 ```
 
 Verify:
@@ -50,14 +45,34 @@ hermes memory status
 # → Provider: yantrikdb  Plugin: installed ✓  Status: available ✓
 ```
 
-A running [`yantrikdb-server`](https://github.com/yantrikos/yantrikdb-server) is required. Docker:
+That's it. No Docker, no token mint, no URL configuration. The bundled `potion-base-2M` static embedder (~8 MB, dim=64, R@5 ≈ 0.90 vs MiniLM's 0.95) loads on first call (~80 ms one-time warmup) and stays in-process.
+
+**Optional: tier up the embedder** (downloads on first use, cached in user data dir):
+
+```bash
+echo "YANTRIKDB_EMBEDDER=potion-base-8M" >> ~/.hermes/.env   # 28 MB, dim=256, ~92% MiniLM
+# or potion-base-32M for 121 MB, dim=512, ~95% MiniLM
+```
+
+## Install (alternative — HTTP backend, for HA cluster setups)
+
+If you run multiple Hermes instances that need to share one memory store, or you want HA via raft:
 
 ```bash
 docker run -d -p 7438:7438 -v yantrikdb-data:/var/lib/yantrikdb \
   --name yantrikdb ghcr.io/yantrikos/yantrikdb:latest
 docker exec yantrikdb yantrikdb token --data-dir /var/lib/yantrikdb \
   create --db default --label hermes
+# → ydb_abc123...
+
+cat >> ~/.hermes/.env <<EOF
+YANTRIKDB_MODE=http
+YANTRIKDB_URL=http://localhost:7438
+YANTRIKDB_TOKEN=ydb_abc123...
+EOF
 ```
+
+Same plugin, same 8 tools, same hooks, same provider contract — just talks HTTP to a separately-managed server instead of running the engine in-process.
 
 Full config, tool reference, troubleshooting: **[yantrikdb/README.md](yantrikdb/README.md)**.
 
@@ -79,9 +94,19 @@ Three optional lifecycle hooks: `on_session_end` auto-consolidates, `on_pre_comp
 
 ## Verification
 
-- **95 unit tests** covering request formation, error taxonomy, provider contract, hook semantics, circuit breaker, text truncation — all mocked, no network required.
+- **96 unit tests** covering request formation, error taxonomy, provider contract, hook semantics, circuit breaker, text truncation, mode-aware availability — all mocked, no network required.
 - **2 live integration tests** (`tests/integration/test_live.py`) that exercise the full flow against a real `yantrikdb-server`. Skipped by default; run with `YANTRIKDB_INTEGRATION_URL` + `YANTRIKDB_INTEGRATION_TOKEN` set.
-- **End-to-end demo** against an unmodified Hermes 0.9.0 install, captured in **[VERIFICATION.md](VERIFICATION.md)** — real transcripts of a DeepSeek agent calling `yantrikdb_remember` × 3, `yantrikdb_stats`, and `yantrikdb_recall` with the `why_retrieved` reason list coming back through the tool response verbatim.
+- **End-to-end Hermes demos** against an unmodified Hermes 0.9.0 install for both backends, captured in **[VERIFICATION.md](VERIFICATION.md)** — DeepSeek-driven sessions calling all 8 tools, with `why_retrieved` reason codes flowing through the model's reasoning verbatim.
+
+### Performance (steady-state, post-warmup)
+
+| Op | v0.1 HTTP (Apr 14) | v0.2 Embedded (May 9) |
+|---|---|---|
+| `record_text` p50 | 13.8 ms | **0.60 ms** |
+| `recall_text` p50 | 24.0 ms | **2.58 ms** |
+| Cold start | n/a | 77 ms (one-time) |
+| Required infrastructure | yantrikdb-server + token | none |
+| `pip install` footprint | wheel + requests | wheel + 2 small libs (~10 MB total) |
 
 CI runs ruff + mypy + pytest on Python 3.11 / 3.12 / 3.13 on every push.
 
@@ -96,9 +121,9 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 
 ## Status
 
-**v0.1.0** — live-verified, feature-complete for v1 scope, 95 tests passing, pending Hermes upstream review.
+**v0.2.0** — embedded backend live-verified inside Hermes 0.9.0, 96 tests passing, ~10 MB install. v0.1.0 HTTP path remains supported for HA / multi-instance setups via `YANTRIKDB_MODE=http`. Upstream discussion still open at [hermes-agent#9975](https://github.com/NousResearch/hermes-agent/issues/9975) and PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989); the standalone install path doesn't depend on either.
 
-See [yantrikdb/CHANGELOG.md](yantrikdb/CHANGELOG.md) for version history and [yantrikdb/ARCHITECTURE.md](yantrikdb/ARCHITECTURE.md) for the control flow, error taxonomy, and threading model.
+See [yantrikdb/CHANGELOG.md](yantrikdb/CHANGELOG.md) for the v0.2.0 changes and [yantrikdb/ARCHITECTURE.md](yantrikdb/ARCHITECTURE.md) for the control flow, error taxonomy, and threading model (now covering both backends).
 
 ## License
 

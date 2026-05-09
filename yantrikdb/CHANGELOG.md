@@ -3,7 +3,42 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project aims for semantic versioning once merged into Hermes.
 
-## [0.1.0] — Initial
+## [0.2.0] — 2026-05-09 — Embedded by default
+
+### Added
+
+- **In-process backend** (`yantrikdb/embedded.py`) wrapping `yantrikdb._yantrikdb_rust.YantrikDB` to the same 8-method surface as the HTTP client. Users running a single Hermes instance no longer need a separate `yantrikdb-server`, Docker, token mint, or URL config. `pip install` and go.
+- **Backend factory** (`make_backend()`) selects HTTP vs embedded based on `YANTRIKDB_MODE` env (default `embedded`). Provider's tool dispatch is unchanged — same 8 tools, same hooks, same namespace scoping, same circuit breaker policy.
+- **New env config**: `YANTRIKDB_MODE` (`embedded` | `http`), `YANTRIKDB_DB_PATH` (defaults to `$HERMES_HOME/yantrikdb-memory.db`), `YANTRIKDB_EMBEDDER` (`""` for the bundled potion-base-2M, or `potion-base-8M` / `potion-base-32M` for tier-2/3 download paths).
+- **Hermes-on-LXC verification for embedded mode** captured in `VERIFICATION.md` — real DeepSeek session, 3× `yantrikdb_remember` + `yantrikdb_recall` + `yantrikdb_stats` all sub-millisecond after one-time 80 ms engine warmup.
+- 96 tests passing, all transport-agnostic — they exercise the provider contract, not the backend.
+
+### Changed
+
+- **Default backend is now embedded** (`YANTRIKDB_MODE=embedded`). Users pinning v0.1 behavior should set `YANTRIKDB_MODE=http` explicitly.
+- `pip_dependencies` adds `yantrikdb>=0.7.6` (required for the bundled embedder via `YantrikDB.with_default()`). v0.7.6 ships only `uuid-utils` + `click` as hard deps; the install is ~10 MB total.
+- `is_available()` now mode-aware: embedded mode is available iff `yantrikdb` is importable; HTTP mode requires a token (unchanged).
+- `YantrikDBConfig` extended with `mode`, `db_path`, `embedder_name` fields; HTTP-only fields (`url`, `token`, `connect_timeout`, etc.) and embedded-only fields coexist on one dataclass.
+
+### Performance (steady-state, post-warmup)
+
+| Op | v0.1 HTTP (Apr 14, LXC vs LAN cluster) | v0.2 Embedded (today, in-process) |
+|---|---|---|
+| `record_text` p50 | ~13.8 ms | **0.60 ms** |
+| `recall_text` p50 | ~24.0 ms | **2.58 ms** |
+| Token mint at install | required | not needed |
+| Server / Docker | required | not needed |
+| Cold start (one-time) | n/a | 77 ms |
+
+### Notes for HTTP-mode users
+
+The HTTP backend (`YANTRIKDB_MODE=http`) is unchanged in v0.2 and still recommended for:
+
+- HA cluster deployments where multiple Hermes instances share one yantrikdb-server.
+- Multi-tenant scenarios needing the cluster's centralized control plane.
+- Auditing setups requiring server-side request logs.
+
+## [0.1.0] — 2026-04-14 — Initial
 
 ### Added
 
@@ -26,7 +61,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this pr
 ### Deliberate non-goals for this release
 
 - No assistant-message extraction on `sync_turn` (hallucination amplification risk).
-- No embedded / in-process YantrikDB — the plugin is a thin HTTP client. Embedded use is covered by `pip install yantrikdb`.
-- No local SQLite fallback — out of scope; would duplicate the embedded variant.
+- No embedded / in-process YantrikDB — the plugin is a thin HTTP client. (Reversed in v0.2.0.)
+- No local SQLite fallback — out of scope.
 - No batch write queue — background threads already absorb latency; the added complexity is not justified for v1.
-- No CLI subcommand (`hermes yantrikdb …`) — tracked as a potential v0.2 addition.
+- No CLI subcommand (`hermes yantrikdb …`) — still tracked as future work.

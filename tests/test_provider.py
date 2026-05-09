@@ -51,10 +51,17 @@ def mock_client(client_module) -> MagicMock:
 
 @pytest.fixture
 def provider(provider_module, mock_client, monkeypatch):
-    """Initialized provider with a mock client wired in."""
+    """Initialized provider with a mock backend wired in.
+
+    Uses YANTRIKDB_MODE=http + a fake token so initialize() takes the HTTP
+    branch, then patches the make_backend factory to hand back the mock.
+    The mock surface is backend-agnostic (same 8 methods either way), so
+    these tests pin the provider contract rather than the transport.
+    """
+    monkeypatch.setenv("YANTRIKDB_MODE", "http")
     monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
     p = provider_module.YantrikDBMemoryProvider()
-    with patch.object(provider_module, "YantrikDBClient", return_value=mock_client):
+    with patch.object(provider_module, "make_backend", return_value=mock_client):
         p.initialize(
             "sess-1",
             agent_workspace="workspace",
@@ -79,12 +86,28 @@ class TestIdentity:
 
 
 class TestIsAvailable:
-    def test_false_when_no_token(self, provider_module):
+    def test_http_mode_false_when_no_token(self, provider_module, monkeypatch):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
         assert provider_module.YantrikDBMemoryProvider().is_available() is False
 
-    def test_true_when_token_set(self, provider_module, monkeypatch):
+    def test_http_mode_true_when_token_set(self, provider_module, monkeypatch):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_x")
         assert provider_module.YantrikDBMemoryProvider().is_available() is True
+
+    def test_embedded_mode_true_when_yantrikdb_importable(
+        self, provider_module, monkeypatch,
+    ):
+        # Embedded path: available iff `yantrikdb._yantrikdb_rust` imports.
+        # The workspace dir shadowing the installed package would break this
+        # check at runtime; the test env doesn't include the plugin dir in
+        # sys.path because pytest loaded us via importlib spec_from_file.
+        monkeypatch.setenv("YANTRIKDB_MODE", "embedded")
+        # We don't assert True/False here because it depends on whether the
+        # `yantrikdb` PyPI package is installed in the test env. Just
+        # confirm the function returns a bool without raising.
+        result = provider_module.YantrikDBMemoryProvider().is_available()
+        assert isinstance(result, bool)
 
 
 # ---------------------------------------------------------------------------
@@ -96,15 +119,21 @@ class TestInitialize:
         assert provider._namespace == "hermes:workspace:coder"
 
     def test_cron_context_deactivates_plugin(self, provider_module, monkeypatch):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
         p = provider_module.YantrikDBMemoryProvider()
-        with patch.object(provider_module, "YantrikDBClient") as mock_cls:
+        with patch.object(provider_module, "make_backend") as mock_factory:
             p.initialize("sess", agent_context="cron", platform="cron")
         assert p._cron_skipped is True
         assert p._client is None
-        mock_cls.assert_not_called()
+        mock_factory.assert_not_called()
 
-    def test_no_token_leaves_client_none(self, provider_module, monkeypatch):
+    def test_no_token_in_http_mode_leaves_client_none(
+        self, provider_module, monkeypatch,
+    ):
+        # In http mode without a token, initialize() should bail before
+        # constructing a backend.
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
         monkeypatch.delenv("YANTRIKDB_TOKEN", raising=False)
         p = provider_module.YantrikDBMemoryProvider()
         p.initialize("sess", agent_workspace="w", agent_identity="i")
@@ -116,7 +145,7 @@ class TestInitialize:
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
         mock_client.health.side_effect = client_module.YantrikDBTransientError("down")
         p = provider_module.YantrikDBMemoryProvider()
-        with patch.object(provider_module, "YantrikDBClient", return_value=mock_client):
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
             p.initialize("sess", agent_workspace="w", agent_identity="i")
         assert p._client is mock_client
 

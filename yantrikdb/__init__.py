@@ -52,6 +52,7 @@ from .client import (
     YantrikDBServerError,
     YantrikDBTransientError,
 )
+from .embedded import make_backend
 
 logger = logging.getLogger(__name__)
 
@@ -377,8 +378,19 @@ class YantrikDBMemoryProvider(MemoryProvider):
     # -- Setup / config ---------------------------------------------------
 
     def is_available(self) -> bool:
-        """Ready iff a token is configured. No network call."""
-        return bool(YantrikDBConfig.load().token)
+        """Ready when the configured backend can be reached. No network call.
+
+        - embedded mode: available iff `yantrikdb` Python package is importable.
+        - http mode: available iff a token is configured.
+        """
+        cfg = YantrikDBConfig.load()
+        if cfg.mode == "embedded":
+            try:
+                import yantrikdb._yantrikdb_rust  # noqa: F401
+                return True
+            except ImportError:
+                return False
+        return bool(cfg.token)
 
     def get_config_schema(self) -> list[dict[str, Any]]:
         return [
@@ -440,19 +452,30 @@ class YantrikDBMemoryProvider(MemoryProvider):
         hermes_home = Path(hermes_home_raw) if hermes_home_raw else None
         self._config = YantrikDBConfig.load(hermes_home)
 
-        if not self._config.token:
-            logger.debug("YantrikDB not configured (no token) — plugin inactive")
+        # Embedded mode is self-contained (`pip install` and go); HTTP mode
+        # requires a token. is_available() short-circuits at the provider
+        # level, but be defensive here too.
+        if self._config.mode == "http" and not self._config.token:
+            logger.debug("YantrikDB http mode but no token — plugin inactive")
             return
 
         self._namespace = _derive_namespace(self._config.namespace, kwargs)
+        try:
+            backend = make_backend(self._config)
+        except YantrikDBError as e:
+            logger.warning("YantrikDB %s mode init failed: %s", self._config.mode, e)
+            return
         with self._client_lock:
-            self._client = YantrikDBClient(self._config)
+            self._client = backend
 
         try:
             self._client.health()
+            target = self._config.url if self._config.mode == "http" else (
+                self._config.db_path or "default"
+            )
             logger.info(
-                "YantrikDB connected: %s (namespace: %s)",
-                self._config.url, self._namespace,
+                "YantrikDB connected: mode=%s target=%s namespace=%s",
+                self._config.mode, target, self._namespace,
             )
         except YantrikDBError as e:
             logger.warning(
