@@ -1,7 +1,7 @@
 # yantrikdb-hermes-plugin
 
 [![CI](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-96%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
+[![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.7.6-orange)](https://github.com/yantrikos/yantrikdb-server)
@@ -88,9 +88,31 @@ The differentiator versus other Hermes memory plugins is not the vector store �
 | Why did a memory rank? | ¯\\_(ツ)_/¯ | every `recall()` result carries a `why_retrieved` reason list |
 | Cross-entity recall | semantic-only | graph edges from `relate()` boost related memories |
 
-Eight tools exposed to the agent: `yantrikdb_remember`, `_recall`, `_forget`, `_think`, `_conflicts`, `_resolve_conflict`, `_relate`, `_stats`.
+Eight tools exposed to the agent by default: `yantrikdb_remember`, `_recall`, `_forget`, `_think`, `_conflicts`, `_resolve_conflict`, `_relate`, `_stats`. Three additional **opt-in** skill tools (v0.3.0+): `_skill_search`, `_skill_define`, `_skill_outcome` — see [Skills](#skills-opt-in-v030) below.
 
 Three optional lifecycle hooks: `on_session_end` auto-consolidates, `on_pre_compress` preserves high-salience memories through context compression, `on_memory_write` mirrors built-in `MEMORY.md` / `USER.md` additions.
+
+## Skills (opt-in, v0.3.0+)
+
+Skills are **procedural memory**: reusable patterns the agent distills from observed success and pulls back next session. They live in YantrikDB's shared `skill_substrate` namespace alongside skills authored by other consumers (Lane B SDK, server handlers, WisePick). Hermes-authored skills are tagged `metadata.source=hermes` so any downstream consumer can filter them in or out cleanly.
+
+**Disabled by default.** Adding the plugin to an existing Hermes install doesn't change the tool schema the model sees. Enable explicitly when you want the agentic skill loop:
+
+```bash
+echo "YANTRIKDB_SKILLS_ENABLED=true" >> ~/.hermes/.env
+```
+
+When enabled, three new tools join the schema:
+
+| Tool | Purpose |
+|---|---|
+| `yantrikdb_skill_search` | Semantic search over agent-authored skills, namespace-isolated from regular memory recall. |
+| `yantrikdb_skill_define` | Distill a procedural pattern into a reusable skill (`skill_id`, `body`, `skill_type`, `applies_to`). Client-side validation reproduces yantrikdb-server's wrapper checks. |
+| `yantrikdb_skill_outcome` | Record success/failure for a skill after it's used. Append-only event log; rollup is the agent's call, not the substrate's. |
+
+The agentic loop closes: agent observes a successful sequence → distills it via `define` → next session pulls it via `search` → records outcome via `outcome` → over time, ranking reflects what actually works.
+
+**Lifecycle distinction worth understanding.** Hermes' own filesystem skills (`$HERMES_HOME/skills/*.md`) are *human-authored, durable, version-controlled*. YantrikDB skills are *agent-authored, runtime-evolving, semantic-search-queryable*. Different kinds of canonical, not competing authorities. The model picks by lifecycle.
 
 ### Explainability is a side effect, not a bolt-on
 
@@ -139,9 +161,9 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 
 ## Status
 
-**v0.2.0** — embedded backend live-verified inside Hermes 0.9.0, 96 tests passing, ~10 MB install. v0.1.0 HTTP path remains supported for HA / multi-instance setups via `YANTRIKDB_MODE=http`. Upstream discussion still open at [hermes-agent#9975](https://github.com/NousResearch/hermes-agent/issues/9975) and PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989); the standalone install path doesn't depend on either.
+**v0.3.0** — skill substrate bridge with feature-flag opt-in (`YANTRIKDB_SKILLS_ENABLED`); embedded backend remains the default, 128 tests passing, ~10 MB install. v0.2.x users upgrade in place — the default tool surface is unchanged when skills are off. Upstream Hermes discussion still open at [hermes-agent#9975](https://github.com/NousResearch/hermes-agent/issues/9975) and PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989); the standalone install path doesn't depend on either.
 
-See [yantrikdb/CHANGELOG.md](yantrikdb/CHANGELOG.md) for the v0.2.0 changes and [yantrikdb/ARCHITECTURE.md](yantrikdb/ARCHITECTURE.md) for the control flow, error taxonomy, and threading model (now covering both backends).
+See [yantrikdb/CHANGELOG.md](yantrikdb/CHANGELOG.md) for the v0.3.0 changes and [yantrikdb/ARCHITECTURE.md](yantrikdb/ARCHITECTURE.md) for the control flow, error taxonomy, and threading model (covering both backends).
 
 ## License
 

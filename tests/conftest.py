@@ -157,6 +157,10 @@ def _clean_yantrikdb_env(monkeypatch):
         "YANTRIKDB_CONNECT_TIMEOUT",
         "YANTRIKDB_RETRY_TOTAL",
         "YANTRIKDB_MAX_TEXT_LEN",
+        "YANTRIKDB_MODE",
+        "YANTRIKDB_DB_PATH",
+        "YANTRIKDB_EMBEDDER",
+        "YANTRIKDB_SKILLS_ENABLED",
     ):
         monkeypatch.delenv(var, raising=False)
     yield

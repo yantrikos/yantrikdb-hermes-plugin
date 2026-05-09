@@ -46,6 +46,9 @@ def mock_client(client_module) -> MagicMock:
         "open_conflicts": 1,
         "pending_triggers": 0,
     }
+    c.skill_search.return_value = {"skills": [], "total": 0}
+    c.skill_define.return_value = {"rid": "r-skill-1", "skill_id": "git.commit_clean", "stored": True}
+    c.skill_outcome.return_value = {"rid": "r-out-1", "skill_id": "git.commit_clean", "recorded": True}
     return c
 
 
@@ -55,11 +58,13 @@ def provider(provider_module, mock_client, monkeypatch):
 
     Uses YANTRIKDB_MODE=http + a fake token so initialize() takes the HTTP
     branch, then patches the make_backend factory to hand back the mock.
-    The mock surface is backend-agnostic (same 8 methods either way), so
-    these tests pin the provider contract rather than the transport.
+    Skills are enabled here so the existing tests exercise the full
+    11-tool surface; default-off behaviour is tested separately in
+    TestSkillsFeatureFlag.
     """
     monkeypatch.setenv("YANTRIKDB_MODE", "http")
     monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+    monkeypatch.setenv("YANTRIKDB_SKILLS_ENABLED", "true")
     p = provider_module.YantrikDBMemoryProvider()
     with patch.object(provider_module, "make_backend", return_value=mock_client):
         p.initialize(
@@ -163,11 +168,14 @@ EXPECTED_TOOL_NAMES = {
     "yantrikdb_resolve_conflict",
     "yantrikdb_relate",
     "yantrikdb_stats",
+    "yantrikdb_skill_search",
+    "yantrikdb_skill_define",
+    "yantrikdb_skill_outcome",
 }
 
 
 class TestToolSchemas:
-    def test_six_tools_registered(self, provider):
+    def test_eleven_tools_registered(self, provider):
         names = {s["name"] for s in provider.get_tool_schemas()}
         assert names == EXPECTED_TOOL_NAMES
 
@@ -176,9 +184,15 @@ class TestToolSchemas:
         # initialize() runs, to index tool-name → provider for routing.
         # Returning [] here (pre-init) would make tool calls resolve as
         # "Unknown tool" at runtime.
+        # With v0.3.0's skill flag: pre-init reads env via Config.load();
+        # we don't set the flag here, so we expect the 8 base tools.
         p = provider_module.YantrikDBMemoryProvider()
         names = {s["name"] for s in p.get_tool_schemas()}
-        assert names == EXPECTED_TOOL_NAMES
+        base = EXPECTED_TOOL_NAMES - {
+            "yantrikdb_skill_search", "yantrikdb_skill_define", "yantrikdb_skill_outcome",
+        }
+        assert names == base
+        assert len(names) == 8
 
     def test_no_tools_in_cron_context(self, provider_module, monkeypatch):
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
@@ -568,3 +582,294 @@ def test_register_installs_provider(provider_module):
     collector.register_memory_provider.assert_called_once()
     installed = collector.register_memory_provider.call_args.args[0]
     assert installed.__class__.__name__ == "YantrikDBMemoryProvider"
+
+
+# ---------------------------------------------------------------------------
+# Skills feature flag — disabled by default, opt-in via env
+# ---------------------------------------------------------------------------
+
+
+class TestSkillsFeatureFlag:
+    """Skills are opt-in. Filesystem-backed users running the plugin in
+    embedded mode shouldn't see three new tools they didn't ask for.
+    """
+
+    def _provider_with_flag(self, provider_module, mock_client, monkeypatch, *, enabled):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        if enabled:
+            monkeypatch.setenv("YANTRIKDB_SKILLS_ENABLED", "true")
+        else:
+            monkeypatch.delenv("YANTRIKDB_SKILLS_ENABLED", raising=False)
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize("sess-flag", agent_workspace="w", agent_identity="i")
+        return p
+
+    def test_default_off_excludes_skill_tools(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        p = self._provider_with_flag(provider_module, mock_client, monkeypatch, enabled=False)
+        names = {s["name"] for s in p.get_tool_schemas()}
+        skill_names = {n for n in names if n.startswith("yantrikdb_skill_")}
+        assert skill_names == set(), f"skills should be hidden by default, got {skill_names}"
+        assert len(names) == 8
+
+    def test_enabled_includes_skill_tools(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        p = self._provider_with_flag(provider_module, mock_client, monkeypatch, enabled=True)
+        names = {s["name"] for s in p.get_tool_schemas()}
+        assert "yantrikdb_skill_search" in names
+        assert "yantrikdb_skill_define" in names
+        assert "yantrikdb_skill_outcome" in names
+        assert len(names) == 11
+
+    def test_disabled_skill_call_short_circuits(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        p = self._provider_with_flag(provider_module, mock_client, monkeypatch, enabled=False)
+        out = p.handle_tool_call(
+            "yantrikdb_skill_search", {"query": "any"},
+        )
+        mock_client.skill_search.assert_not_called()
+        err = json.loads(out)["error"]
+        assert "Skills are disabled" in err
+        assert "YANTRIKDB_SKILLS_ENABLED" in err
+
+
+# ---------------------------------------------------------------------------
+# Skills dispatch (v0.3.0+) — uses the default fixture which has skills on
+# ---------------------------------------------------------------------------
+
+
+class TestSkillSearch:
+    def test_dispatches_with_query_and_top_k_cap(self, provider, mock_client):
+        provider.handle_tool_call(
+            "yantrikdb_skill_search",
+            {"query": "git commit", "top_k": 200},
+        )
+        mock_client.skill_search.assert_called_once()
+        call = mock_client.skill_search.call_args
+        assert call.args[0] == "git commit"
+        assert call.kwargs["top_k"] == 50  # capped
+
+    def test_passes_applies_to_filter(self, provider, mock_client):
+        provider.handle_tool_call(
+            "yantrikdb_skill_search",
+            {"query": "deploy", "applies_to": "production"},
+        )
+        assert mock_client.skill_search.call_args.kwargs["applies_to"] == "production"
+
+    def test_compacts_search_results(self, provider, mock_client):
+        mock_client.skill_search.return_value = {
+            "skills": [
+                {
+                    "rid": "r1",
+                    "text": "do X then Y",
+                    "score": 0.91,
+                    "metadata": {
+                        "skill_id": "deploy.rolling",
+                        "skill_type": "procedure",
+                        "applies_to": ["deploy", "production"],
+                        "source": "hermes",
+                    },
+                    "why_retrieved": ["semantically similar (0.84)"],
+                },
+            ],
+        }
+        out = provider.handle_tool_call(
+            "yantrikdb_skill_search", {"query": "rolling deploy"},
+        )
+        parsed = json.loads(out)
+        assert parsed["count"] == 1
+        first = parsed["skills"][0]
+        assert first["skill_id"] == "deploy.rolling"
+        assert first["skill_type"] == "procedure"
+        assert first["applies_to"] == ["deploy", "production"]
+        assert first["source"] == "hermes"
+        assert first["why_retrieved"] == ["semantically similar (0.84)"]
+
+    def test_rejects_empty_query(self, provider, mock_client):
+        out = provider.handle_tool_call("yantrikdb_skill_search", {})
+        mock_client.skill_search.assert_not_called()
+        assert "Missing required parameter" in json.loads(out)["error"]
+
+
+class TestSkillDefine:
+    def test_dispatches_full_payload(self, provider, mock_client):
+        out = provider.handle_tool_call(
+            "yantrikdb_skill_define",
+            {
+                "skill_id": "git.commit_clean",
+                "body": "Always rebase before merge so history stays linear and reviewable.",
+                "skill_type": "procedure",
+                "applies_to": ["git", "workflow"],
+            },
+        )
+        mock_client.skill_define.assert_called_once()
+        call = mock_client.skill_define.call_args
+        assert call.kwargs["skill_id"] == "git.commit_clean"
+        assert call.kwargs["skill_type"] == "procedure"
+        assert call.kwargs["applies_to"] == ["git", "workflow"]
+        parsed = json.loads(out)
+        assert parsed["stored"] is True
+        assert parsed["skill_id"] == "git.commit_clean"
+
+    def test_rejects_missing_required_fields(self, provider, mock_client):
+        for missing in ["skill_id", "body", "skill_type", "applies_to"]:
+            args = {
+                "skill_id": "git.commit_clean",
+                "body": "x" * 80,
+                "skill_type": "procedure",
+                "applies_to": ["git"],
+            }
+            args.pop(missing)
+            out = provider.handle_tool_call("yantrikdb_skill_define", args)
+            assert "Missing required parameters" in json.loads(out)["error"]
+        mock_client.skill_define.assert_not_called()
+
+
+class TestSkillOutcome:
+    def test_dispatches(self, provider, mock_client):
+        out = provider.handle_tool_call(
+            "yantrikdb_skill_outcome",
+            {"skill_id": "git.commit_clean", "succeeded": True, "note": "worked"},
+        )
+        mock_client.skill_outcome.assert_called_once_with(
+            "git.commit_clean", True, note="worked",
+        )
+        parsed = json.loads(out)
+        assert parsed["recorded"] is True
+
+    def test_rejects_missing_succeeded(self, provider, mock_client):
+        out = provider.handle_tool_call(
+            "yantrikdb_skill_outcome", {"skill_id": "git.commit_clean"},
+        )
+        mock_client.skill_outcome.assert_not_called()
+        assert "Missing required parameter: succeeded" in json.loads(out)["error"]
+
+    def test_rejects_missing_skill_id(self, provider, mock_client):
+        out = provider.handle_tool_call(
+            "yantrikdb_skill_outcome", {"succeeded": False},
+        )
+        mock_client.skill_outcome.assert_not_called()
+        assert "Missing required parameter: skill_id" in json.loads(out)["error"]
+
+
+# ---------------------------------------------------------------------------
+# Skill validation rules (load-bearing — yantrikdb-server flagged these)
+# ---------------------------------------------------------------------------
+
+
+class TestSkillValidation:
+    """Tests directly against the `validate_skill_define_args` helper.
+    The hyphen-vs-underscore drift in `applies_to` regex is explicitly
+    flagged as load-bearing by yantrikdb-server. These tests pin it.
+    """
+
+    @pytest.fixture
+    def validate(self, provider_module):
+        import importlib
+        import sys
+        for name in list(sys.modules):
+            if name.endswith(".embedded"):
+                return sys.modules[name].validate_skill_define_args
+        emb = importlib.import_module(provider_module.__name__ + ".embedded")
+        return emb.validate_skill_define_args
+
+    @pytest.fixture
+    def err_cls(self, client_module):
+        return client_module.YantrikDBClientError
+
+    def _good_args(self):
+        return dict(
+            skill_id="git.commit_clean",
+            body="Always rebase before merge so history stays linear and reviewable.",
+            skill_type="procedure",
+            applies_to=["git", "workflow"],
+        )
+
+    def test_happy_path(self, validate):
+        validate(**self._good_args())
+
+    # skill_id ---------------------------------------------------------
+    def test_skill_id_must_be_string(self, validate, err_cls):
+        with pytest.raises(err_cls):
+            validate(**{**self._good_args(), "skill_id": 42})
+
+    def test_skill_id_too_short(self, validate, err_cls):
+        with pytest.raises(err_cls, match="length"):
+            validate(**{**self._good_args(), "skill_id": "g.x"})
+
+    def test_skill_id_must_have_dot(self, validate, err_cls):
+        with pytest.raises(err_cls, match="match"):
+            validate(**{**self._good_args(), "skill_id": "no_dots_here"})
+
+    def test_skill_id_no_uppercase(self, validate, err_cls):
+        with pytest.raises(err_cls, match="match"):
+            validate(**{**self._good_args(), "skill_id": "Git.Clean"})
+
+    def test_skill_id_no_hyphens(self, validate, err_cls):
+        with pytest.raises(err_cls, match="match"):
+            validate(**{**self._good_args(), "skill_id": "git.commit-clean"})
+
+    # body -------------------------------------------------------------
+    def test_body_must_be_string(self, validate, err_cls):
+        with pytest.raises(err_cls):
+            validate(**{**self._good_args(), "body": 42})
+
+    def test_body_too_short(self, validate, err_cls):
+        with pytest.raises(err_cls, match="length"):
+            validate(**{**self._good_args(), "body": "too short"})
+
+    def test_body_too_long(self, validate, err_cls):
+        with pytest.raises(err_cls, match="length"):
+            validate(**{**self._good_args(), "body": "x" * 5001})
+
+    # skill_type -------------------------------------------------------
+    def test_skill_type_must_be_in_enum(self, validate, err_cls):
+        with pytest.raises(err_cls, match="not in"):
+            validate(**{**self._good_args(), "skill_type": "magic"})
+
+    def test_each_skill_type_accepted(self, validate):
+        for st in ("procedure", "reference", "lesson", "pattern", "rule"):
+            validate(**{**self._good_args(), "skill_type": st})
+
+    # applies_to — load-bearing ----------------------------------------
+    def test_applies_to_must_be_non_empty_list(self, validate, err_cls):
+        with pytest.raises(err_cls, match="non-empty"):
+            validate(**{**self._good_args(), "applies_to": []})
+
+    def test_applies_to_must_be_list_not_string(self, validate, err_cls):
+        with pytest.raises(err_cls, match="non-empty"):
+            validate(**{**self._good_args(), "applies_to": "git"})
+
+    def test_applies_to_max_10_entries(self, validate, err_cls):
+        with pytest.raises(err_cls, match="at most"):
+            validate(**{**self._good_args(), "applies_to": [f"tag{i}" for i in range(11)]})
+
+    def test_applies_to_REJECTS_HYPHEN(self, validate, err_cls):
+        # Load-bearing — yantrikdb-server explicitly flagged this.
+        # Anyone naturally writing "applies-to"-style hyphenated tags
+        # would corrupt the substrate convention. Hyphens MUST raise.
+        with pytest.raises(err_cls, match="no hyphens"):
+            validate(**{**self._good_args(), "applies_to": ["git-workflow"]})
+
+    def test_applies_to_rejects_dot(self, validate, err_cls):
+        with pytest.raises(err_cls, match="no hyphens, no dots"):
+            validate(**{**self._good_args(), "applies_to": ["git.workflow"]})
+
+    def test_applies_to_rejects_uppercase(self, validate, err_cls):
+        with pytest.raises(err_cls, match="lowercase"):
+            validate(**{**self._good_args(), "applies_to": ["Git"]})
+
+    def test_applies_to_rejects_leading_digit(self, validate, err_cls):
+        with pytest.raises(err_cls, match="lowercase"):
+            validate(**{**self._good_args(), "applies_to": ["1git"]})
+
+    def test_applies_to_accepts_underscores(self, validate):
+        validate(**{**self._good_args(), "applies_to": ["git_workflow", "rolling_deploy"]})
+
+    def test_applies_to_accepts_digits_after_first(self, validate):
+        validate(**{**self._good_args(), "applies_to": ["python3", "k8s"]})

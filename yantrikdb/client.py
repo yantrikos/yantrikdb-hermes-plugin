@@ -71,6 +71,13 @@ class YantrikDBConfig:
     max_text_len: int = DEFAULT_MAX_TEXT_LEN
     auto_think_on_session_end: bool = True
     sync_user_messages: bool = True
+    # v0.3.0+ skills surface — opt-in. Disabled by default so adding the
+    # plugin to an existing Hermes install doesn't change the tool schema
+    # the model sees. Users enable explicitly when they want the agentic
+    # skill loop (define / search / outcome). When disabled, the three
+    # skill schemas are hidden from get_tool_schemas() and any direct
+    # call to a skill tool short-circuits with a clear error.
+    skills_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
@@ -80,6 +87,9 @@ class YantrikDBConfig:
             token=os.environ.get("YANTRIKDB_TOKEN", ""),
             db_path=os.environ.get("YANTRIKDB_DB_PATH", ""),
             embedder_name=os.environ.get("YANTRIKDB_EMBEDDER", ""),
+            skills_enabled=_parse_bool(
+                os.environ.get("YANTRIKDB_SKILLS_ENABLED"), default=False,
+            ),
             namespace=os.environ.get("YANTRIKDB_NAMESPACE", DEFAULT_NAMESPACE),
             top_k=_parse_int(os.environ.get("YANTRIKDB_TOP_K"), DEFAULT_TOP_K),
             connect_timeout=_parse_float(
@@ -116,6 +126,7 @@ class YantrikDBConfig:
             return cfg
         int_fields = {"top_k", "retry_total", "max_text_len"}
         float_fields = {"connect_timeout", "read_timeout"}
+        bool_fields = {"skills_enabled", "auto_think_on_session_end", "sync_user_messages"}
         for key, val in overrides.items():
             if val in (None, ""):
                 continue
@@ -127,6 +138,8 @@ class YantrikDBConfig:
                 setattr(cfg, key, _parse_int(val, getattr(cfg, key)))
             elif key in float_fields:
                 setattr(cfg, key, _parse_float(val, getattr(cfg, key)))
+            elif key in bool_fields:
+                setattr(cfg, key, _parse_bool(val, default=getattr(cfg, key)))
             else:
                 setattr(cfg, key, val)
         return cfg
@@ -137,6 +150,25 @@ def _parse_int(raw: Any, default: int) -> int:
         return int(raw)
     except (TypeError, ValueError):
         return default
+
+
+def _parse_bool(raw: Any, *, default: bool) -> bool:
+    """Parse a bool from env var or JSON string. Accepts the usual truthy/falsy spellings.
+
+    Truthy:  "1", "true", "yes", "on", "enabled"
+    Falsy:   "0", "false", "no", "off", "disabled"
+    Anything else (or None) → ``default``.
+    """
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    s = str(raw).strip().lower()
+    if s in ("1", "true", "yes", "on", "enabled"):
+        return True
+    if s in ("0", "false", "no", "off", "disabled"):
+        return False
+    return default
 
 
 def _parse_float(raw: Any, default: float) -> float:
@@ -410,6 +442,70 @@ class YantrikDBClient:
 
     def stats(self) -> dict[str, Any]:
         return self._request("GET", "/v1/stats")
+
+    # -- Skills (v0.3.0+) ---------------------------------------------
+    #
+    # The HTTP path delegates to yantrikdb-server's wrapper endpoints,
+    # which handle schema validation server-side. The plugin still
+    # validates client-side via embedded.validate_skill_define_args
+    # before calling — defense in depth, and gives users early errors
+    # without a network round-trip on simple shape mistakes.
+
+    def skill_search(
+        self,
+        query: str,
+        *,
+        top_k: int | None = None,
+        applies_to: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "query": query,
+            "top_k": int(top_k or self.config.top_k),
+        }
+        if applies_to:
+            body["applies_to"] = applies_to
+        return self._request("POST", "/v1/skills/search", body)
+
+    def skill_define(
+        self,
+        skill_id: str,
+        body: str,
+        skill_type: str,
+        applies_to: list[str],
+        *,
+        triggers: list[str] | None = None,
+        on_conflict: str = "reject",
+        version: str | None = None,
+        supersedes_skill_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "skill_id": skill_id,
+            "body": body,
+            "skill_type": skill_type,
+            "applies_to": list(applies_to),
+            "on_conflict": on_conflict,
+        }
+        if triggers:
+            payload["triggers"] = list(triggers)
+        if version:
+            payload["version"] = version
+        if supersedes_skill_id:
+            payload["supersedes_skill_id"] = supersedes_skill_id
+        return self._request("POST", "/v1/skills/define", payload)
+
+    def skill_outcome(
+        self,
+        skill_id: str,
+        succeeded: bool,
+        *,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"succeeded": bool(succeeded)}
+        if note:
+            payload["note"] = note
+        return self._request(
+            "POST", f"/v1/skills/{skill_id}/outcome", payload,
+        )
 
     def close(self) -> None:
         try:
