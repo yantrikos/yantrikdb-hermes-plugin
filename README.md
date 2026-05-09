@@ -92,6 +92,14 @@ Eight tools exposed to the agent: `yantrikdb_remember`, `_recall`, `_forget`, `_
 
 Three optional lifecycle hooks: `on_session_end` auto-consolidates, `on_pre_compress` preserves high-salience memories through context compression, `on_memory_write` mirrors built-in `MEMORY.md` / `USER.md` additions.
 
+### Explainability is a side effect, not a bolt-on
+
+Every `recall()` result already carries the structured ranking-reason list — that's the engine's standard response shape. The model can *read* it without prompt engineering. From the live Hermes session captured in `VERIFICATION.md`, DeepSeek's natural-language summary of the recall:
+
+> *"All 3 memories returned, ranked by relevance × recency × importance. The top result ranked highest (semantic match + keyword + high importance + recency), followed by [...] (keyword match), then [...] (high importance but no direct keyword overlap)."*
+
+DeepSeek wasn't told the reason codes existed; it parsed them from the tool response and reflected them in its explanation. That's the architectural shape we wanted: the explainability surface is the recall response itself, transport-agnostic, model-agnostic, and visible to anyone who looks at the JSON. No separate "explain" tool. No second LLM call. The cost of explainability is zero because it was never separate.
+
 ## Verification
 
 - **96 unit tests** covering request formation, error taxonomy, provider contract, hook semantics, circuit breaker, text truncation, mode-aware availability — all mocked, no network required.
@@ -104,9 +112,19 @@ Three optional lifecycle hooks: `on_session_end` auto-consolidates, `on_pre_comp
 |---|---|---|
 | `record_text` p50 | 13.8 ms | **0.60 ms** |
 | `recall_text` p50 | 24.0 ms | **2.58 ms** |
+| `record_text` p99 | 55.3 ms | 10.66 ms |
+| `recall_text` p99 | 67.2 ms | 13.24 ms |
 | Cold start | n/a | 77 ms (one-time) |
 | Required infrastructure | yantrikdb-server + token | none |
 | `pip install` footprint | wheel + requests | wheel + 2 small libs (~10 MB total) |
+
+Even embedded p99 tail latency is faster than HTTP p50 — bad-case embedded beats typical-case HTTP. Long-running soak validation is in progress upstream ([yantrikos/yantrikdb saga task #2](https://github.com/yantrikos/yantrikdb)); these numbers are 100-iteration micro-benchmarks, not 24-hour production traces.
+
+### About the embedder quality claims
+
+Tier 1 (`with_default()`, ~8 MB) uses [`potion-base-2M`](https://huggingface.co/minishlab/potion-base-2M) via [`model2vec-rs`](https://github.com/MinishLab/model2vec-rs) — a pure-Rust static embedding (lookup table + mean-pool + L2-normalize), no transformer forward pass. Tier 2 (`potion-base-8M`, 28 MB) and Tier 3 (`potion-base-32M`, 121 MB) trade larger model files for higher recall and live behind `set_embedder_named()` (downloaded on first use, cached under user data dir).
+
+**Quality numbers cited in this README are R@5 vs `sentence-transformers/all-MiniLM-L6-v2` (dim=384) on the upstream [evaluation corpus](https://github.com/yantrikos/yantrikdb/blob/main/scratch/eval_potion_2m.py).** The "~89% / ~92% / ~95% of MiniLM" approximations are from that specific eval; your mileage will vary on a different corpus or task. Semantic separation is also corpus-size dependent — at 3 records all vectors look similar (top score ~0.58); at 8+ with real diversity the score range opens up (top score ~0.84). If you're evaluating, run against your own data.
 
 CI runs ruff + mypy + pytest on Python 3.11 / 3.12 / 3.13 on every push.
 

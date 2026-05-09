@@ -1,5 +1,5 @@
 name: yantrikdb
-version: 0.2.0
+version: 0.2.1
 description: "YantrikDB — self-maintaining memory for Hermes with canonicalization, contradiction tracking, recency-aware ranking, and explainable recall. As of v0.2.0 the default backend is in-process (`pip install` and go); HTTP-to-server is optional for HA cluster setups."
 pip_dependencies:
   - yantrikdb>=0.7.6
