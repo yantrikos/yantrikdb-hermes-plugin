@@ -64,11 +64,50 @@ def make_config(client_module):
             namespace="hermes-test",
             embedder_name="",
             embedder_class="",
+            embedder_model2vec="",
+            embedder_huggingface="",
             embedding_dim=0,
         )
         defaults.update(overrides)
         return client_module.YantrikDBConfig(**defaults)
     return _build
+
+
+@pytest.fixture
+def embedders_module(plugin):
+    """The yantrikdb_plugin_under_test.embedders submodule (v0.4.2+)."""
+    return sys.modules[plugin[0].__name__ + ".embedders"]
+
+
+class _FakeLoader:
+    """Stand-in for Model2VecEmbedder / SentenceTransformerEmbedder.
+
+    Captures construction args, advertises a fixed dim, and is detectable
+    via isinstance() so tests can assert that `set_embedder` was handed
+    the right loader (not some other object).
+    """
+
+    last_init: tuple[type, str] | None = None  # (cls, model_name) of last instance created
+
+    def __init__(self, model_name: str) -> None:
+        self.model_name = model_name
+        self.embedding_dim = 128  # arbitrary; tests just assert the engine sees it
+        type(self).last_init = (type(self), model_name)
+
+    def encode(self, text: str) -> list[float]:
+        return [0.0] * self.embedding_dim
+
+
+class _FakeModel2VecLoader(_FakeLoader):
+    pass
+
+
+class _FakeHFLoader(_FakeLoader):
+    embedding_dim = 384  # type: ignore[assignment]  # distinguishable from model2vec
+
+    def __init__(self, model_name: str) -> None:
+        super().__init__(model_name)
+        self.embedding_dim = 384
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +157,25 @@ class TestEmbedderConfigFromEnv:
         cfg = client_module.YantrikDBConfig.from_env()
         assert cfg.embedder_class == "tests.test_embedded._GoodEmbedder"
         assert cfg.embedding_dim == 384
+
+    def test_reads_model2vec_name(self, client_module, monkeypatch):
+        monkeypatch.setenv(
+            "YANTRIKDB_EMBEDDER_MODEL2VEC",
+            "minishlab/potion-multilingual-128M",
+        )
+        cfg = client_module.YantrikDBConfig.from_env()
+        assert cfg.embedder_model2vec == "minishlab/potion-multilingual-128M"
+        # No embedding_dim required — auto-probed.
+        assert cfg.embedding_dim == 0
+
+    def test_reads_huggingface_name(self, client_module, monkeypatch):
+        monkeypatch.setenv(
+            "YANTRIKDB_EMBEDDER_HF",
+            "sentence-transformers/all-MiniLM-L6-v2",
+        )
+        cfg = client_module.YantrikDBConfig.from_env()
+        assert cfg.embedder_huggingface == "sentence-transformers/all-MiniLM-L6-v2"
+        assert cfg.embedding_dim == 0
 
     def test_bad_dim_falls_back_to_zero(self, client_module, monkeypatch):
         monkeypatch.setenv("YANTRIKDB_EMBEDDING_DIM", "not-a-number")
@@ -242,7 +300,109 @@ class TestClassEmbedderPath:
 
 
 # ---------------------------------------------------------------------------
-# Path mutual exclusion + precedence
+# Path 2 — built-in model2vec loader (v0.4.2+)
+# ---------------------------------------------------------------------------
+
+class TestModel2VecLoaderPath:
+    def test_model2vec_path_instantiates_loader_and_probes_dim(
+        self, embedded_module, embedders_module, mock_engine_class,
+        make_config, monkeypatch,
+    ):
+        monkeypatch.setattr(embedders_module, "Model2VecEmbedder", _FakeModel2VecLoader)
+        _FakeModel2VecLoader.last_init = None
+
+        cfg = make_config(embedder_model2vec="minishlab/potion-multilingual-128M")
+        embedded_module.EmbeddedYantrikDBClient(cfg)
+
+        # Loader was constructed with the model name from the env var
+        assert _FakeModel2VecLoader.last_init == (
+            _FakeModel2VecLoader, "minishlab/potion-multilingual-128M",
+        )
+        # Engine constructed with the loader's *probed* dim, NOT the
+        # config's zero dim (auto-probe is the whole point of v0.4.2).
+        mock_engine_class.assert_called_once()
+        assert mock_engine_class.call_args.kwargs["embedding_dim"] == 128
+        # with_default NOT used
+        mock_engine_class.with_default.assert_not_called()
+        # set_embedder called once with the loader instance
+        instance = mock_engine_class.return_value
+        instance.set_embedder.assert_called_once()
+        passed = instance.set_embedder.call_args.args[0]
+        assert isinstance(passed, _FakeModel2VecLoader)
+        # set_embedder_named NOT called (this is the custom-instance path)
+        instance.set_embedder_named.assert_not_called()
+
+    def test_model2vec_path_does_not_require_embedding_dim_env(
+        self, embedded_module, embedders_module, mock_engine_class,
+        make_config, monkeypatch,
+    ):
+        # Explicit test: embedding_dim=0 in config is FINE for the
+        # model2vec path because the loader auto-probes.
+        monkeypatch.setattr(embedders_module, "Model2VecEmbedder", _FakeModel2VecLoader)
+        cfg = make_config(
+            embedder_model2vec="minishlab/potion-base-8M",
+            embedding_dim=0,  # explicit
+        )
+        # Should not raise — auto-probe handles it.
+        embedded_module.EmbeddedYantrikDBClient(cfg)
+        assert mock_engine_class.call_args.kwargs["embedding_dim"] == 128
+
+
+# ---------------------------------------------------------------------------
+# Path 3 — built-in sentence-transformers loader (v0.4.2+)
+# ---------------------------------------------------------------------------
+
+class TestHuggingFaceLoaderPath:
+    def test_hf_path_instantiates_loader_and_probes_dim(
+        self, embedded_module, embedders_module, mock_engine_class,
+        make_config, monkeypatch,
+    ):
+        monkeypatch.setattr(
+            embedders_module, "SentenceTransformerEmbedder", _FakeHFLoader,
+        )
+        _FakeHFLoader.last_init = None
+
+        cfg = make_config(embedder_huggingface="sentence-transformers/all-MiniLM-L6-v2")
+        embedded_module.EmbeddedYantrikDBClient(cfg)
+
+        assert _FakeHFLoader.last_init == (
+            _FakeHFLoader, "sentence-transformers/all-MiniLM-L6-v2",
+        )
+        mock_engine_class.assert_called_once()
+        # HF fake advertises 384 dim — different from model2vec's 128 so
+        # the assertion proves which loader was used.
+        assert mock_engine_class.call_args.kwargs["embedding_dim"] == 384
+        mock_engine_class.with_default.assert_not_called()
+        instance = mock_engine_class.return_value
+        instance.set_embedder.assert_called_once()
+        passed = instance.set_embedder.call_args.args[0]
+        assert isinstance(passed, _FakeHFLoader)
+
+
+# ---------------------------------------------------------------------------
+# Missing-dep error messages — actionable, point at the right extra
+# ---------------------------------------------------------------------------
+
+class TestLoaderMissingDeps:
+    def test_model2vec_missing_dep_raises_actionable(
+        self, embedders_module, client_module, monkeypatch,
+    ):
+        # Force the `from model2vec import StaticModel` import inside
+        # Model2VecEmbedder.__init__ to fail.
+        monkeypatch.setitem(sys.modules, "model2vec", None)
+        with pytest.raises(client_module.YantrikDBError, match="model2vec"):
+            embedders_module.Model2VecEmbedder("some/model")
+
+    def test_hf_missing_dep_raises_actionable(
+        self, embedders_module, client_module, monkeypatch,
+    ):
+        monkeypatch.setitem(sys.modules, "sentence_transformers", None)
+        with pytest.raises(client_module.YantrikDBError, match="sentence-transformers"):
+            embedders_module.SentenceTransformerEmbedder("some/model")
+
+
+# ---------------------------------------------------------------------------
+# Path mutual exclusion + precedence (extended for v0.4.2)
 # ---------------------------------------------------------------------------
 
 class TestPathPrecedence:
@@ -261,3 +421,72 @@ class TestPathPrecedence:
         # set_embedder (custom class) called, set_embedder_named NOT called
         instance.set_embedder.assert_called_once()
         instance.set_embedder_named.assert_not_called()
+
+    def test_class_path_takes_precedence_over_model2vec(
+        self, embedded_module, embedders_module, mock_engine_class,
+        make_config, monkeypatch,
+    ):
+        # Custom class is the escape hatch — most specific user intent.
+        monkeypatch.setattr(embedders_module, "Model2VecEmbedder", _FakeModel2VecLoader)
+        _FakeModel2VecLoader.last_init = None
+        cfg = make_config(
+            embedder_class="tests.test_embedded._GoodEmbedder",
+            embedder_model2vec="minishlab/potion-base-8M",
+            embedding_dim=64,
+        )
+        embedded_module.EmbeddedYantrikDBClient(cfg)
+        # Model2VecEmbedder was NOT instantiated (class path won)
+        assert _FakeModel2VecLoader.last_init is None
+        # Engine got user-set dim (64), not the loader-probed dim (128)
+        assert mock_engine_class.call_args.kwargs["embedding_dim"] == 64
+
+    def test_model2vec_path_takes_precedence_over_hf(
+        self, embedded_module, embedders_module, mock_engine_class,
+        make_config, monkeypatch,
+    ):
+        # Both built-in loaders set: model2vec wins (alphabetical isn't
+        # the rule — the order is "lighter loader wins" because
+        # model2vec is the static-embedding family and faster to
+        # construct; users who want HF specifically should not set both).
+        monkeypatch.setattr(embedders_module, "Model2VecEmbedder", _FakeModel2VecLoader)
+        monkeypatch.setattr(
+            embedders_module, "SentenceTransformerEmbedder", _FakeHFLoader,
+        )
+        _FakeModel2VecLoader.last_init = None
+        _FakeHFLoader.last_init = None
+        cfg = make_config(
+            embedder_model2vec="minishlab/potion-base-8M",
+            embedder_huggingface="sentence-transformers/all-MiniLM-L6-v2",
+        )
+        embedded_module.EmbeddedYantrikDBClient(cfg)
+        # model2vec loader was used
+        assert _FakeModel2VecLoader.last_init is not None
+        # HF loader was NOT
+        assert _FakeHFLoader.last_init is None
+        assert mock_engine_class.call_args.kwargs["embedding_dim"] == 128
+
+    def test_hf_path_takes_precedence_over_named(
+        self, embedded_module, embedders_module, mock_engine_class,
+        make_config, monkeypatch,
+    ):
+        # HF (built-in loader, picks an exact HF model) wins over
+        # bundled-named (which depends on which named variants the
+        # engine version happens to ship).
+        monkeypatch.setattr(
+            embedders_module, "SentenceTransformerEmbedder", _FakeHFLoader,
+        )
+        _FakeHFLoader.last_init = None
+        cfg = make_config(
+            embedder_huggingface="sentence-transformers/all-MiniLM-L6-v2",
+            embedder_name="potion-base-8M",
+            embedding_dim=256,  # would apply to named path
+        )
+        embedded_module.EmbeddedYantrikDBClient(cfg)
+        # HF loader used
+        assert _FakeHFLoader.last_init is not None
+        # Engine got HF probed dim (384), not the user-set 256 from named path
+        assert mock_engine_class.call_args.kwargs["embedding_dim"] == 384
+        # set_embedder_named NOT called (HF path uses set_embedder)
+        instance = mock_engine_class.return_value
+        instance.set_embedder_named.assert_not_called()
+        instance.set_embedder.assert_called_once()

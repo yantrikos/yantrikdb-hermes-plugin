@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yantrikdb-hermes-plugin"
-version = "0.4.1"
+version = "0.4.2"
 description = "Self-maintaining memory plugin for Hermes Agent — embedded YantrikDB engine, ~10 MB, no server, no token, no GPU. Canonicalizes duplicates, surfaces contradictions, ranks with recency awareness, and explains recall."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -44,6 +44,18 @@ dev = [
   "ruff>=0.5",
   "mypy>=1.10",
   "types-requests",
+]
+# v0.4.2 builtin embedder loaders. Each extra pulls in only what its
+# loader actually needs; the default install stays slim. Pick one based
+# on the embedder family you want to use (model2vec for the lightweight
+# potion family including potion-multilingual-128M; sentence-transformers
+# for the broader HF ecosystem). Both can be installed together if you
+# want to A/B different embedders without uninstalling.
+model2vec = [
+  "model2vec>=0.3",
+]
+sentence-transformers = [
+  "sentence-transformers>=2.7",
 ]
 
 [project.urls]

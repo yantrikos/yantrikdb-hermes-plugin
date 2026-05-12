@@ -65,8 +65,10 @@ class YantrikDBConfig:
     # Embedded-only fields
     db_path: str = ""               # default $HERMES_HOME/yantrikdb-memory.db
     embedder_name: str = ""         # bundled potion-2M when empty; "potion-base-8M" / "potion-base-32M" for tier 2/3
-    embedder_class: str = ""        # dotted python path "pkg.module.Class" — instantiated and passed to db.set_embedder(); for custom embedders (e.g. multilingual, sentence-transformers wrappers)
-    embedding_dim: int = 0          # output dim of the embedder; required when embedder_name or embedder_class is set, ignored otherwise (bundled potion-2M is dim=64)
+    embedder_class: str = ""        # dotted python path "pkg.module.Class" — instantiated and passed to db.set_embedder(); for custom embedders
+    embedder_model2vec: str = ""    # HF model id for built-in Model2VecEmbedder loader (v0.4.2+); dim auto-probed
+    embedder_huggingface: str = ""  # HF model id for built-in SentenceTransformerEmbedder loader (v0.4.2+); dim auto-probed
+    embedding_dim: int = 0          # output dim; required for embedder_name and embedder_class paths, ignored for the two auto-probe paths above (bundled potion-2M is dim=64)
     # Shared fields
     namespace: str = DEFAULT_NAMESPACE
     top_k: int = DEFAULT_TOP_K
@@ -90,6 +92,8 @@ class YantrikDBConfig:
             db_path=os.environ.get("YANTRIKDB_DB_PATH", ""),
             embedder_name=os.environ.get("YANTRIKDB_EMBEDDER", ""),
             embedder_class=os.environ.get("YANTRIKDB_EMBEDDER_CLASS", ""),
+            embedder_model2vec=os.environ.get("YANTRIKDB_EMBEDDER_MODEL2VEC", ""),
+            embedder_huggingface=os.environ.get("YANTRIKDB_EMBEDDER_HF", ""),
             embedding_dim=_parse_int(os.environ.get("YANTRIKDB_EMBEDDING_DIM"), 0),
             skills_enabled=_parse_bool(
                 os.environ.get("YANTRIKDB_SKILLS_ENABLED"), default=False,

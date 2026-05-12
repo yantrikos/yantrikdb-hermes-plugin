@@ -161,6 +161,8 @@ def _clean_yantrikdb_env(monkeypatch):
         "YANTRIKDB_DB_PATH",
         "YANTRIKDB_EMBEDDER",
         "YANTRIKDB_EMBEDDER_CLASS",
+        "YANTRIKDB_EMBEDDER_MODEL2VEC",
+        "YANTRIKDB_EMBEDDER_HF",
         "YANTRIKDB_EMBEDDING_DIM",
         "YANTRIKDB_SKILLS_ENABLED",
     ):

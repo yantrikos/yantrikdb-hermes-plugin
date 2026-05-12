@@ -3,6 +3,43 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project aims for semantic versioning once merged into Hermes.
 
+## [0.4.2] — 2026-05-12 — First-class embedder loaders
+
+v0.4.1 shipped the config surface for swapping embedders, but the only embedder-class path required users to write a thin wrapper around `model2vec` or `sentence-transformers`. That's friction the plugin should absorb — most users asking about multilingual want `potion-multilingual-128M` (a model2vec model) or one of the well-known HF sentence-transformers, both of which are one-liners to load.
+
+v0.4.2 adds two first-class loaders so you can point at any Hugging Face model id directly, with no wrapper class to write and no `YANTRIKDB_EMBEDDING_DIM` to set (auto-probed).
+
+### Added
+
+- **`YANTRIKDB_EMBEDDER_MODEL2VEC`** — Hugging Face model id for the built-in `Model2VecEmbedder` loader (wraps `model2vec.StaticModel.from_pretrained`). Lightweight static-embedding family — no PyTorch dependency. Install with `pip install 'yantrikdb-hermes-plugin[model2vec]'`. Example: `YANTRIKDB_EMBEDDER_MODEL2VEC=minishlab/potion-multilingual-128M`.
+- **`YANTRIKDB_EMBEDDER_HF`** — Hugging Face model id for the built-in `SentenceTransformerEmbedder` loader (wraps `sentence_transformers.SentenceTransformer`). Covers the broader HF embedder ecosystem; pulls in PyTorch. Install with `pip install 'yantrikdb-hermes-plugin[sentence-transformers]'`. Example: `YANTRIKDB_EMBEDDER_HF=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
+- **Auto-probed dim** for the two new loaders — the plugin calls `.encode("__yantrikdb_probe__")` once during init, uses `len()` of the result as the dim, and passes that into `YantrikDB(db_path, embedding_dim=N)`. No `YANTRIKDB_EMBEDDING_DIM` env var needed for these paths.
+- **Two new pip extras**: `[model2vec]` and `[sentence-transformers]`. The default install stays slim; only users who pick one of the new paths pull the heavy dep.
+- **10 new tests** in `tests/test_embedded.py` covering the new loaders, auto-probe, missing-dependency actionable errors, and the extended precedence rules (151 tests total, all green).
+
+### Behavior changes
+
+- Path precedence is now: **CLASS > MODEL2VEC > HF > EMBEDDER (bundled-named) > default**. More-specific user intent wins: `_CLASS` is the most specific (exact Python class), the built-in loaders pick an exact HF model, `_EMBEDDER` depends on which named variants the engine version ships, and default is the fallback.
+- The `[model2vec]` and `[sentence-transformers]` extras can be installed together if you want to A/B different embedders without uninstalling.
+- The error message when `model2vec` or `sentence-transformers` is missing is now actionable — it points at the right pip extra by name.
+
+### Migration
+
+None required. With no embedder env vars set, the plugin behaves identically to v0.4.1 / v0.3.x.
+
+### Net install for multilingual
+
+```bash
+pip install 'yantrikdb-hermes-plugin[model2vec]'  # v0.4.2
+yantrikdb-hermes install ~/hermes-agent
+
+cat >> ~/.hermes/.env <<EOF
+YANTRIKDB_EMBEDDER_MODEL2VEC=minishlab/potion-multilingual-128M
+EOF
+```
+
+That's the whole integration — no Python wrapper to write, no dim to look up.
+
 ## [0.4.1] — 2026-05-12 — Unblock v0.4.0 publish (lint)
 
 Patch release: v0.4.0's tagged commit failed the publish workflow at the `ruff` gate (F841 — unused `client = ...` locals in three `tests/test_embedded.py` cases that assert against the mock instead of the returned client). PyPI never received v0.4.0; this is the first PyPI release of the pluggable-embedder feature.
