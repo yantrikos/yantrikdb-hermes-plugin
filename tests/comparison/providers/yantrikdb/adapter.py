@@ -29,7 +29,6 @@ sys.path.insert(0, str(_REPO_ROOT / "tests"))  # for the conftest stubs
 # Bootstrap the Hermes stubs the same way the unit-test conftest does, so
 # this adapter can run without a Hermes checkout.
 from conftest import _ensure_hermes_stubs, _load_plugin  # type: ignore  # noqa: E402
-
 from tests.comparison.probe import (  # noqa: E402
     FindingsRow,
     findings_to_yaml,

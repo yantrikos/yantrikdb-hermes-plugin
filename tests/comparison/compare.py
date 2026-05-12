@@ -60,8 +60,6 @@ def _format_row(provider: str, data: dict) -> str:
     name = f"**{provider}** (this)" if is_self else f"[{provider}](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/{provider})"
     backend = data.get("backend", {})
     hosting = backend.get("hosting", "unknown")
-    requires_account = _bool(backend.get("requires_account", "false"))
-    requires_server = _bool(backend.get("requires_separate_server", "false"))
     scale = data.get("scale", {})
     pk = data.get("precision_at_k", {})
     shape = data.get("response_shape", {})

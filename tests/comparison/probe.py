@@ -288,7 +288,7 @@ def probe_provider(
             it for it in items
             if isinstance(it, dict)
             and "dark mode" in (
-                (it.get("text") or it.get("content") or it.get("memory") or "")
+                it.get("text") or it.get("content") or it.get("memory") or ""
             ).lower()
         ]
         if dark_mode_hits:

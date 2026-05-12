@@ -20,19 +20,18 @@ Output is a richer ``ScaleFindingsRow`` serialised to ``findings_scale.yaml``.
 from __future__ import annotations
 
 import json
-import statistics
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from probe import (
-    PROVIDER_CALL_SHAPES,
-    _extract_result_items,
-    _find_tool,
     _SCORE_CANDIDATES,
     _SKILL_TOOL_RE,
     _WHY_RETRIEVED_CANDIDATES,
+    PROVIDER_CALL_SHAPES,
+    _extract_result_items,
+    _find_tool,
 )
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
