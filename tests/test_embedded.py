@@ -19,10 +19,9 @@ from __future__ import annotations
 
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -135,7 +134,7 @@ class TestDefaultEmbedderPath:
         self, embedded_module, mock_engine_class, make_config,
     ):
         cfg = make_config()  # no embedder_name, no embedder_class
-        client = embedded_module.EmbeddedYantrikDBClient(cfg)
+        embedded_module.EmbeddedYantrikDBClient(cfg)
         mock_engine_class.with_default.assert_called_once()
         # Plain constructor not called
         mock_engine_class.assert_not_called()
@@ -154,7 +153,7 @@ class TestNamedEmbedderPath:
         self, embedded_module, mock_engine_class, make_config,
     ):
         cfg = make_config(embedder_name="potion-base-8M", embedding_dim=256)
-        client = embedded_module.EmbeddedYantrikDBClient(cfg)
+        embedded_module.EmbeddedYantrikDBClient(cfg)
         # Constructed with explicit embedding_dim
         mock_engine_class.assert_called_once()
         ctor_call = mock_engine_class.call_args
@@ -188,7 +187,7 @@ class TestClassEmbedderPath:
             embedder_class="tests.test_embedded._GoodEmbedder",
             embedding_dim=64,
         )
-        client = embedded_module.EmbeddedYantrikDBClient(cfg)
+        embedded_module.EmbeddedYantrikDBClient(cfg)
         mock_engine_class.assert_called_once()
         assert mock_engine_class.call_args.kwargs["embedding_dim"] == 64
         instance = mock_engine_class.return_value

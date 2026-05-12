@@ -3,6 +3,16 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project aims for semantic versioning once merged into Hermes.
 
+## [0.4.1] — 2026-05-12 — Unblock v0.4.0 publish (lint)
+
+Patch release: v0.4.0's tagged commit failed the publish workflow at the `ruff` gate (F841 — unused `client = ...` locals in three `tests/test_embedded.py` cases that assert against the mock instead of the returned client). PyPI never received v0.4.0; this is the first PyPI release of the pluggable-embedder feature.
+
+### Fixed
+- Removed unused `client = ` assignments in `tests/test_embedded.py` so `ruff check` passes under CI's stricter config. Pure test-code cleanup; no behavior change in the plugin.
+
+### Note
+Functionally identical to v0.4.0. Use this if you want pluggable embedders on PyPI.
+
 ## [0.4.0] — 2026-05-12 — Pluggable embedders
 
 Lands the configuration surface for swapping the bundled embedder — driven by the first user inquiry on the repo ([Issue #1](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/1): multilingual embedding support). Default behavior is unchanged for existing users; the new env vars only matter if you want a non-default embedder.
