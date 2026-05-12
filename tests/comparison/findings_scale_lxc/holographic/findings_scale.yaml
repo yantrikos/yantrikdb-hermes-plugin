@@ -1,0 +1,49 @@
+provider: holographic
+version_under_test: 0.1.0
+verified_at: 2026-05-12
+verified_against: LXC 129 yantrik-memory-test / Hermes commit 4610551
+
+backend:
+  hosting: embedded
+  requires_account: "false"
+  requires_separate_server: "false"
+
+scale:
+  corpus_size_attempted: 1000
+  corpus_size_written: 1000
+  write_failures: 0
+  write_p50_ms: 23.43
+  write_p99_ms: 68.52
+  queries_attempted: 20
+  queries_completed: 20
+  recall_p50_ms: 0.06
+  recall_p99_ms: 0.23
+
+precision_at_k:
+  hits: 0
+  total_queries: 20
+  value: 0.0
+
+response_shape:
+  why_retrieved_field: false
+  why_retrieved_field_name: ""
+  per_result_score: false
+  per_result_metadata: false
+
+maintenance:
+  duplicate_canonicalized: "unknown"
+  duplicate_count_observed: 0.0
+  contradiction_surfaced: "false"
+  contradiction_api: ""
+
+skills:
+  skill_tools_in_schema: false
+  skill_tool_names: []
+
+evidence:
+  transcript_file: /root/bench-harness/findings_scale/holographic/transcript.md
+  raw_responses_dir: /root/bench-harness/findings_scale/holographic/raw
+
+couldnt_verify:
+  reason: ""
+  what_we_know_anyway: ""

@@ -23,6 +23,46 @@ from typing import Any
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
+# Per-provider call shapes. Different providers use genuinely different APIs:
+#   * yantrikdb/mem0/hindsight: paired (remember_tool, recall_tool) with simple args.
+#   * holographic: single fact_store tool, action-dispatched via args.action.
+#   * byterover/supermemory: depend on each plugin's __init__.py — added when verified.
+#
+# Each entry maps to (tool_name, args_factory). The args_factory takes the
+# fact-text or query string and returns the args dict the provider expects.
+#
+# When a provider isn't listed here, the probe falls back to keyword discovery
+# (looking for 'remember/store/add' for write, 'recall/search/query' for read).
+PROVIDER_CALL_SHAPES: dict[str, dict[str, Any]] = {
+    "yantrikdb": {
+        "remember_tool": "yantrikdb_remember",
+        # yantrikdb_remember requires `text` (verified from the tool schema
+        # via "Missing required parameter: text" error on first probe run).
+        "remember_args": lambda text: {"text": text},
+        "recall_tool": "yantrikdb_recall",
+        "recall_args": lambda query, top_k: {"query": query, "top_k": top_k},
+    },
+    "holographic": {
+        "remember_tool": "fact_store",
+        # Holographic uses action-dispatch: same tool, action argument selects op.
+        "remember_args": lambda text: {"action": "add", "content": text, "category": "general"},
+        "recall_tool": "fact_store",
+        "recall_args": lambda query, top_k: {"action": "search", "query": query, "limit": top_k},
+    },
+    "hindsight": {
+        # Tools observed on LXC: hindsight_retain, hindsight_recall, hindsight_reflect.
+        # Arg keys verified by reading plugins/memory/hindsight/__init__.py on LXC.
+        "remember_tool": "hindsight_retain",
+        "remember_args": lambda text: {"content": text},
+        "recall_tool": "hindsight_recall",
+        "recall_args": lambda query, top_k: {"query": query, "limit": top_k},
+    },
+    # mem0, honcho, openviking, byterover, retaindb, supermemory — added as
+    # each one is verified. The probe records "couldn't fit shape" honestly
+    # when no entry exists and keyword discovery fails.
+}
+
+
 def _load_fixtures() -> tuple[list[dict], list[dict]]:
     remember = json.loads((FIXTURES_DIR / "remember.json").read_text(encoding="utf-8"))
     recall = json.loads((FIXTURES_DIR / "recall.json").read_text(encoding="utf-8"))
@@ -161,23 +201,37 @@ def probe_provider(
         f"skill-related: {skill_tools or '(none)'}"
     )
 
-    # The remember/recall tool names vary per provider — discover them from
-    # the schema rather than hardcoding `{provider}_remember`.
-    remember_tool = _find_tool(schemas, ("remember", "store", "add"))
-    recall_tool = _find_tool(schemas, ("recall", "search", "query", "retrieve"))
-    if not remember_tool or not recall_tool:
-        row.contract_notes = (
-            f"could not locate remember/recall tools in schema; "
-            f"saw {[s.get('name') for s in schemas]}"
+    # The remember/recall tool names and arg shapes vary per provider. Use the
+    # explicit PROVIDER_CALL_SHAPES registry where available; fall back to
+    # keyword discovery otherwise (records the fallback in notes).
+    shape = PROVIDER_CALL_SHAPES.get(provider_name)
+    if shape:
+        remember_tool = shape["remember_tool"]
+        recall_tool = shape["recall_tool"]
+        remember_args_fn = shape["remember_args"]
+        recall_args_fn = shape["recall_args"]
+        _log(f"using explicit call shape: remember={remember_tool} recall={recall_tool}")
+    else:
+        remember_tool = _find_tool(schemas, ("remember", "store", "add"))
+        recall_tool = _find_tool(schemas, ("recall", "search", "query", "retrieve"))
+        remember_args_fn = lambda text: {"content": text, "text": text}  # noqa: E731
+        recall_args_fn = lambda query, top_k: {"query": query, "top_k": top_k}  # noqa: E731
+        _log(
+            f"fallback keyword discovery: remember={remember_tool!r} "
+            f"recall={recall_tool!r}"
         )
-        _log(f"✗ {row.contract_notes}")
-        return _finalise(row, transcript_lines, transcript_out, raw_dir)
-    _log(f"remember tool: {remember_tool}; recall tool: {recall_tool}")
+        if not remember_tool or not recall_tool:
+            row.contract_notes = (
+                f"could not locate remember/recall tools in schema and no entry in "
+                f"PROVIDER_CALL_SHAPES; saw {[s.get('name') for s in schemas]}"
+            )
+            _log(f"✗ {row.contract_notes}")
+            return _finalise(row, transcript_lines, transcript_out, raw_dir)
 
     # -- 3. remember the canonical facts ---------------------------------
     contradiction_response: Any = None
     for fact in facts:
-        args = {"content": fact["text"], "text": fact["text"]}  # we pass both keys; providers ignore unknowns
+        args = remember_args_fn(fact["text"])
         try:
             resp = provider.handle_tool_call(remember_tool, args)
             _dump_raw(f"remember-{fact['id']}-{fact['category']}", resp)
@@ -191,7 +245,7 @@ def probe_provider(
     # -- 4. recall the canonical queries ---------------------------------
     all_recall_responses: list[Any] = []
     for q in queries:
-        args = {"query": q["query"], "top_k": q["top_k"]}
+        args = recall_args_fn(q["query"], q["top_k"])
         try:
             resp = provider.handle_tool_call(recall_tool, args)
             _dump_raw(f"recall-{q['id']}", resp)

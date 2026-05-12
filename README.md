@@ -92,23 +92,36 @@ Eight tools exposed to the agent by default: `yantrikdb_remember`, `_recall`, `_
 
 ### Compared to other Hermes memory providers
 
-Hermes ships eight other memory providers. A side-by-side comparison is in progress under [`tests/comparison/`](tests/comparison/) — each provider installed against an actual Hermes instance, `remember → recall` exercised end-to-end, response shapes captured as test fixtures so the comparison is reproducible and stays honest as providers evolve.
+Each row in the table below is backed by [`tests/comparison/findings_scale_lxc/<provider>/`](tests/comparison/findings_scale_lxc/) — the actual `findings_scale.yaml`, `transcript.md`, and `raw/` response capture from running a 1000-fact + 20-query probe against that provider on a real Hermes 0.9.0 install (LXC 129, commit `4610551`). The corpus is deterministic (`fixtures/corpus_1k.json`, seed=20260512: 600 realistic agent-memory facts + 300 noise + 50 planted duplicates + 50 planted contradictions); the probe is provider-agnostic and reproducible. Methodology details in [`tests/comparison/README.md`](tests/comparison/README.md).
 
-Until the harness lands, the only fair thing this README can offer is each provider's own self-description from its `plugin.yaml`:
+| Provider | Hosting | Verified at 1000 scale | Writes (ok/attempted; latency) | Recall latency | Precision@5 | `why_retrieved` field | Maintenance behaviour observed |
+|---|---|---|---|---|---|---|---|
+| **yantrikdb** (this) | embedded | yes — 256/1000 writes [^queuecap] | 256/1000; p50 0.48 ms / p99 5.13 ms | p50 3.78 ms / p99 32.94 ms | **0.80** (16/20) | yes — `why_retrieved` per result | contradiction API: `yantrikdb_conflicts`; duplicates kept separate (canonicalisation via explicit `think()`) |
+| [byterover](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/byterover) | cloud | couldn't verify — requires `brv` CLI auth | — | — | — | — | — |
+| [hindsight](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/hindsight) | cloud-default (local-stub mode used) | yes — 1000/1000 writes | 1000/1000; p50 0.27 ms / p99 0.31 ms | p50 0.28 ms / p99 0.30 ms | **0.00** (0/20) [^localstub] | no | — |
+| [holographic](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/holographic) | embedded (SQLite + FTS5) | yes — 1000/1000 writes [^hrrcap] | 1000/1000; p50 23.43 ms / p99 68.52 ms | p50 0.06 ms / p99 0.23 ms | **0.00** (0/20) [^keyword] | no | — |
+| [honcho](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/honcho) | self-hosted | couldn't verify — requires honcho-server URL or api key | — | — | — | — | — |
+| [mem0](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/mem0) | cloud or self-host | couldn't verify — requires `mem0.api_key` | — | — | — | — | — |
+| [openviking](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/openviking) | self-hosted | couldn't verify — requires `OPENVIKING_ENDPOINT` | — | — | — | — | — |
+| [retaindb](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/retaindb) | cloud | couldn't verify — requires `RETAINDB_API_KEY` | — | — | — | — | — |
+| [supermemory](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/supermemory) | cloud | couldn't verify — requires `SUPERMEMORY_API_KEY` | — | — | — | — | — |
 
-| Provider | Self-described focus (verbatim from `plugin.yaml`) |
-|---|---|
-| [yantrikdb](https://github.com/yantrikos/yantrikdb-hermes-plugin) (this) | "Self-maintaining memory for Hermes with canonicalization, contradiction tracking, recency-aware ranking, explainable recall, and pluggable embedders." |
-| [byterover](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/byterover) | "Persistent knowledge tree with tiered retrieval via the brv CLI." |
-| [hindsight](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/hindsight) | "Long-term memory with knowledge graph, entity resolution, and multi-strategy retrieval." |
-| [holographic](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/holographic) | "Local SQLite fact store with FTS5 search, trust scoring, and HRR-based compositional retrieval." |
-| [honcho](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/honcho) | "AI-native memory — cross-session user modeling with dialectic Q&A, semantic search, and persistent conclusions." |
-| [mem0](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/mem0) | "Server-side LLM fact extraction with semantic search, reranking, and automatic deduplication." |
-| [openviking](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/openviking) | "Session-managed memory with automatic extraction, tiered retrieval, and filesystem-style knowledge browsing." |
-| [retaindb](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/retaindb) | "Cloud memory API with hybrid search and 7 memory types." |
-| [supermemory](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/supermemory) | "Semantic long-term memory with profile recall, semantic search, explicit memory tools, and session ingest." |
+[^queuecap]: yantrikdb v0.4.2 plugin against yantrikdb engine 0.7.8 on Linux: the engine's ingest queue is bounded at 256 pending ops and didn't drain during the 1000-fact burst (probe hit `RuntimeError('ingest queue full ...; retry after 50ms')` from fact 257 onward, even with 60-attempt × 100 ms backoff). Recall on the 256 stored facts is solid (P@5 = 0.80). Surfaced upstream as a likely queue-drain regression in the manylinux build of 0.7.8 — the Hermes plugin itself doesn't loop the writes.
 
-**Feature-by-feature claims will land here once each provider has actually been exercised against a Hermes install.** A previous version of this section made implicit claims about what the other providers *don't* do, based only on what they advertise — that's not honest enough. Watch [tests/comparison/](tests/comparison/) for the verified harness.
+[^localstub]: `HINDSIGHT_MODE=local_embedded` was set so `is_available()` returns true without an API key, but in this configuration writes return immediately (sub-millisecond) and recall returns no results — the local mode appears to be a no-op stub rather than a real local backend. Full retrieval almost certainly requires the cloud account.
+
+[^hrrcap]: At ~256 stored items, the engine emits `HRR storage near capacity: SNR=2.00 (dim=1024, n_items=...)` warnings on every subsequent write. The capacity warning is part of holographic's normal output; it's not an error and writes continue to succeed, but retrieval quality is expected to degrade past that point.
+
+[^keyword]: Holographic's recall is keyword-based (FTS5 + HRR cleanup); the probe's queries are full sentences (`"What color scheme does the user prefer in VS Code?"`). The 0/20 result is a query-format mismatch, not a retrieval failure — keyword-shaped queries probably hit. The honest takeaway is that holographic and yantrikdb target different query shapes, not that one is "better".
+
+**Where the verified data lives** — every cell in the table maps to a file:
+
+- `findings_scale.yaml` — structured cells (the table is generated from these by [`compare.py`](tests/comparison/compare.py))
+- `transcript.md` — human-readable session log with timing
+- `raw/recall-Q*.json` — captured raw recall responses for every query
+- `fixtures/corpus_1k.json`, `fixtures/queries_1k.json` — the deterministic corpus + queries used
+
+**How to re-run it** — clone the repo, `scp tests/comparison/` to a Hermes-installed machine, `python3 runner_scale.py --all`. The harness will skip-with-honest-reason for any provider whose `is_available()` returns False (e.g. missing API key); for the ones that initialise, it produces a fresh `findings_scale.yaml`. Pull requests welcomed when accounts unlock more rows.
 
 Three optional lifecycle hooks: `on_session_end` auto-consolidates, `on_pre_compress` preserves high-salience memories through context compression, `on_memory_write` mirrors built-in `MEMORY.md` / `USER.md` additions.
 

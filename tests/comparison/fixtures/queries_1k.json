@@ -1,0 +1,148 @@
+{
+  "_meta": {
+    "seed": 20260512,
+    "count": 20
+  },
+  "queries": [
+    {
+      "id": "Q-real-01",
+      "query": "What technology does ridge use?",
+      "target_text": "Project ridge launches in September 2026.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-real-02",
+      "query": "What is Taylor's role?",
+      "target_text": "Taylor reports to Carol.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-real-03",
+      "query": "What is Jack's role?",
+      "target_text": "Jack reports to Frank.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-real-04",
+      "query": "What auto-format does the user prefer in Vim?",
+      "target_text": "The user prefers manually only as their auto-format in Vim.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-real-05",
+      "query": "What tab width does the user prefer in VS Code?",
+      "target_text": "The user prefers tabs as their tab width in VS Code.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-real-06",
+      "query": "What technology does echo use?",
+      "target_text": "Project echo targets 1,000 monthly active users.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-real-07",
+      "query": "What tab width does the user prefer in iTerm2?",
+      "target_text": "The user prefers 4 spaces as their tab width in iTerm2.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-real-08",
+      "query": "What is Dave's role?",
+      "target_text": "Dave reports to Liam.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-real-09",
+      "query": "What is Bob's role?",
+      "target_text": "Bob reports to Grace.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-real-10",
+      "query": "What git GUI does the user prefer in VS Code?",
+      "target_text": "The user prefers Fork as their git GUI in VS Code.",
+      "target_kind": "real_fact",
+      "top_k": 5
+    },
+    {
+      "id": "Q-dup-01",
+      "query": "What does the user prefer about nord?",
+      "target_text": "The user prefers nord as their color scheme in IntelliJ.",
+      "target_kind": "duplicate",
+      "top_k": 5
+    },
+    {
+      "id": "Q-dup-02",
+      "query": "What does the user prefer about 16pt?",
+      "target_text": "The user prefers 16pt as their font size in Vim.",
+      "target_kind": "duplicate",
+      "top_k": 5
+    },
+    {
+      "id": "Q-dup-03",
+      "query": "What does the user prefer about manually only?",
+      "target_text": "The user prefers manually only as their auto-format in Vim.",
+      "target_kind": "duplicate",
+      "top_k": 5
+    },
+    {
+      "id": "Q-dup-04",
+      "query": "What does the user prefer about Project compass targets 100,00?",
+      "target_text": "Project compass targets 100,000 monthly active users.",
+      "target_kind": "duplicate",
+      "top_k": 5
+    },
+    {
+      "id": "Q-dup-05",
+      "query": "What does the user prefer about Project echo launches in Septe?",
+      "target_text": "Project echo launches in September 2026.",
+      "target_kind": "duplicate",
+      "top_k": 5
+    },
+    {
+      "id": "Q-contra-01",
+      "query": "What is the user's preference for Warp?",
+      "target_text": "The user prefers Iosevka as their font in Warp.",
+      "target_kind": "contradiction",
+      "top_k": 5
+    },
+    {
+      "id": "Q-contra-02",
+      "query": "What is the user's preference for iTerm2?",
+      "target_text": "The user prefers 4 spaces as their tab width in iTerm2.",
+      "target_kind": "contradiction",
+      "top_k": 5
+    },
+    {
+      "id": "Q-contra-03",
+      "query": "What is the user's preference for fish shell?",
+      "target_text": "The user prefers Hack as their font in fish shell.",
+      "target_kind": "contradiction",
+      "top_k": 5
+    },
+    {
+      "id": "Q-contra-04",
+      "query": "What is the user's preference for Warp?",
+      "target_text": "The user prefers Source Code Pro as their font in Warp.",
+      "target_kind": "contradiction",
+      "top_k": 5
+    },
+    {
+      "id": "Q-contra-05",
+      "query": "What is the user's preference for kitty?",
+      "target_text": "The user prefers 2 spaces as their tab width in kitty.",
+      "target_kind": "contradiction",
+      "top_k": 5
+    }
+  ]
+}

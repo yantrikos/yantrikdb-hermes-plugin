@@ -1,0 +1,49 @@
+provider: yantrikdb
+version_under_test: 0.4.2
+verified_at: 2026-05-12
+verified_against: LXC 129 yantrik-memory-test / Hermes commit 4610551
+
+backend:
+  hosting: embedded
+  requires_account: "false"
+  requires_separate_server: "false"
+
+scale:
+  corpus_size_attempted: 1000
+  corpus_size_written: 256
+  write_failures: 100
+  write_p50_ms: 0.48
+  write_p99_ms: 5.13
+  queries_attempted: 20
+  queries_completed: 20
+  recall_p50_ms: 3.78
+  recall_p99_ms: 32.94
+
+precision_at_k:
+  hits: 16
+  total_queries: 20
+  value: 0.8
+
+response_shape:
+  why_retrieved_field: true
+  why_retrieved_field_name: why_retrieved
+  per_result_score: true
+  per_result_metadata: false
+
+maintenance:
+  duplicate_canonicalized: "false"
+  duplicate_count_observed: 5.0
+  contradiction_surfaced: "true"
+  contradiction_api: yantrikdb_conflicts
+
+skills:
+  skill_tools_in_schema: false
+  skill_tool_names: []
+
+evidence:
+  transcript_file: /root/bench-harness/findings_scale/yantrikdb/transcript.md
+  raw_responses_dir: /root/bench-harness/findings_scale/yantrikdb/raw
+
+couldnt_verify:
+  reason: write phase exceeded 600.0s; aborted at fact 357
+  what_we_know_anyway: ""

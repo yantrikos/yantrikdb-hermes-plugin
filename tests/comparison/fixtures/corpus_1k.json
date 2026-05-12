@@ -1,0 +1,7008 @@
+{
+  "_meta": {
+    "seed": 20260512,
+    "count": 1000
+  },
+  "facts": [
+    {
+      "id": 1,
+      "text": "The user prefers 13pt as their font size in alacritty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 2,
+      "text": "The user prefers manually only as their auto-format in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 3,
+      "text": "The user prefers never as their auto-format in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 4,
+      "text": "The user prefers 2 spaces as their tab width in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 5,
+      "text": "The user prefers LF as their line endings in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 6,
+      "text": "The user prefers manually only as their auto-format in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 7,
+      "text": "The user prefers never as their auto-format in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 8,
+      "text": "The user prefers Cascadia Code as their font in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 9,
+      "text": "The user prefers Source Code Pro as their font in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 10,
+      "text": "The user prefers LF as their line endings in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 11,
+      "text": "The user prefers high-contrast as their color scheme in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 12,
+      "text": "The user prefers GitKraken as their git GUI in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 13,
+      "text": "The user prefers manually only as their auto-format in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 14,
+      "text": "The user prefers 2 spaces as their tab width in Emacs.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 15,
+      "text": "The user prefers 14pt as their font size in tmux.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 16,
+      "text": "The user prefers never as their auto-format in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 17,
+      "text": "The user prefers 12pt as their font size in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 18,
+      "text": "The user prefers 16pt as their font size in alacritty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 19,
+      "text": "The user prefers 12pt as their font size in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 20,
+      "text": "The user prefers Iosevka as their font in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 21,
+      "text": "The user prefers JetBrains Mono as their font in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 22,
+      "text": "The user prefers tabs as their tab width in Emacs.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 23,
+      "text": "The user prefers Hack as their font in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 24,
+      "text": "The user prefers GitKraken as their git GUI in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 25,
+      "text": "The user prefers Iosevka as their font in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 26,
+      "text": "The user prefers never as their auto-format in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 27,
+      "text": "The user prefers Fork as their git GUI in Zed.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 28,
+      "text": "The user prefers Fira Code as their font in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 29,
+      "text": "The user prefers tig as their git GUI in zsh.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 30,
+      "text": "The user prefers Hack as their font in PyCharm.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 31,
+      "text": "The user prefers on save as their auto-format in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 32,
+      "text": "The user prefers nord as their color scheme in Emacs.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 33,
+      "text": "The user prefers lazygit as their git GUI in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 34,
+      "text": "The user prefers manually only as their auto-format in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 35,
+      "text": "The user prefers 13pt as their font size in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 36,
+      "text": "The user prefers GitKraken as their git GUI in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 37,
+      "text": "The user prefers tabs as their tab width in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 38,
+      "text": "The user prefers 16pt as their font size in Neovim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 39,
+      "text": "The user prefers Source Code Pro as their font in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 40,
+      "text": "The user prefers on save as their auto-format in tmux.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 41,
+      "text": "The user prefers command line only as their git GUI in tmux.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 42,
+      "text": "The user prefers lazygit as their git GUI in tmux.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 43,
+      "text": "The user prefers 15pt as their font size in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 44,
+      "text": "The user prefers 2 spaces as their tab width in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 45,
+      "text": "The user prefers light mode as their color scheme in zsh.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 46,
+      "text": "The user prefers JetBrains Mono as their font in tmux.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 47,
+      "text": "The user prefers 2 spaces as their tab width in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 48,
+      "text": "The user prefers 12pt as their font size in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 49,
+      "text": "The user prefers 16pt as their font size in Neovim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 50,
+      "text": "The user prefers 13pt as their font size in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 51,
+      "text": "The user prefers lazygit as their git GUI in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 52,
+      "text": "The user prefers manually only as their auto-format in alacritty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 53,
+      "text": "The user prefers CRLF as their line endings in Neovim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 54,
+      "text": "The user prefers gruvbox as their color scheme in PyCharm.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 55,
+      "text": "The user prefers 16pt as their font size in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 56,
+      "text": "The user prefers high-contrast as their color scheme in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 57,
+      "text": "The user prefers 4 spaces as their tab width in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 58,
+      "text": "The user prefers tabs as their tab width in tmux.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 59,
+      "text": "The user prefers 15pt as their font size in Zed.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 60,
+      "text": "The user prefers 14pt as their font size in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 61,
+      "text": "The user prefers LF as their line endings in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 62,
+      "text": "The user prefers manually only as their auto-format in PyCharm.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 63,
+      "text": "The user prefers Fork as their git GUI in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 64,
+      "text": "The user prefers Source Code Pro as their font in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 65,
+      "text": "The user prefers GitKraken as their git GUI in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 66,
+      "text": "The user prefers Cascadia Code as their font in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 67,
+      "text": "The user prefers tig as their git GUI in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 68,
+      "text": "The user prefers light mode as their color scheme in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 69,
+      "text": "The user prefers 2 spaces as their tab width in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 70,
+      "text": "The user prefers command line only as their git GUI in PyCharm.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 71,
+      "text": "The user prefers 14pt as their font size in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 72,
+      "text": "The user prefers never as their auto-format in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 73,
+      "text": "The user prefers 12pt as their font size in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 74,
+      "text": "The user prefers never as their auto-format in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 75,
+      "text": "The user prefers CRLF as their line endings in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 76,
+      "text": "The user prefers 13pt as their font size in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 77,
+      "text": "The user prefers Source Code Pro as their font in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 78,
+      "text": "The user prefers Iosevka as their font in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 79,
+      "text": "The user prefers 4 spaces as their tab width in zsh.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 80,
+      "text": "The user prefers lazygit as their git GUI in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 81,
+      "text": "The user prefers solarized dark as their color scheme in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 82,
+      "text": "The user prefers 4 spaces as their tab width in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 83,
+      "text": "The user prefers JetBrains Mono as their font in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 84,
+      "text": "The user prefers JetBrains Mono as their font in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 85,
+      "text": "The user prefers Cascadia Code as their font in zsh.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 86,
+      "text": "The user prefers 2 spaces as their tab width in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 87,
+      "text": "The user prefers on save as their auto-format in Emacs.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 88,
+      "text": "The user prefers never as their auto-format in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 89,
+      "text": "The user prefers Fork as their git GUI in Emacs.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 90,
+      "text": "The user prefers command line only as their git GUI in Zed.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 91,
+      "text": "The user prefers Source Code Pro as their font in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 92,
+      "text": "The user prefers CRLF as their line endings in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 93,
+      "text": "The user prefers manually only as their auto-format in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 94,
+      "text": "The user prefers tokyo night as their color scheme in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 95,
+      "text": "The user prefers dark mode as their color scheme in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 96,
+      "text": "The user prefers catppuccin as their color scheme in Sublime Text.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 97,
+      "text": "The user prefers Iosevka as their font in zsh.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 98,
+      "text": "The user prefers lazygit as their git GUI in tmux.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 99,
+      "text": "The user prefers manually only as their auto-format in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 100,
+      "text": "The user prefers 14pt as their font size in Sublime Text.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 101,
+      "text": "The user prefers tokyo night as their color scheme in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 102,
+      "text": "The user prefers 4 spaces as their tab width in VS Code.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 103,
+      "text": "The user prefers high-contrast as their color scheme in zsh.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 104,
+      "text": "The user prefers Hack as their font in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 105,
+      "text": "The user prefers LF as their line endings in Zed.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 106,
+      "text": "The user prefers manually only as their auto-format in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 107,
+      "text": "The user prefers Source Code Pro as their font in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 108,
+      "text": "The user prefers light mode as their color scheme in Sublime Text.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 109,
+      "text": "The user prefers CRLF as their line endings in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 110,
+      "text": "The user prefers LF as their line endings in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 111,
+      "text": "The user prefers CRLF as their line endings in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 112,
+      "text": "The user prefers command line only as their git GUI in Neovim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 113,
+      "text": "The user prefers tokyo night as their color scheme in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 114,
+      "text": "The user prefers manually only as their auto-format in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 115,
+      "text": "The user prefers light mode as their color scheme in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 116,
+      "text": "The user prefers 4 spaces as their tab width in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 117,
+      "text": "The user prefers Fork as their git GUI in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 118,
+      "text": "The user prefers Hack as their font in PyCharm.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 119,
+      "text": "The user prefers nord as their color scheme in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 120,
+      "text": "The user prefers 2 spaces as their tab width in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 121,
+      "text": "The user prefers 12pt as their font size in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 122,
+      "text": "The user prefers Cascadia Code as their font in Zed.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 123,
+      "text": "The user prefers Fork as their git GUI in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 124,
+      "text": "The user prefers tabs as their tab width in Zed.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 125,
+      "text": "The user prefers Fork as their git GUI in VS Code.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 126,
+      "text": "The user prefers solarized dark as their color scheme in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 127,
+      "text": "The user prefers gruvbox as their color scheme in Zed.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 128,
+      "text": "The user prefers tabs as their tab width in VS Code.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 129,
+      "text": "The user prefers Source Code Pro as their font in zsh.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 130,
+      "text": "The user prefers JetBrains Mono as their font in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 131,
+      "text": "The user prefers manually only as their auto-format in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 132,
+      "text": "The user prefers never as their auto-format in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 133,
+      "text": "The user prefers 16pt as their font size in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 134,
+      "text": "The user prefers 2 spaces as their tab width in zsh.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 135,
+      "text": "The user prefers tabs as their tab width in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 136,
+      "text": "The user prefers LF as their line endings in Neovim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 137,
+      "text": "The user prefers 4 spaces as their tab width in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 138,
+      "text": "The user prefers on save as their auto-format in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 139,
+      "text": "The user prefers nord as their color scheme in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 140,
+      "text": "The user prefers nord as their color scheme in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 141,
+      "text": "The user prefers JetBrains Mono as their font in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 142,
+      "text": "The user prefers never as their auto-format in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 143,
+      "text": "The user prefers on save as their auto-format in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 144,
+      "text": "The user prefers Cascadia Code as their font in Zed.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 145,
+      "text": "The user prefers JetBrains Mono as their font in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 146,
+      "text": "The user prefers 16pt as their font size in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 147,
+      "text": "The user prefers on save as their auto-format in Neovim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 148,
+      "text": "The user prefers GitKraken as their git GUI in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 149,
+      "text": "The user prefers Hack as their font in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 150,
+      "text": "The user prefers lazygit as their git GUI in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 151,
+      "text": "The user prefers LF as their line endings in Hyper.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 152,
+      "text": "The user prefers lazygit as their git GUI in Sublime Text.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 153,
+      "text": "The user prefers GitKraken as their git GUI in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 154,
+      "text": "The user prefers on save as their auto-format in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 155,
+      "text": "The user prefers Cascadia Code as their font in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 156,
+      "text": "The user prefers 4 spaces as their tab width in fish shell.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 157,
+      "text": "The user prefers gruvbox as their color scheme in Sublime Text.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 158,
+      "text": "The user prefers 13pt as their font size in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 159,
+      "text": "The user prefers CRLF as their line endings in VS Code.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 160,
+      "text": "The user prefers nord as their color scheme in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 161,
+      "text": "The user prefers Fork as their git GUI in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 162,
+      "text": "The user prefers tig as their git GUI in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 163,
+      "text": "The user prefers solarized dark as their color scheme in Zed.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 164,
+      "text": "The user prefers 12pt as their font size in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 165,
+      "text": "The user prefers LF as their line endings in Terminal.app.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 166,
+      "text": "The user prefers Source Code Pro as their font in Emacs.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 167,
+      "text": "The user prefers LF as their line endings in alacritty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 168,
+      "text": "The user prefers on save as their auto-format in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 169,
+      "text": "The user prefers lazygit as their git GUI in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 170,
+      "text": "The user prefers 16pt as their font size in tmux.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 171,
+      "text": "The user prefers light mode as their color scheme in Cursor.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 172,
+      "text": "The user prefers 15pt as their font size in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 173,
+      "text": "The user prefers manually only as their auto-format in Windsurf.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 174,
+      "text": "The user prefers 4 spaces as their tab width in VS Code.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 175,
+      "text": "The user prefers manually only as their auto-format in kitty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 176,
+      "text": "The user prefers CRLF as their line endings in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 177,
+      "text": "The user prefers tokyo night as their color scheme in tmux.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 178,
+      "text": "The user prefers Source Code Pro as their font in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 179,
+      "text": "The user prefers tabs as their tab width in PyCharm.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 180,
+      "text": "The user prefers on save as their auto-format in PyCharm.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 181,
+      "text": "The user prefers lazygit as their git GUI in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 182,
+      "text": "The user prefers on save as their auto-format in VS Code.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 183,
+      "text": "The user prefers never as their auto-format in Warp.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 184,
+      "text": "The user prefers 15pt as their font size in Emacs.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 185,
+      "text": "The user prefers manually only as their auto-format in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 186,
+      "text": "The user prefers tabs as their tab width in Sublime Text.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 187,
+      "text": "The user prefers 15pt as their font size in Emacs.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 188,
+      "text": "The user prefers GitKraken as their git GUI in Neovim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 189,
+      "text": "The user prefers 12pt as their font size in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 190,
+      "text": "The user prefers never as their auto-format in VS Code.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 191,
+      "text": "The user prefers 12pt as their font size in zsh.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 192,
+      "text": "The user prefers manually only as their auto-format in alacritty.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 193,
+      "text": "The user prefers LF as their line endings in IntelliJ.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 194,
+      "text": "The user prefers gruvbox as their color scheme in PyCharm.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 195,
+      "text": "The user prefers Source Code Pro as their font in Vim.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 196,
+      "text": "The user prefers 16pt as their font size in VS Code.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 197,
+      "text": "The user prefers tabs as their tab width in VS Code.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 198,
+      "text": "The user prefers lazygit as their git GUI in Emacs.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 199,
+      "text": "The user prefers JetBrains Mono as their font in iTerm2.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 200,
+      "text": "The user prefers on save as their auto-format in bash.",
+      "category": "preference",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 201,
+      "text": "Project nexus supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 202,
+      "text": "Project beacon targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 203,
+      "text": "Project prism launches in September 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 204,
+      "text": "Project atlas uses Kafka for event streaming.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 205,
+      "text": "Project echo targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 206,
+      "text": "Project lattice uses TypeScript for the client.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 207,
+      "text": "Project ridge launches in March 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 208,
+      "text": "Project tundra uses Python for data pipelines.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 209,
+      "text": "Project monolith uses FastAPI for the API layer.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 210,
+      "text": "Project ridge supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 211,
+      "text": "Project harbor targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 212,
+      "text": "Project tundra supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 213,
+      "text": "Project orbit uses Tailwind for styling.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 214,
+      "text": "Project kestrel targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 215,
+      "text": "Project summit uses Kubernetes for orchestration.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 216,
+      "text": "Project kestrel uses TypeScript for the client.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 217,
+      "text": "Project delta launches in June 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 218,
+      "text": "Project nexus supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 219,
+      "text": "Project kestrel supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 220,
+      "text": "Project monolith launches in September 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 221,
+      "text": "Project echo uses Tailwind for styling.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 222,
+      "text": "Project ridge launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 223,
+      "text": "Project atlas launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 224,
+      "text": "Project orbit supports 5 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 225,
+      "text": "Project prism launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 226,
+      "text": "Project nexus uses Go for the orchestrator.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 227,
+      "text": "Project quartz launches in September 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 228,
+      "text": "Project delta uses Rust for performance-critical paths.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 229,
+      "text": "Project fjord supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 230,
+      "text": "Project beacon uses Tailwind for styling.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 231,
+      "text": "Project nexus uses Python for data pipelines.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 232,
+      "text": "Project junction launches in November 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 233,
+      "text": "Project echo uses Tailwind for styling.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 234,
+      "text": "Project glacier uses Next.js for server-side rendering.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 235,
+      "text": "Project monolith targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 236,
+      "text": "Project nexus supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 237,
+      "text": "Project quartz uses Grafana for dashboards.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 238,
+      "text": "Project monolith launches in March 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 239,
+      "text": "Project summit targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 240,
+      "text": "Project delta supports 5 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 241,
+      "text": "Project iris launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 242,
+      "text": "Project glacier uses Sentry for error tracking.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 243,
+      "text": "Project kestrel targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 244,
+      "text": "Project fjord supports 27 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 245,
+      "text": "Project orbit launches in November 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 246,
+      "text": "Project iris targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 247,
+      "text": "Project orbit supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 248,
+      "text": "Project compass targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 249,
+      "text": "Project fjord supports 5 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 250,
+      "text": "Project monolith uses React for the frontend.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 251,
+      "text": "Project prism supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 252,
+      "text": "Project atlas targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 253,
+      "text": "Project fjord launches in November 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 254,
+      "text": "Project iris supports 27 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 255,
+      "text": "Project junction uses Rust for performance-critical paths.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 256,
+      "text": "Project quartz uses Rust for performance-critical paths.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 257,
+      "text": "Project monolith supports 5 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 258,
+      "text": "Project ridge targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 259,
+      "text": "Project ridge uses Prometheus for metrics.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 260,
+      "text": "Project ridge launches in March 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 261,
+      "text": "Project prism supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 262,
+      "text": "Project iris launches in June 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 263,
+      "text": "Project delta uses Docker for containerization.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 264,
+      "text": "Project harbor launches in March 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 265,
+      "text": "Project harbor launches in November 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 266,
+      "text": "Project quartz targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 267,
+      "text": "Project ridge uses Kafka for event streaming.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 268,
+      "text": "Project monolith supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 269,
+      "text": "Project echo supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 270,
+      "text": "Project echo supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 271,
+      "text": "Project kestrel uses React for the frontend.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 272,
+      "text": "Project echo launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 273,
+      "text": "Project quartz targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 274,
+      "text": "Project beacon supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 275,
+      "text": "Project quartz launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 276,
+      "text": "Project orbit supports 5 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 277,
+      "text": "Project echo launches in March 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 278,
+      "text": "Project kestrel uses Kafka for event streaming.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 279,
+      "text": "Project summit targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 280,
+      "text": "Project fjord launches in November 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 281,
+      "text": "Project ridge supports 27 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 282,
+      "text": "Project delta launches in March 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 283,
+      "text": "Project lattice supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 284,
+      "text": "Project delta supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 285,
+      "text": "Project tundra supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 286,
+      "text": "Project atlas targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 287,
+      "text": "Project summit targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 288,
+      "text": "Project beacon launches in March 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 289,
+      "text": "Project ridge uses PostgreSQL for primary storage.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 290,
+      "text": "Project glacier supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 291,
+      "text": "Project junction launches in March 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 292,
+      "text": "Project nexus supports 5 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 293,
+      "text": "Project beacon targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 294,
+      "text": "Project orbit targets 10,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 295,
+      "text": "Project compass launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 296,
+      "text": "Project atlas targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 297,
+      "text": "Project lattice launches in June 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 298,
+      "text": "Project harbor targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 299,
+      "text": "Project echo targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 300,
+      "text": "Project iris supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 301,
+      "text": "Project glacier supports 27 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 302,
+      "text": "Project beacon supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 303,
+      "text": "Project echo uses PostgreSQL for primary storage.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 304,
+      "text": "Project echo targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 305,
+      "text": "Project compass launches in November 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 306,
+      "text": "Project ridge targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 307,
+      "text": "Project orbit uses PostgreSQL for primary storage.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 308,
+      "text": "Project fjord targets 10,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 309,
+      "text": "Project monolith supports 5 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 310,
+      "text": "Project compass launches in November 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 311,
+      "text": "Project harbor launches in November 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 312,
+      "text": "Project atlas supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 313,
+      "text": "Project prism supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 314,
+      "text": "Project echo uses Go for the orchestrator.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 315,
+      "text": "Project echo targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 316,
+      "text": "Project quartz supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 317,
+      "text": "Project ridge launches in March 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 318,
+      "text": "Project orbit targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 319,
+      "text": "Project echo targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 320,
+      "text": "Project beacon supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 321,
+      "text": "Project ridge launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 322,
+      "text": "Project nexus uses Kafka for event streaming.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 323,
+      "text": "Project fjord targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 324,
+      "text": "Project quartz targets 10,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 325,
+      "text": "Project compass supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 326,
+      "text": "Project delta targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 327,
+      "text": "Project delta supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 328,
+      "text": "Project atlas launches in November 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 329,
+      "text": "Project summit supports 27 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 330,
+      "text": "Project tundra targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 331,
+      "text": "Project nexus targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 332,
+      "text": "Project summit launches in June 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 333,
+      "text": "Project fjord supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 334,
+      "text": "Project compass launches in March 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 335,
+      "text": "Project junction supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 336,
+      "text": "Project orbit supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 337,
+      "text": "Project beacon uses Rust for performance-critical paths.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 338,
+      "text": "Project compass launches in November 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 339,
+      "text": "Project prism launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 340,
+      "text": "Project compass targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 341,
+      "text": "Project compass launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 342,
+      "text": "Project quartz targets 10,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 343,
+      "text": "Project iris targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 344,
+      "text": "Project ridge launches in June 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 345,
+      "text": "Project echo launches in November 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 346,
+      "text": "Project junction targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 347,
+      "text": "Project compass launches in March 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 348,
+      "text": "Project delta supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 349,
+      "text": "Project fjord targets 10,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 350,
+      "text": "Project fjord uses S3 for object storage.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 351,
+      "text": "Project iris targets 10,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 352,
+      "text": "Project atlas supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 353,
+      "text": "Project glacier supports 12 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 354,
+      "text": "Project compass launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 355,
+      "text": "Project lattice uses PostgreSQL for primary storage.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 356,
+      "text": "Project nexus uses TypeScript for the client.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 357,
+      "text": "Project prism uses OpenTelemetry for tracing.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 358,
+      "text": "Project beacon supports 27 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 359,
+      "text": "Project summit targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 360,
+      "text": "Project kestrel launches in November 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 361,
+      "text": "Project ridge uses ClickHouse for analytics.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 362,
+      "text": "Project orbit uses Tailwind for styling.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 363,
+      "text": "Project atlas targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 364,
+      "text": "Project tundra supports 27 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 365,
+      "text": "Project nexus supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 366,
+      "text": "Project prism launches in June 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 367,
+      "text": "Project beacon uses Docker for containerization.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 368,
+      "text": "Project ridge uses OpenTelemetry for tracing.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 369,
+      "text": "Project junction uses OpenTelemetry for tracing.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 370,
+      "text": "Project kestrel launches in November 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 371,
+      "text": "Project beacon supports 5 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 372,
+      "text": "Project monolith targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 373,
+      "text": "Project atlas launches in November 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 374,
+      "text": "Project delta targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 375,
+      "text": "Project orbit uses Prometheus for metrics.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 376,
+      "text": "Project junction targets 1,000,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 377,
+      "text": "Project echo targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 378,
+      "text": "Project compass uses Kafka for event streaming.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 379,
+      "text": "Project echo launches in November 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 380,
+      "text": "Project orbit targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 381,
+      "text": "Project ridge supports 27 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 382,
+      "text": "Project nexus targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 383,
+      "text": "Project summit launches in September 2026.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 384,
+      "text": "Project tundra uses S3 for object storage.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 385,
+      "text": "Project glacier targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 386,
+      "text": "Project kestrel uses Tailwind for styling.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 387,
+      "text": "Project prism supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 388,
+      "text": "Project prism targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 389,
+      "text": "Project echo targets 1,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 390,
+      "text": "Project iris supports 3 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 391,
+      "text": "Project harbor targets 10,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 392,
+      "text": "Project harbor uses S3 for object storage.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 393,
+      "text": "Project kestrel uses Grafana for dashboards.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 394,
+      "text": "Project kestrel uses Elasticsearch for search.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 395,
+      "text": "Project orbit uses Sentry for error tracking.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 396,
+      "text": "Project compass uses Elasticsearch for search.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 397,
+      "text": "Project orbit supports 42 locales.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 398,
+      "text": "Project fjord uses ClickHouse for analytics.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 399,
+      "text": "Project junction launches in September 2027.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 400,
+      "text": "Project kestrel targets 100,000 monthly active users.",
+      "category": "project",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 401,
+      "text": "Ivy owns the infra surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 402,
+      "text": "Taylor reports to Carol.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 403,
+      "text": "Liam owns the ingest surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 404,
+      "text": "Sam reports to Grace.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 405,
+      "text": "Bob reports to Grace.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 406,
+      "text": "Riley owns the dashboard surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 407,
+      "text": "Bob reports to Jack.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 408,
+      "text": "Dave owns the billing surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 409,
+      "text": "Grace prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 410,
+      "text": "Dave owns the billing surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 411,
+      "text": "Riley is on PTO from Thursday to Thursday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 412,
+      "text": "Pat prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 413,
+      "text": "Dave owns the infra surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 414,
+      "text": "Frank is on PTO from Tuesday to Wednesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 415,
+      "text": "Olivia owns the billing surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 416,
+      "text": "Quinn prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 417,
+      "text": "Liam prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 418,
+      "text": "Olivia owns the dashboard surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 419,
+      "text": "Carol is the QA lead on the junction team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 420,
+      "text": "Noah reports to Taylor.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 421,
+      "text": "Riley is on PTO from Tuesday to Thursday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 422,
+      "text": "Riley is the QA lead on the compass team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 423,
+      "text": "Pat is on PTO from Wednesday to Wednesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 424,
+      "text": "Eve owns the API surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 425,
+      "text": "Olivia is on PTO from Tuesday to Wednesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 426,
+      "text": "Noah owns the auth surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 427,
+      "text": "Frank reports to Bob.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 428,
+      "text": "Olivia reports to Kate.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 429,
+      "text": "Mia reports to Alice.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 430,
+      "text": "Eve prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 431,
+      "text": "Dave is the tech lead on the iris team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 432,
+      "text": "Grace owns the auth surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 433,
+      "text": "Noah prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 434,
+      "text": "Noah is the tech lead on the tundra team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 435,
+      "text": "Henry is the designer on the lattice team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 436,
+      "text": "Mia reports to Bob.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 437,
+      "text": "Noah owns the dashboard surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 438,
+      "text": "Jack owns the deploy surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 439,
+      "text": "Dave reports to Noah.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 440,
+      "text": "Ivy is the designer on the echo team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 441,
+      "text": "Kate owns the billing surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 442,
+      "text": "Eve is the principal engineer on the junction team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 443,
+      "text": "Ivy is the QA lead on the fjord team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 444,
+      "text": "Bob is on PTO from Wednesday to Friday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 445,
+      "text": "Frank prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 446,
+      "text": "Frank is on PTO from Tuesday to Monday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 447,
+      "text": "Henry reports to Liam.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 448,
+      "text": "Henry is on PTO from Friday to Friday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 449,
+      "text": "Riley is on PTO from Tuesday to Monday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 450,
+      "text": "Mia prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 451,
+      "text": "Quinn is the staff engineer on the summit team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 452,
+      "text": "Ivy prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 453,
+      "text": "Pat owns the API surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 454,
+      "text": "Pat reports to Riley.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 455,
+      "text": "Sam owns the ingest surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 456,
+      "text": "Liam is on PTO from Thursday to Monday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 457,
+      "text": "Frank is on PTO from Thursday to Wednesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 458,
+      "text": "Alice prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 459,
+      "text": "Eve reports to Ivy.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 460,
+      "text": "Bob reports to Dave.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 461,
+      "text": "Kate is the PM on the glacier team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 462,
+      "text": "Grace prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 463,
+      "text": "Taylor reports to Sam.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 464,
+      "text": "Ivy is the staff engineer on the kestrel team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 465,
+      "text": "Frank is on PTO from Wednesday to Friday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 466,
+      "text": "Bob owns the deploy surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 467,
+      "text": "Noah reports to Jack.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 468,
+      "text": "Kate is on PTO from Wednesday to Friday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 469,
+      "text": "Riley owns the dashboard surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 470,
+      "text": "Pat is the staff engineer on the prism team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 471,
+      "text": "Dave reports to Eve.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 472,
+      "text": "Liam is on PTO from Wednesday to Tuesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 473,
+      "text": "Taylor reports to Carol.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 474,
+      "text": "Quinn is the tech lead on the atlas team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 475,
+      "text": "Riley owns the billing surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 476,
+      "text": "Dave is on PTO from Monday to Tuesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 477,
+      "text": "Frank is the principal engineer on the delta team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 478,
+      "text": "Henry reports to Alice.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 479,
+      "text": "Frank reports to Jack.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 480,
+      "text": "Alice is the engineering manager on the glacier team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 481,
+      "text": "Eve is on PTO from Thursday to Tuesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 482,
+      "text": "Mia owns the billing surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 483,
+      "text": "Carol is the senior engineer on the junction team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 484,
+      "text": "Quinn reports to Bob.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 485,
+      "text": "Jack reports to Riley.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 486,
+      "text": "Quinn is on PTO from Tuesday to Monday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 487,
+      "text": "Quinn prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 488,
+      "text": "Olivia reports to Sam.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 489,
+      "text": "Dave prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 490,
+      "text": "Eve owns the deploy surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 491,
+      "text": "Liam is the senior engineer on the monolith team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 492,
+      "text": "Ivy is the engineering manager on the monolith team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 493,
+      "text": "Grace owns the API surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 494,
+      "text": "Carol owns the ingest surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 495,
+      "text": "Alice reports to Taylor.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 496,
+      "text": "Eve reports to Grace.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 497,
+      "text": "Carol prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 498,
+      "text": "Sam is the QA lead on the glacier team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 499,
+      "text": "Alice owns the API surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 500,
+      "text": "Mia prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 501,
+      "text": "Eve reports to Henry.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 502,
+      "text": "Olivia reports to Taylor.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 503,
+      "text": "Pat is on PTO from Tuesday to Wednesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 504,
+      "text": "Grace is on PTO from Thursday to Monday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 505,
+      "text": "Dave reports to Liam.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 506,
+      "text": "Henry owns the auth surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 507,
+      "text": "Bob is the engineering manager on the fjord team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 508,
+      "text": "Taylor reports to Jack.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 509,
+      "text": "Jack is the engineering manager on the quartz team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 510,
+      "text": "Taylor is the engineering manager on the beacon team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 511,
+      "text": "Dave reports to Grace.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 512,
+      "text": "Grace is on PTO from Thursday to Thursday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 513,
+      "text": "Bob owns the API surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 514,
+      "text": "Pat owns the search surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 515,
+      "text": "Taylor reports to Sam.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 516,
+      "text": "Mia reports to Eve.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 517,
+      "text": "Carol owns the search surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 518,
+      "text": "Carol reports to Ivy.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 519,
+      "text": "Olivia is the principal engineer on the tundra team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 520,
+      "text": "Kate is on PTO from Thursday to Tuesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 521,
+      "text": "Henry owns the API surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 522,
+      "text": "Pat prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 523,
+      "text": "Dave owns the dashboard surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 524,
+      "text": "Dave prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 525,
+      "text": "Dave is the tech lead on the compass team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 526,
+      "text": "Jack is the designer on the kestrel team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 527,
+      "text": "Jack is on PTO from Monday to Thursday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 528,
+      "text": "Grace is the PM on the lattice team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 529,
+      "text": "Noah owns the infra surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 530,
+      "text": "Kate reports to Pat.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 531,
+      "text": "Sam is the engineering manager on the summit team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 532,
+      "text": "Olivia reports to Jack.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 533,
+      "text": "Taylor is on PTO from Thursday to Thursday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 534,
+      "text": "Frank is the staff engineer on the nexus team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 535,
+      "text": "Olivia prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 536,
+      "text": "Olivia reports to Liam.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 537,
+      "text": "Kate reports to Pat.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 538,
+      "text": "Quinn reports to Eve.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 539,
+      "text": "Dave owns the dashboard surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 540,
+      "text": "Eve prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 541,
+      "text": "Riley prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 542,
+      "text": "Jack prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 543,
+      "text": "Sam is on PTO from Tuesday to Thursday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 544,
+      "text": "Riley prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 545,
+      "text": "Liam is on PTO from Tuesday to Thursday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 546,
+      "text": "Mia prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 547,
+      "text": "Henry prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 548,
+      "text": "Riley is on PTO from Thursday to Tuesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 549,
+      "text": "Liam prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 550,
+      "text": "Quinn owns the billing surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 551,
+      "text": "Jack is the engineering manager on the ridge team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 552,
+      "text": "Ivy is on PTO from Wednesday to Monday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 553,
+      "text": "Riley reports to Pat.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 554,
+      "text": "Frank is the staff engineer on the atlas team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 555,
+      "text": "Sam is on PTO from Friday to Friday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 556,
+      "text": "Frank is the PM on the prism team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 557,
+      "text": "Olivia is the principal engineer on the ridge team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 558,
+      "text": "Liam reports to Mia.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 559,
+      "text": "Frank reports to Carol.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 560,
+      "text": "Liam is the QA lead on the monolith team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 561,
+      "text": "Pat reports to Olivia.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 562,
+      "text": "Taylor is the tech lead on the lattice team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 563,
+      "text": "Dave is on PTO from Wednesday to Thursday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 564,
+      "text": "Grace owns the dashboard surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 565,
+      "text": "Mia owns the auth surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 566,
+      "text": "Taylor owns the deploy surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 567,
+      "text": "Sam is on PTO from Monday to Friday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 568,
+      "text": "Henry is the senior engineer on the lattice team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 569,
+      "text": "Pat is the engineering manager on the compass team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 570,
+      "text": "Carol prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 571,
+      "text": "Eve owns the ingest surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 572,
+      "text": "Quinn is on PTO from Wednesday to Monday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 573,
+      "text": "Carol is the senior engineer on the kestrel team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 574,
+      "text": "Riley is on PTO from Wednesday to Monday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 575,
+      "text": "Bob is on PTO from Monday to Friday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 576,
+      "text": "Liam prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 577,
+      "text": "Jack owns the deploy surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 578,
+      "text": "Riley is the engineering manager on the iris team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 579,
+      "text": "Riley reports to Sam.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 580,
+      "text": "Sam prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 581,
+      "text": "Dave is on PTO from Tuesday to Thursday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 582,
+      "text": "Noah reports to Dave.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 583,
+      "text": "Eve reports to Jack.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 584,
+      "text": "Carol reports to Sam.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 585,
+      "text": "Olivia is the staff engineer on the atlas team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 586,
+      "text": "Carol reports to Mia.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 587,
+      "text": "Grace prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 588,
+      "text": "Taylor owns the API surface.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 589,
+      "text": "Olivia is the staff engineer on the orbit team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 590,
+      "text": "Quinn prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 591,
+      "text": "Frank reports to Alice.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 592,
+      "text": "Liam is the QA lead on the prism team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 593,
+      "text": "Bob is the engineering manager on the harbor team.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 594,
+      "text": "Jack reports to Frank.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 595,
+      "text": "Taylor reports to Alice.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 596,
+      "text": "Dave is on PTO from Friday to Tuesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 597,
+      "text": "Henry prefers async over standups.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 598,
+      "text": "Noah is on PTO from Monday to Tuesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 599,
+      "text": "Noah reports to Sam.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 600,
+      "text": "Pat is on PTO from Tuesday to Wednesday.",
+      "category": "person",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 601,
+      "text": "It rained for five hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 602,
+      "text": "Hana and Hana discussed the compliance report on Monday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 603,
+      "text": "Drew and Ezra discussed the audit report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 604,
+      "text": "The amber kettle sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 605,
+      "text": "The owl crossed the bridge at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 606,
+      "text": "It rained for five hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 607,
+      "text": "Cale and Aria discussed the compliance report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 608,
+      "text": "Ezra and Aria discussed the quarterly report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 609,
+      "text": "The lynx crossed the meadow at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 610,
+      "text": "The badger crossed the trail at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 611,
+      "text": "The badger crossed the fence at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 612,
+      "text": "Cale and Gus discussed the diversity report on Friday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 613,
+      "text": "Gus and Drew discussed the audit report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 614,
+      "text": "The fox crossed the bridge at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 615,
+      "text": "Cale and Beck discussed the diversity report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 616,
+      "text": "It rained for six hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 617,
+      "text": "The otter crossed the river at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 618,
+      "text": "fig is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 619,
+      "text": "The indigo compass sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 620,
+      "text": "Ezra and Hana discussed the diversity report on Monday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 621,
+      "text": "persimmon is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 622,
+      "text": "The ochre globe sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 623,
+      "text": "The otter crossed the fence at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 624,
+      "text": "It rained for five hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 625,
+      "text": "The lynx crossed the fence at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 626,
+      "text": "The badger crossed the thicket at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 627,
+      "text": "The teal lamp sat on the bench all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 628,
+      "text": "lychee is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 629,
+      "text": "The egret crossed the ridge at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 630,
+      "text": "lychee is the most-shipped fruit at the Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 631,
+      "text": "It rained for three hours in Hobart yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 632,
+      "text": "The teal kettle sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 633,
+      "text": "Hana and Ezra discussed the annual report on Monday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 634,
+      "text": "The crimson kettle sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 635,
+      "text": "It rained for five hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 636,
+      "text": "The teal atlas sat on the windowsill all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 637,
+      "text": "fig is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 638,
+      "text": "kumquat is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 639,
+      "text": "Hana and Finn discussed the diversity report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 640,
+      "text": "It rained for two hours in Krak\u00f3w yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 641,
+      "text": "kumquat is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 642,
+      "text": "guava is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 643,
+      "text": "persimmon is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 644,
+      "text": "The indigo globe sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 645,
+      "text": "The lynx crossed the fence at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 646,
+      "text": "The heron crossed the highway at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 647,
+      "text": "The ochre lamp sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 648,
+      "text": "It rained for four hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 649,
+      "text": "It rained for two hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 650,
+      "text": "The amber compass sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 651,
+      "text": "Finn and Drew discussed the compliance report on Monday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 652,
+      "text": "Gus and Beck discussed the compliance report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 653,
+      "text": "The amber kettle sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 654,
+      "text": "persimmon is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 655,
+      "text": "It rained for six hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 656,
+      "text": "It rained for four hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 657,
+      "text": "lychee is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 658,
+      "text": "The otter crossed the river at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 659,
+      "text": "The otter crossed the fence at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 660,
+      "text": "Cale and Cale discussed the audit report on Friday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 661,
+      "text": "Gus and Gus discussed the compliance report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 662,
+      "text": "Gus and Aria discussed the inventory report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 663,
+      "text": "The heron crossed the bridge at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 664,
+      "text": "persimmon is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 665,
+      "text": "kumquat is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 666,
+      "text": "The crimson globe sat on the windowsill all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 667,
+      "text": "The lynx crossed the bridge at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 668,
+      "text": "lychee is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 669,
+      "text": "kumquat is the most-shipped fruit at the Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 670,
+      "text": "Beck and Beck discussed the diversity report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 671,
+      "text": "It rained for five hours in Hobart yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 672,
+      "text": "It rained for three hours in Hobart yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 673,
+      "text": "persimmon is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 674,
+      "text": "The lynx crossed the trail at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 675,
+      "text": "The amber vase sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 676,
+      "text": "The indigo globe sat on the windowsill all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 677,
+      "text": "fig is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 678,
+      "text": "Beck and Cale discussed the audit report on Monday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 679,
+      "text": "It rained for four hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 680,
+      "text": "The raccoon crossed the bridge at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 681,
+      "text": "The amber lamp sat on the windowsill all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 682,
+      "text": "It rained for six hours in Hobart yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 683,
+      "text": "fig is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 684,
+      "text": "fig is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 685,
+      "text": "The egret crossed the meadow at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 686,
+      "text": "persimmon is the most-shipped fruit at the Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 687,
+      "text": "The teal compass sat on the windowsill all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 688,
+      "text": "The amber kettle sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 689,
+      "text": "The owl crossed the highway at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 690,
+      "text": "The crimson atlas sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 691,
+      "text": "The owl crossed the trail at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 692,
+      "text": "The badger crossed the river at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 693,
+      "text": "The owl crossed the meadow at midnight.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 694,
+      "text": "The teal vase sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 695,
+      "text": "It rained for two hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 696,
+      "text": "The ochre kettle sat on the windowsill all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 697,
+      "text": "fig is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 698,
+      "text": "The amber vase sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 699,
+      "text": "It rained for three hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 700,
+      "text": "The owl crossed the ridge at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 701,
+      "text": "The amber lamp sat on the bench all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 702,
+      "text": "Ezra and Ezra discussed the inventory report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 703,
+      "text": "The fox crossed the river at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 704,
+      "text": "It rained for four hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 705,
+      "text": "The fox crossed the thicket at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 706,
+      "text": "persimmon is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 707,
+      "text": "The crimson compass sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 708,
+      "text": "It rained for three hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 709,
+      "text": "The ochre globe sat on the windowsill all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 710,
+      "text": "kumquat is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 711,
+      "text": "lychee is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 712,
+      "text": "Hana and Drew discussed the annual report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 713,
+      "text": "The badger crossed the highway at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 714,
+      "text": "Gus and Drew discussed the inventory report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 715,
+      "text": "The indigo lamp sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 716,
+      "text": "Ezra and Ezra discussed the inventory report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 717,
+      "text": "Ezra and Ezra discussed the inventory report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 718,
+      "text": "The fox crossed the highway at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 719,
+      "text": "guava is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 720,
+      "text": "Aria and Drew discussed the quarterly report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 721,
+      "text": "The fox crossed the river at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 722,
+      "text": "The crimson atlas sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 723,
+      "text": "persimmon is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 724,
+      "text": "The amber atlas sat on the bench all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 725,
+      "text": "guava is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 726,
+      "text": "The fox crossed the river at midnight.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 727,
+      "text": "The fox crossed the highway at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 728,
+      "text": "It rained for three hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 729,
+      "text": "The lynx crossed the bridge at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 730,
+      "text": "guava is the most-shipped fruit at the Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 731,
+      "text": "fig is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 732,
+      "text": "The badger crossed the highway at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 733,
+      "text": "Aria and Finn discussed the annual report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 734,
+      "text": "The ochre lamp sat on the bench all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 735,
+      "text": "The indigo vase sat on the bench all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 736,
+      "text": "Ezra and Hana discussed the compliance report on Monday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 737,
+      "text": "The fox crossed the bridge at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 738,
+      "text": "The indigo globe sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 739,
+      "text": "Beck and Ezra discussed the diversity report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 740,
+      "text": "The owl crossed the bridge at midnight.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 741,
+      "text": "The fox crossed the highway at midnight.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 742,
+      "text": "Finn and Aria discussed the compliance report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 743,
+      "text": "The raccoon crossed the ridge at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 744,
+      "text": "The ochre compass sat on the bench all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 745,
+      "text": "persimmon is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 746,
+      "text": "The teal atlas sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 747,
+      "text": "persimmon is the most-shipped fruit at the Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 748,
+      "text": "It rained for three hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 749,
+      "text": "The owl crossed the trail at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 750,
+      "text": "Beck and Hana discussed the compliance report on Friday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 751,
+      "text": "Ezra and Beck discussed the quarterly report on Friday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 752,
+      "text": "The otter crossed the bridge at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 753,
+      "text": "kumquat is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 754,
+      "text": "lychee is the most-shipped fruit at the Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 755,
+      "text": "Aria and Finn discussed the annual report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 756,
+      "text": "It rained for four hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 757,
+      "text": "The ochre lamp sat on the bench all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 758,
+      "text": "Finn and Aria discussed the inventory report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 759,
+      "text": "The ochre vase sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 760,
+      "text": "The ochre compass sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 761,
+      "text": "persimmon is the most-shipped fruit at the Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 762,
+      "text": "Drew and Hana discussed the inventory report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 763,
+      "text": "The egret crossed the fence at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 764,
+      "text": "The ochre vase sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 765,
+      "text": "The fox crossed the fence at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 766,
+      "text": "Aria and Beck discussed the diversity report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 767,
+      "text": "It rained for six hours in Krak\u00f3w yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 768,
+      "text": "persimmon is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 769,
+      "text": "kumquat is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 770,
+      "text": "The amber globe sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 771,
+      "text": "The owl crossed the thicket at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 772,
+      "text": "It rained for two hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 773,
+      "text": "It rained for six hours in Krak\u00f3w yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 774,
+      "text": "The crimson vase sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 775,
+      "text": "The raccoon crossed the fence at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 776,
+      "text": "It rained for six hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 777,
+      "text": "kumquat is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 778,
+      "text": "The lynx crossed the fence at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 779,
+      "text": "Cale and Aria discussed the diversity report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 780,
+      "text": "guava is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 781,
+      "text": "lychee is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 782,
+      "text": "The indigo globe sat on the windowsill all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 783,
+      "text": "It rained for three hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 784,
+      "text": "Hana and Finn discussed the annual report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 785,
+      "text": "The ochre atlas sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 786,
+      "text": "The indigo globe sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 787,
+      "text": "Finn and Finn discussed the quarterly report on Monday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 788,
+      "text": "It rained for four hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 789,
+      "text": "guava is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 790,
+      "text": "The owl crossed the fence at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 791,
+      "text": "Beck and Drew discussed the diversity report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 792,
+      "text": "lychee is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 793,
+      "text": "The ochre atlas sat on the windowsill all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 794,
+      "text": "The heron crossed the highway at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 795,
+      "text": "The indigo atlas sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 796,
+      "text": "lychee is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 797,
+      "text": "The lynx crossed the thicket at midnight.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 798,
+      "text": "The egret crossed the bridge at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 799,
+      "text": "fig is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 800,
+      "text": "It rained for four hours in Krak\u00f3w yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 801,
+      "text": "The lynx crossed the meadow at midnight.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 802,
+      "text": "kumquat is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 803,
+      "text": "It rained for two hours in Hobart yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 804,
+      "text": "The lynx crossed the thicket at midnight.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 805,
+      "text": "lychee is the most-shipped fruit at the Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 806,
+      "text": "It rained for two hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 807,
+      "text": "guava is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 808,
+      "text": "The otter crossed the highway at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 809,
+      "text": "Drew and Finn discussed the quarterly report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 810,
+      "text": "It rained for two hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 811,
+      "text": "Finn and Ezra discussed the inventory report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 812,
+      "text": "Finn and Beck discussed the quarterly report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 813,
+      "text": "It rained for four hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 814,
+      "text": "The ochre atlas sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 815,
+      "text": "Gus and Gus discussed the quarterly report on Friday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 816,
+      "text": "The badger crossed the ridge at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 817,
+      "text": "The raccoon crossed the trail at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 818,
+      "text": "It rained for three hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 819,
+      "text": "The raccoon crossed the thicket at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 820,
+      "text": "persimmon is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 821,
+      "text": "guava is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 822,
+      "text": "Finn and Aria discussed the audit report on Friday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 823,
+      "text": "lychee is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 824,
+      "text": "It rained for six hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 825,
+      "text": "The crimson lamp sat on the bench all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 826,
+      "text": "Drew and Aria discussed the quarterly report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 827,
+      "text": "The lynx crossed the fence at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 828,
+      "text": "Cale and Beck discussed the quarterly report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 829,
+      "text": "kumquat is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 830,
+      "text": "Finn and Drew discussed the annual report on Friday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 831,
+      "text": "The ochre atlas sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 832,
+      "text": "kumquat is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 833,
+      "text": "It rained for five hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 834,
+      "text": "The teal compass sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 835,
+      "text": "The teal globe sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 836,
+      "text": "Hana and Aria discussed the compliance report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 837,
+      "text": "It rained for three hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 838,
+      "text": "The otter crossed the thicket at noon.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 839,
+      "text": "The fox crossed the river at midnight.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 840,
+      "text": "It rained for six hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 841,
+      "text": "It rained for six hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 842,
+      "text": "lychee is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 843,
+      "text": "It rained for three hours in Hobart yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 844,
+      "text": "It rained for four hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 845,
+      "text": "The heron crossed the highway at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 846,
+      "text": "Ezra and Ezra discussed the quarterly report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 847,
+      "text": "guava is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 848,
+      "text": "It rained for two hours in Hobart yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 849,
+      "text": "Cale and Aria discussed the inventory report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 850,
+      "text": "The amber vase sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 851,
+      "text": "The raccoon crossed the river at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 852,
+      "text": "It rained for three hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 853,
+      "text": "The egret crossed the bridge at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 854,
+      "text": "The egret crossed the ridge at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 855,
+      "text": "The crimson atlas sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 856,
+      "text": "persimmon is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 857,
+      "text": "The crimson lamp sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 858,
+      "text": "fig is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 859,
+      "text": "It rained for five hours in Lyon yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 860,
+      "text": "It rained for two hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 861,
+      "text": "It rained for four hours in Hobart yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 862,
+      "text": "Gus and Finn discussed the diversity report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 863,
+      "text": "Aria and Beck discussed the quarterly report on Tuesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 864,
+      "text": "Finn and Gus discussed the quarterly report on Friday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 865,
+      "text": "The egret crossed the thicket at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 866,
+      "text": "guava is the most-shipped fruit at the westside.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 867,
+      "text": "The crimson atlas sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 868,
+      "text": "Gus and Beck discussed the audit report on Thursday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 869,
+      "text": "The amber kettle sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 870,
+      "text": "The amber kettle sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 871,
+      "text": "lychee is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 872,
+      "text": "Hana and Beck discussed the audit report on Friday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 873,
+      "text": "The ochre lamp sat on the bench all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 874,
+      "text": "It rained for five hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 875,
+      "text": "It rained for five hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 876,
+      "text": "persimmon is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 877,
+      "text": "It rained for six hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 878,
+      "text": "fig is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 879,
+      "text": "It rained for three hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 880,
+      "text": "The teal lamp sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 881,
+      "text": "The lynx crossed the highway at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 882,
+      "text": "Ezra and Drew discussed the compliance report on Monday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 883,
+      "text": "Cale and Ezra discussed the quarterly report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 884,
+      "text": "The raccoon crossed the trail at midnight.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 885,
+      "text": "It rained for three hours in Aarhus yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 886,
+      "text": "The lynx crossed the highway at dusk.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 887,
+      "text": "guava is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 888,
+      "text": "The crimson vase sat on the desk all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 889,
+      "text": "guava is the most-shipped fruit at the harbor.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 890,
+      "text": "The amber kettle sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 891,
+      "text": "The heron crossed the bridge at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 892,
+      "text": "Hana and Aria discussed the diversity report on Wednesday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 893,
+      "text": "It rained for four hours in Portland yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 894,
+      "text": "The indigo kettle sat on the shelf all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 895,
+      "text": "The owl crossed the river at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 896,
+      "text": "fig is the most-shipped fruit at the downtown.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 897,
+      "text": "The amber globe sat on the mantel all morning.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 898,
+      "text": "It rained for six hours in Krak\u00f3w yesterday.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 899,
+      "text": "lychee is the most-shipped fruit at the co-op.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 900,
+      "text": "The badger crossed the thicket at dawn.",
+      "category": "noise",
+      "planted_kind": null,
+      "source_text": null
+    },
+    {
+      "id": 901,
+      "text": "Project echo launches in September 2026.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project echo launches in September 2026."
+    },
+    {
+      "id": 902,
+      "text": "Project prism uses OpenTelemetry for tracing.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project prism uses OpenTelemetry for tracing."
+    },
+    {
+      "id": 903,
+      "text": "Project glacier supports 12 locales.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project glacier supports 12 locales."
+    },
+    {
+      "id": 904,
+      "text": "Project compass targets 100,000 monthly active users.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project compass targets 100,000 monthly active users."
+    },
+    {
+      "id": 905,
+      "text": "The user prefers 12pt as their font size in bash.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers 12pt as their font size in bash."
+    },
+    {
+      "id": 906,
+      "text": "The user prefers 16pt as their font size in Vim.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers 16pt as their font size in Vim."
+    },
+    {
+      "id": 907,
+      "text": "Project kestrel supports 3 locales.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project kestrel supports 3 locales."
+    },
+    {
+      "id": 908,
+      "text": "Project orbit supports 42 locales.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project orbit supports 42 locales."
+    },
+    {
+      "id": 909,
+      "text": "Project tundra supports 3 locales.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project tundra supports 3 locales."
+    },
+    {
+      "id": 910,
+      "text": "The user prefers on save as their auto-format in PyCharm.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers on save as their auto-format in PyCharm."
+    },
+    {
+      "id": 911,
+      "text": "Project compass targets 1,000 monthly active users.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project compass targets 1,000 monthly active users."
+    },
+    {
+      "id": 912,
+      "text": "Project lattice uses PostgreSQL for primary storage.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project lattice uses PostgreSQL for primary storage."
+    },
+    {
+      "id": 913,
+      "text": "Project iris launches in September 2026.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project iris launches in September 2026."
+    },
+    {
+      "id": 914,
+      "text": "Project nexus uses Go for the orchestrator.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project nexus uses Go for the orchestrator."
+    },
+    {
+      "id": 915,
+      "text": "The user prefers nord as their color scheme in IntelliJ.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers nord as their color scheme in IntelliJ."
+    },
+    {
+      "id": 916,
+      "text": "Project ridge uses Prometheus for metrics.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project ridge uses Prometheus for metrics."
+    },
+    {
+      "id": 917,
+      "text": "The user prefers high-contrast as their color scheme in IntelliJ.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers high-contrast as their color scheme in IntelliJ."
+    },
+    {
+      "id": 918,
+      "text": "The user prefers Iosevka as their font in zsh.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers Iosevka as their font in zsh."
+    },
+    {
+      "id": 919,
+      "text": "Project nexus supports 3 locales.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project nexus supports 3 locales."
+    },
+    {
+      "id": 920,
+      "text": "The user prefers Source Code Pro as their font in Cursor.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers Source Code Pro as their font in Cursor."
+    },
+    {
+      "id": 921,
+      "text": "The user prefers Source Code Pro as their font in zsh.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers Source Code Pro as their font in zsh."
+    },
+    {
+      "id": 922,
+      "text": "Project ridge uses ClickHouse for analytics.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project ridge uses ClickHouse for analytics."
+    },
+    {
+      "id": 923,
+      "text": "Project fjord launches in November 2027.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "Project fjord launches in November 2027."
+    },
+    {
+      "id": 924,
+      "text": "The user prefers high-contrast as their color scheme in zsh.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers high-contrast as their color scheme in zsh."
+    },
+    {
+      "id": 925,
+      "text": "The user prefers manually only as their auto-format in Vim.",
+      "category": "duplicate_exact",
+      "planted_kind": "exact_dup",
+      "source_text": "The user prefers manually only as their auto-format in Vim."
+    },
+    {
+      "id": 926,
+      "text": "The user's preferred LF as their line endings in alacritty.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers LF as their line endings in alacritty."
+    },
+    {
+      "id": 927,
+      "text": "The fjord launches in November 2027.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project fjord launches in November 2027."
+    },
+    {
+      "id": 928,
+      "text": "The user's preferred tabs as their tab width in VS Code.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers tabs as their tab width in VS Code."
+    },
+    {
+      "id": 929,
+      "text": "The user's preferred 15pt as their font size in IntelliJ.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers 15pt as their font size in IntelliJ."
+    },
+    {
+      "id": 930,
+      "text": "The iris targets 100,000 monthly active users.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project iris targets 100,000 monthly active users."
+    },
+    {
+      "id": 931,
+      "text": "The harbor targets 1,000 monthly active users.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project harbor targets 1,000 monthly active users."
+    },
+    {
+      "id": 932,
+      "text": "The quartz uses Grafana for dashboards.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project quartz uses Grafana for dashboards."
+    },
+    {
+      "id": 933,
+      "text": "The glacier supports 12 locales.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project glacier supports 12 locales."
+    },
+    {
+      "id": 934,
+      "text": "The nexus supports 3 locales.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project nexus supports 3 locales."
+    },
+    {
+      "id": 935,
+      "text": "The user's preferred Cascadia Code as their font in Hyper.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers Cascadia Code as their font in Hyper."
+    },
+    {
+      "id": 936,
+      "text": "The user's preferred Cascadia Code as their font in Zed.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers Cascadia Code as their font in Zed."
+    },
+    {
+      "id": 937,
+      "text": "The user's preferred 2 spaces as their tab width in kitty.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers 2 spaces as their tab width in kitty."
+    },
+    {
+      "id": 938,
+      "text": "The user's preferred 12pt as their font size in IntelliJ.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers 12pt as their font size in IntelliJ."
+    },
+    {
+      "id": 939,
+      "text": "The user's preferred tabs as their tab width in fish shell.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers tabs as their tab width in fish shell."
+    },
+    {
+      "id": 940,
+      "text": "The user's preferred lazygit as their git GUI in iTerm2.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers lazygit as their git GUI in iTerm2."
+    },
+    {
+      "id": 941,
+      "text": "The orbit uses Prometheus for metrics.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project orbit uses Prometheus for metrics."
+    },
+    {
+      "id": 942,
+      "text": "The summit launches in September 2026.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project summit launches in September 2026."
+    },
+    {
+      "id": 943,
+      "text": "The ridge uses PostgreSQL for primary storage.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project ridge uses PostgreSQL for primary storage."
+    },
+    {
+      "id": 944,
+      "text": "The junction supports 12 locales.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project junction supports 12 locales."
+    },
+    {
+      "id": 945,
+      "text": "The user's preferred 13pt as their font size in iTerm2.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers 13pt as their font size in iTerm2."
+    },
+    {
+      "id": 946,
+      "text": "The user's preferred LF as their line endings in IntelliJ.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers LF as their line endings in IntelliJ."
+    },
+    {
+      "id": 947,
+      "text": "The user's preferred 16pt as their font size in tmux.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers 16pt as their font size in tmux."
+    },
+    {
+      "id": 948,
+      "text": "The prism launches in September 2026.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "Project prism launches in September 2026."
+    },
+    {
+      "id": 949,
+      "text": "The user's preferred 2 spaces as their tab width in Warp.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers 2 spaces as their tab width in Warp."
+    },
+    {
+      "id": 950,
+      "text": "The user's preferred high-contrast as their color scheme in IntelliJ.",
+      "category": "duplicate_paraphrase",
+      "planted_kind": "paraphrase",
+      "source_text": "The user prefers high-contrast as their color scheme in IntelliJ."
+    },
+    {
+      "id": 951,
+      "text": "The user prefers tokyo night as their color scheme in Cursor.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers tokyo night as their color scheme in Cursor."
+    },
+    {
+      "id": 952,
+      "text": "The user prefers GitKraken as their git GUI in Windsurf.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers GitKraken as their git GUI in Windsurf."
+    },
+    {
+      "id": 953,
+      "text": "The user prefers 12pt as their font size in IntelliJ.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers 12pt as their font size in IntelliJ."
+    },
+    {
+      "id": 954,
+      "text": "The user prefers CRLF as their line endings in Windsurf.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers CRLF as their line endings in Windsurf."
+    },
+    {
+      "id": 955,
+      "text": "The user prefers LF as their line endings in bash.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers LF as their line endings in bash."
+    },
+    {
+      "id": 956,
+      "text": "The user prefers on save as their auto-format in bash.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers on save as their auto-format in bash."
+    },
+    {
+      "id": 957,
+      "text": "The user prefers on save as their auto-format in iTerm2.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers on save as their auto-format in iTerm2."
+    },
+    {
+      "id": 958,
+      "text": "The user prefers 16pt as their font size in Neovim.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers 16pt as their font size in Neovim."
+    },
+    {
+      "id": 959,
+      "text": "The user prefers gruvbox as their color scheme in PyCharm.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers gruvbox as their color scheme in PyCharm."
+    },
+    {
+      "id": 960,
+      "text": "The user prefers never as their auto-format in IntelliJ.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers never as their auto-format in IntelliJ."
+    },
+    {
+      "id": 961,
+      "text": "The user prefers JetBrains Mono as their font in bash.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers JetBrains Mono as their font in bash."
+    },
+    {
+      "id": 962,
+      "text": "The user prefers Hack as their font in fish shell.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers Hack as their font in fish shell."
+    },
+    {
+      "id": 963,
+      "text": "The user prefers tokyo night as their color scheme in Hyper.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers tokyo night as their color scheme in Hyper."
+    },
+    {
+      "id": 964,
+      "text": "The user prefers Fork as their git GUI in Warp.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers Fork as their git GUI in Warp."
+    },
+    {
+      "id": 965,
+      "text": "The user prefers Source Code Pro as their font in Vim.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers Source Code Pro as their font in Vim."
+    },
+    {
+      "id": 966,
+      "text": "The user prefers 4 spaces as their tab width in iTerm2.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers 4 spaces as their tab width in iTerm2."
+    },
+    {
+      "id": 967,
+      "text": "The user prefers Source Code Pro as their font in Warp.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers Source Code Pro as their font in Warp."
+    },
+    {
+      "id": 968,
+      "text": "The user prefers Iosevka as their font in Windsurf.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers Iosevka as their font in Windsurf."
+    },
+    {
+      "id": 969,
+      "text": "The user prefers 2 spaces as their tab width in kitty.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers 2 spaces as their tab width in kitty."
+    },
+    {
+      "id": 970,
+      "text": "The user prefers lazygit as their git GUI in Windsurf.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers lazygit as their git GUI in Windsurf."
+    },
+    {
+      "id": 971,
+      "text": "The user prefers Iosevka as their font in Warp.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers Iosevka as their font in Warp."
+    },
+    {
+      "id": 972,
+      "text": "The user prefers command line only as their git GUI in Zed.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers command line only as their git GUI in Zed."
+    },
+    {
+      "id": 973,
+      "text": "The user prefers manually only as their auto-format in fish shell.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers manually only as their auto-format in fish shell."
+    },
+    {
+      "id": 974,
+      "text": "The user prefers manually only as their auto-format in Vim.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers manually only as their auto-format in Vim."
+    },
+    {
+      "id": 975,
+      "text": "The user prefers catppuccin as their color scheme in Sublime Text.",
+      "category": "contradiction_baseline",
+      "planted_kind": "contradiction_base",
+      "source_text": "The user prefers catppuccin as their color scheme in Sublime Text."
+    },
+    {
+      "id": 976,
+      "text": "The user prefers dark mode as their color scheme in Cursor.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers tokyo night as their color scheme in Cursor."
+    },
+    {
+      "id": 977,
+      "text": "The user prefers command line only as their git GUI in Windsurf.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers GitKraken as their git GUI in Windsurf."
+    },
+    {
+      "id": 978,
+      "text": "The user prefers 13pt as their font size in IntelliJ.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers 12pt as their font size in IntelliJ."
+    },
+    {
+      "id": 979,
+      "text": "The user prefers LF as their line endings in Windsurf.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers CRLF as their line endings in Windsurf."
+    },
+    {
+      "id": 980,
+      "text": "The user prefers CRLF as their line endings in bash.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers LF as their line endings in bash."
+    },
+    {
+      "id": 981,
+      "text": "The user prefers manually only as their auto-format in bash.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers on save as their auto-format in bash."
+    },
+    {
+      "id": 982,
+      "text": "The user prefers manually only as their auto-format in iTerm2.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers on save as their auto-format in iTerm2."
+    },
+    {
+      "id": 983,
+      "text": "The user prefers 12pt as their font size in Neovim.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers 16pt as their font size in Neovim."
+    },
+    {
+      "id": 984,
+      "text": "The user prefers dark mode as their color scheme in PyCharm.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers gruvbox as their color scheme in PyCharm."
+    },
+    {
+      "id": 985,
+      "text": "The user prefers on save as their auto-format in IntelliJ.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers never as their auto-format in IntelliJ."
+    },
+    {
+      "id": 986,
+      "text": "The user prefers Fira Code as their font in bash.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers JetBrains Mono as their font in bash."
+    },
+    {
+      "id": 987,
+      "text": "The user prefers JetBrains Mono as their font in fish shell.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers Hack as their font in fish shell."
+    },
+    {
+      "id": 988,
+      "text": "The user prefers dark mode as their color scheme in Hyper.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers tokyo night as their color scheme in Hyper."
+    },
+    {
+      "id": 989,
+      "text": "The user prefers command line only as their git GUI in Warp.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers Fork as their git GUI in Warp."
+    },
+    {
+      "id": 990,
+      "text": "The user prefers JetBrains Mono as their font in Vim.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers Source Code Pro as their font in Vim."
+    },
+    {
+      "id": 991,
+      "text": "The user prefers 2 spaces as their tab width in iTerm2.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers 4 spaces as their tab width in iTerm2."
+    },
+    {
+      "id": 992,
+      "text": "The user prefers JetBrains Mono as their font in Warp.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers Source Code Pro as their font in Warp."
+    },
+    {
+      "id": 993,
+      "text": "The user prefers JetBrains Mono as their font in Windsurf.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers Iosevka as their font in Windsurf."
+    },
+    {
+      "id": 994,
+      "text": "The user prefers 4 spaces as their tab width in kitty.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers 2 spaces as their tab width in kitty."
+    },
+    {
+      "id": 995,
+      "text": "The user prefers command line only as their git GUI in Windsurf.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers lazygit as their git GUI in Windsurf."
+    },
+    {
+      "id": 996,
+      "text": "The user prefers JetBrains Mono as their font in Warp.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers Iosevka as their font in Warp."
+    },
+    {
+      "id": 997,
+      "text": "The user prefers Fork as their git GUI in Zed.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers command line only as their git GUI in Zed."
+    },
+    {
+      "id": 998,
+      "text": "The user prefers on save as their auto-format in fish shell.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers manually only as their auto-format in fish shell."
+    },
+    {
+      "id": 999,
+      "text": "The user prefers on save as their auto-format in Vim.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers manually only as their auto-format in Vim."
+    },
+    {
+      "id": 1000,
+      "text": "The user prefers dark mode as their color scheme in Sublime Text.",
+      "category": "contradiction_alt",
+      "planted_kind": "contradiction_alt",
+      "source_text": "The user prefers catppuccin as their color scheme in Sublime Text."
+    }
+  ]
+}

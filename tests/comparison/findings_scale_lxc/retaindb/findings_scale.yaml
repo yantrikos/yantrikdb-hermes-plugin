@@ -1,0 +1,49 @@
+provider: retaindb
+version_under_test: 1.0.0
+verified_at: 2026-05-12
+verified_against: LXC 129 yantrik-memory-test / Hermes commit 4610551
+
+backend:
+  hosting: cloud
+  requires_account: "true"
+  requires_separate_server: "false"
+
+scale:
+  corpus_size_attempted: 0
+  corpus_size_written: 0
+  write_failures: 0
+  write_p50_ms: 0.0
+  write_p99_ms: 0.0
+  queries_attempted: 0
+  queries_completed: 0
+  recall_p50_ms: 0.0
+  recall_p99_ms: 0.0
+
+precision_at_k:
+  hits: 0
+  total_queries: 0
+  value: 0.0
+
+response_shape:
+  why_retrieved_field: false
+  why_retrieved_field_name: ""
+  per_result_score: false
+  per_result_metadata: false
+
+maintenance:
+  duplicate_canonicalized: "unknown"
+  duplicate_count_observed: 0
+  contradiction_surfaced: "unknown"
+  contradiction_api: ""
+
+skills:
+  skill_tools_in_schema: false
+  skill_tool_names: []
+
+evidence:
+  transcript_file: ""
+  raw_responses_dir: ""
+
+couldnt_verify:
+  reason: is_available() returned False on this LXC (config not set up).
+  what_we_know_anyway: RetainDB — cloud memory API with hybrid search and 7 memory types.
