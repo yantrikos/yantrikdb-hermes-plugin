@@ -1,0 +1,17 @@
+{
+  "_comment": "Canonical queries every provider sees, after the remember.json facts have been written. Each query has expected behaviour notes for the harness to compare against (not asserted automatically — observed).",
+  "queries": [
+    {
+      "id": "Q1",
+      "query": "What editor color scheme does the user prefer?",
+      "top_k": 5,
+      "expectation": "Should surface fact #1 (or #3 duplicate, or #4 contradiction). Inspect the response: does it contain a why_retrieved-style field on each result? Per-result score? Per-result metadata?"
+    },
+    {
+      "id": "Q2",
+      "query": "What hardware does the user own?",
+      "top_k": 5,
+      "expectation": "Should surface fact #2. Useful for confirming the provider isn't only returning the most-recently-written fact regardless of query."
+    }
+  ]
+}

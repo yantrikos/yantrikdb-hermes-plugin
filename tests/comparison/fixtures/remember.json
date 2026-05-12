@@ -1,0 +1,29 @@
+{
+  "_comment": "Canonical inputs every provider sees, in order. Numbered so the harness can correlate each remember() call with its expected recall() behaviour. Chosen to exercise (a) basic semantic recall, (b) duplicate canonicalization, (c) contradiction surfacing.",
+  "facts": [
+    {
+      "id": 1,
+      "text": "The user prefers dark mode in VS Code.",
+      "category": "baseline",
+      "intent": "Establish a recallable fact for query #1."
+    },
+    {
+      "id": 2,
+      "text": "The user's laptop is a MacBook Pro M2.",
+      "category": "baseline",
+      "intent": "A second unrelated baseline fact to test top-k filtering."
+    },
+    {
+      "id": 3,
+      "text": "The user prefers dark mode in VS Code.",
+      "category": "duplicate",
+      "intent": "Exact duplicate of fact #1. Tests whether the provider canonicalizes (1 record after) or appends (2 records after)."
+    },
+    {
+      "id": 4,
+      "text": "The user prefers light mode in VS Code.",
+      "category": "contradiction",
+      "intent": "Direct contradiction of fact #1. Tests whether the provider surfaces a conflict, silently overwrites, or stores both."
+    }
+  ]
+}

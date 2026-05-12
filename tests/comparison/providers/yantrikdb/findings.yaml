@@ -1,0 +1,40 @@
+provider: yantrikdb
+version_under_test: 0.4.2
+verified_at: 2026-05-12
+verified_against: "local (Hermes stubs); embedded backend, bundled potion-2M"
+
+backend:
+  hosting: embedded
+  requires_account: "false"
+  requires_separate_server: "false"
+  pip_footprint_mb: null
+
+contract:
+  initialize_ok: true
+  remember_ok: true
+  recall_ok: true
+  recall_returned_results: 0
+  notes: ""
+
+response_shape:
+  why_retrieved_field: false
+  why_retrieved_field_name: ""
+  per_result_score: false
+  per_result_metadata: false
+
+maintenance:
+  duplicate_canonicalized: "unknown"
+  contradiction_surfaced: "true"
+  contradiction_api: yantrikdb_conflicts
+
+skills:
+  skill_tools_in_schema: false
+  skill_tool_names: []
+
+evidence:
+  transcript_file: "C:\Users\sync\codes\yantrikdb-hermes-plugin\tests\comparison\providers\yantrikdb\transcript.md"
+  raw_responses_dir: "C:\Users\sync\codes\yantrikdb-hermes-plugin\tests\comparison\providers\yantrikdb\raw"
+
+couldnt_verify:
+  reason: ""
+  what_we_know_anyway: ""
