@@ -162,28 +162,102 @@ class EmbeddedYantrikDBClient:
         db_path = config.db_path or _default_db_path()
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
-        try:
-            self._db = YantrikDB.with_default(db_path)
-        except Exception as e:
-            raise YantrikDBServerError(
-                f"failed to open YantrikDB at {db_path}: {e}",
-            ) from e
+        # Embedder selection — three paths, evaluated in order:
+        #   1. Default: with_default() → bundled potion-base-2M (dim=64).
+        #   2. Bundled-named via YANTRIKDB_EMBEDDER + YANTRIKDB_EMBEDDING_DIM:
+        #      tier-2/3 download paths (`potion-base-8M`, `potion-base-32M`,
+        #      future named multilingual variants). The engine's
+        #      embedding_dim is set at construction to match.
+        #   3. Custom Python embedder via YANTRIKDB_EMBEDDER_CLASS +
+        #      YANTRIKDB_EMBEDDING_DIM: dotted import path; the plugin
+        #      instantiates the class and calls db.set_embedder(instance).
+        #      Lets users plug sentence-transformers / model2vec /
+        #      multilingual models without waiting on upstream bundling.
+        #
+        # set_embedder* requires exclusive Arc access on the engine — call
+        # ONCE immediately after construction, before _db is shared.
+        custom_class = (config.embedder_class or "").strip()
+        named = (config.embedder_name or "").strip()
 
-        # set_embedder_named requires exclusive Arc access — call BEFORE any
-        # other state takes a reference. Fail soft: log and keep the bundled
-        # potion-2M default if the named variant is unavailable.
-        if config.embedder_name:
+        if not custom_class and not named:
+            # Path 1 — default
             try:
-                self._db.set_embedder_named(config.embedder_name)
-                logger.info(
-                    "YantrikDB embedded: switched to embedder %s",
-                    config.embedder_name,
-                )
+                self._db = YantrikDB.with_default(db_path)
             except Exception as e:
-                logger.warning(
-                    "set_embedder_named(%r) failed; staying on bundled potion-2M: %s",
-                    config.embedder_name, e,
+                raise YantrikDBServerError(
+                    f"failed to open YantrikDB at {db_path}: {e}",
+                ) from e
+        else:
+            # Paths 2 & 3 — explicit embedder; require embedding_dim
+            if config.embedding_dim <= 0:
+                raise YantrikDBError(
+                    "YANTRIKDB_EMBEDDING_DIM must be a positive int when "
+                    "YANTRIKDB_EMBEDDER or YANTRIKDB_EMBEDDER_CLASS is set. "
+                    "Use the embedder's output dim (e.g. 256 for "
+                    "potion-base-8M, 384 for all-MiniLM-L6-v2, 768 for "
+                    "all-mpnet-base-v2)."
                 )
+            try:
+                self._db = YantrikDB(db_path, embedding_dim=int(config.embedding_dim))
+            except Exception as e:
+                raise YantrikDBServerError(
+                    f"failed to open YantrikDB at {db_path}: {e}",
+                ) from e
+
+            if custom_class:
+                # Path 3 — import & attach a custom embedder
+                try:
+                    import importlib
+                    mod_path, _, cls_name = custom_class.rpartition(".")
+                    if not mod_path or not cls_name:
+                        raise YantrikDBError(
+                            f"YANTRIKDB_EMBEDDER_CLASS={custom_class!r} must be a "
+                            "dotted import path 'module.submodule.ClassName'."
+                        )
+                    mod = importlib.import_module(mod_path)
+                    cls = getattr(mod, cls_name, None)
+                    if cls is None:
+                        raise YantrikDBError(
+                            f"class {cls_name!r} not found in module {mod_path!r}"
+                        )
+                    instance = cls()
+                except YantrikDBError:
+                    raise
+                except Exception as e:
+                    raise YantrikDBError(
+                        f"failed to import / instantiate YANTRIKDB_EMBEDDER_CLASS="
+                        f"{custom_class!r}: {e}",
+                    ) from e
+                if not callable(getattr(instance, "encode", None)):
+                    raise YantrikDBError(
+                        f"YANTRIKDB_EMBEDDER_CLASS={custom_class!r}: instance has "
+                        "no callable .encode() method. The engine expects an object "
+                        "with `.encode(text: str) -> list[float]`."
+                    )
+                try:
+                    self._db.set_embedder(instance)
+                    logger.info(
+                        "YantrikDB embedded: attached custom embedder %s (dim=%d)",
+                        custom_class, config.embedding_dim,
+                    )
+                except Exception as e:
+                    raise YantrikDBServerError(
+                        f"set_embedder({custom_class}) failed: {e}",
+                    ) from e
+            else:
+                # Path 2 — bundled-named download
+                try:
+                    self._db.set_embedder_named(named)
+                    logger.info(
+                        "YantrikDB embedded: attached bundled embedder %s (dim=%d)",
+                        named, config.embedding_dim,
+                    )
+                except Exception as e:
+                    raise YantrikDBServerError(
+                        f"set_embedder_named({named!r}) failed — most likely "
+                        "the model name isn't a known bundled-download variant "
+                        f"in this yantrikdb version, or the dim mismatches: {e}",
+                    ) from e
 
         if not self._db.has_embedder():
             raise YantrikDBError(

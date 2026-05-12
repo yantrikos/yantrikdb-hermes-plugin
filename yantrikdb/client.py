@@ -65,6 +65,8 @@ class YantrikDBConfig:
     # Embedded-only fields
     db_path: str = ""               # default $HERMES_HOME/yantrikdb-memory.db
     embedder_name: str = ""         # bundled potion-2M when empty; "potion-base-8M" / "potion-base-32M" for tier 2/3
+    embedder_class: str = ""        # dotted python path "pkg.module.Class" — instantiated and passed to db.set_embedder(); for custom embedders (e.g. multilingual, sentence-transformers wrappers)
+    embedding_dim: int = 0          # output dim of the embedder; required when embedder_name or embedder_class is set, ignored otherwise (bundled potion-2M is dim=64)
     # Shared fields
     namespace: str = DEFAULT_NAMESPACE
     top_k: int = DEFAULT_TOP_K
@@ -87,6 +89,8 @@ class YantrikDBConfig:
             token=os.environ.get("YANTRIKDB_TOKEN", ""),
             db_path=os.environ.get("YANTRIKDB_DB_PATH", ""),
             embedder_name=os.environ.get("YANTRIKDB_EMBEDDER", ""),
+            embedder_class=os.environ.get("YANTRIKDB_EMBEDDER_CLASS", ""),
+            embedding_dim=_parse_int(os.environ.get("YANTRIKDB_EMBEDDING_DIM"), 0),
             skills_enabled=_parse_bool(
                 os.environ.get("YANTRIKDB_SKILLS_ENABLED"), default=False,
             ),
@@ -124,7 +128,7 @@ class YantrikDBConfig:
             return cfg
         if not isinstance(overrides, dict):
             return cfg
-        int_fields = {"top_k", "retry_total", "max_text_len"}
+        int_fields = {"top_k", "retry_total", "max_text_len", "embedding_dim"}
         float_fields = {"connect_timeout", "read_timeout"}
         bool_fields = {"skills_enabled", "auto_think_on_session_end", "sync_user_messages"}
         for key, val in overrides.items():

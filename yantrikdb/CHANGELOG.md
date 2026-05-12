@@ -3,6 +3,53 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project aims for semantic versioning once merged into Hermes.
 
+## [0.4.0] — 2026-05-12 — Pluggable embedders
+
+Lands the configuration surface for swapping the bundled embedder — driven by the first user inquiry on the repo ([Issue #1](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/1): multilingual embedding support). Default behavior is unchanged for existing users; the new env vars only matter if you want a non-default embedder.
+
+### Added
+
+- **`YANTRIKDB_EMBEDDER`** — name of a bundled-download embedder (e.g. `potion-base-8M`, `potion-base-32M`). The plugin calls `db.set_embedder_named(name)` on engine construction. Works with whatever named embedders `yantrikdb >= 0.7.6` ships behind the `embedder-download` feature flag.
+- **`YANTRIKDB_EMBEDDER_CLASS`** — dotted Python import path (e.g. `myapp.embedders.MultilingualEmbedder`) to a class that has a `.encode(text) -> list[float]` method. The plugin imports the class, instantiates with no args, and calls `db.set_embedder(instance)`. Lets users plug `sentence-transformers`, `model2vec-rs`, multilingual variants, or any custom embedder *without* waiting on upstream bundling.
+- **`YANTRIKDB_EMBEDDING_DIM`** — required when either `_EMBEDDER` or `_EMBEDDER_CLASS` is set; matches the output dim of the chosen embedder (256 for potion-base-8M, 512 for potion-base-32M, 384 for `all-MiniLM-L6-v2`, etc.). The plugin passes this to `YantrikDB(db_path, embedding_dim=N)`.
+- **13 new tests** in `tests/test_embedded.py` pinning the embedder-path semantics: default (with_default) path, bundled-named path, custom-class path, dim-required-when-custom invariant, class-must-have-encode invariant, malformed-class-path errors, and class-over-name precedence when both are set.
+
+### Behavior changes
+
+- The plugin's embedder selection logic is now three paths instead of one:
+  - `YANTRIKDB_EMBEDDER_CLASS` set → import + instantiate + `set_embedder(instance)`.
+  - else `YANTRIKDB_EMBEDDER` set → construct with `embedding_dim=N` + `set_embedder_named(name)`.
+  - else → `YantrikDB.with_default(db_path)` (existing v0.3.x behavior, dim=64 potion-2M).
+- Class path takes precedence over named path when both env vars are set — it's the more specific instruction and doesn't depend on upstream bundling state.
+- All three paths use `set_embedder*` exactly once, immediately after construction, before the engine is shared (Arc::get_mut requirement per the engine's threading contract).
+
+### Migration for v0.3.x users
+
+None required. With no embedder env vars set, the plugin behaves identically to v0.3.1.
+
+### Net install for non-default embedders
+
+```bash
+pip install yantrikdb-hermes-plugin                  # v0.4.0
+yantrikdb-hermes install ~/hermes-agent
+
+# Tier 2 bundled (downloaded on first use):
+cat >> ~/.hermes/.env <<EOF
+YANTRIKDB_EMBEDDER=potion-base-8M
+YANTRIKDB_EMBEDDING_DIM=256
+EOF
+
+# OR — custom Python embedder (e.g. multilingual, sentence-transformers):
+cat >> ~/.hermes/.env <<EOF
+YANTRIKDB_EMBEDDER_CLASS=myapp.embedders.MultilingualEmbedder
+YANTRIKDB_EMBEDDING_DIM=384
+EOF
+```
+
+### Cross-stack note
+
+Upstream `yantrikos/yantrikdb` may add `potion-multilingual-128M` (101 languages) as a fourth named-download variant in a future release. Once that lands, multilingual users can drop the `_EMBEDDER_CLASS` Python wrapper and just set `YANTRIKDB_EMBEDDER=potion-multilingual-128M` — the plugin code is already ready for it.
+
 ## [0.3.1] — 2026-05-09 — PyPI distribution
 
 Tooling-only release. Plugin behavior unchanged from v0.3.0 — same 8 default tools, same 3 opt-in skill tools, same feature flag, same 128 tests.
