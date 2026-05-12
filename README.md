@@ -92,21 +92,21 @@ Eight tools exposed to the agent by default: `yantrikdb_remember`, `_recall`, `_
 
 ### Compared to other Hermes memory providers
 
-Hermes ships eight other memory providers. Each picks a different tradeoff; this table summarises where YantrikDB sits relative to each, based on their `plugin.yaml` descriptions and (where audited) their READMEs:
+Hermes ships eight other memory providers. Each picks a different point in the design space; this table summarises what each one says about itself in its `plugin.yaml`, on equal footing:
 
-| Provider | Backend | Built-in maintenance | Explainable recall | Procedural memory (skills) | Hosting |
-|---|---|---|---|---|---|
-| **yantrikdb** (this) | **Embedded default, HTTP optional** | **Canonicalisation + contradiction tracking + recency-aware ranking via `think()`** | **`why_retrieved` reason list per result** | **Yes (opt-in `skill_substrate`)** | **OSS, self-hostable (MIT plugin, AGPL engine over HTTP)** |
-| [byterover](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/byterover) | Cloud (`brv` CLI) | Knowledge-tree organisation, tiered retrieval | — | — | Cloud service |
-| [hindsight](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/hindsight) | Self-hosted server | Knowledge graph + entity resolution + multi-strategy retrieval | — | — | OSS, self-host |
-| [holographic](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/holographic) | Embedded (local SQLite + FTS5) | Trust scoring + HRR-based compositional retrieval | — | — | OSS, embedded |
-| [honcho](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/honcho) | Self-hosted server | Cross-session user modeling, dialectic Q&A, persistent conclusions | — | — | OSS, self-host |
-| [mem0](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/mem0) | Cloud or self-host | Server-side LLM fact extraction, automatic deduplication, reranking | — | — | OSS / cloud tier |
-| [openviking](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/openviking) | Local context database | Automatic extraction, tiered retrieval, filesystem-style browsing | — | — | OSS, local |
-| [retaindb](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/retaindb) | Cloud API | Hybrid search across 7 memory types | — | — | Cloud service |
-| [supermemory](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/supermemory) | Cloud | Profile recall, semantic search, session ingest | — | — | Cloud service |
+| Provider | Backend | Hosting | Self-described focus (from `plugin.yaml`) |
+|---|---|---|---|
+| [yantrikdb](https://github.com/yantrikos/yantrikdb-hermes-plugin) (this) | Embedded default, HTTP optional | OSS (MIT plugin, AGPL engine) | Self-maintaining memory: canonicalization, contradiction tracking, recency-aware ranking, explainable recall |
+| [byterover](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/byterover) | Cloud (`brv` CLI) | Cloud service | Persistent knowledge tree with tiered retrieval |
+| [hindsight](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/hindsight) | Self-hosted | OSS | Long-term memory with knowledge graph, entity resolution, multi-strategy retrieval |
+| [holographic](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/holographic) | Embedded (local SQLite + FTS5) | OSS | Local fact store with trust scoring and HRR-based compositional retrieval |
+| [honcho](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/honcho) | Self-hosted server | OSS | Cross-session user modeling with dialectic Q&A and persistent conclusions |
+| [mem0](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/mem0) | Cloud or self-host | OSS / cloud tier | Server-side LLM fact extraction with semantic search, reranking, automatic deduplication |
+| [openviking](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/openviking) | Local context database | OSS | Session-managed memory with automatic extraction, tiered retrieval, filesystem-style browsing |
+| [retaindb](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/retaindb) | Cloud API | Cloud service | Hybrid search across 7 memory types |
+| [supermemory](https://github.com/NousResearch/hermes-agent/tree/main/plugins/memory/supermemory) | Cloud | Cloud service | Semantic long-term memory with profile recall and session ingest |
 
-A dash (`—`) means "not advertised in `plugin.yaml`" — not "absent from the implementation". If a provider does have one of these features and the table understates it, [open an issue](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues) and I'll fix the row.
+**What YantrikDB adds that the other providers don't advertise in their `plugin.yaml`**: canonicalization (merging duplicate facts under one canonical record), contradiction tracking (surfacing conflicts and giving the agent a way to resolve them rather than letting them silently overwrite), explainable recall (every result carries a `why_retrieved` reason list visible to the model with no separate "explain" call), and procedural memory via the opt-in `skill_substrate` namespace. If any of the other providers do these and the table understates them, [open an issue](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues) — I'll fix the description.
 
 **When YantrikDB is the right pick** — you want the memory to *maintain itself* (dedup + contradiction surfacing) instead of just storing more, you want the agent to be able to *read why* a memory ranked (the `why_retrieved` list is in the recall JSON itself, no extra LLM call), and you want a no-server / no-cloud / no-token default so the plugin works the same in a laptop dev loop and a production deploy.
 
