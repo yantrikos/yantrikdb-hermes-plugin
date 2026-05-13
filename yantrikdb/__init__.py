@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -565,21 +566,79 @@ class YantrikDBMemoryProvider(MemoryProvider):
         return bool(cfg.token)
 
     def get_config_schema(self) -> list[dict[str, Any]]:
-        return [
+        """Config keys for `hermes memory setup` / `status`.
+
+        The schema is **mode-aware** as of v0.4.3 — embedded-mode users (the
+        default since v0.2.0) only see ``db_path`` + ``namespace`` as the
+        relevant fields, and the legacy HTTP-only fields (``token`` / ``url``)
+        are reported as optional instead of marked missing. HTTP-mode users
+        get the full set with ``token`` marked required.
+
+        The ``url`` field on each entry points at the current install docs
+        in the standalone repo, not the stale ``yantrikdb.com/server/
+        quickstart/`` URL that the v0.1.0 schema used (those server-CLI
+        commands were renamed during the v0.7.x refactor and the docs page
+        hasn't caught up yet).
+        """
+        mode = os.environ.get("YANTRIKDB_MODE", "embedded").strip().lower()
+        readme_install = (
+            "https://github.com/yantrikos/yantrikdb-hermes-plugin"
+            "#install-default--embedded-backend"
+        )
+        readme_http = (
+            "https://github.com/yantrikos/yantrikdb-hermes-plugin"
+            "#install-alternative--http-backend-for-ha-cluster-setups"
+        )
+
+        # Mode selector first — makes the choice explicit in `hermes memory setup`.
+        schema: list[dict[str, Any]] = [
             {
-                "key": "token",
-                "description": "YantrikDB bearer token (from `yantrikdb token create`).",
-                "secret": True,
-                "required": True,
-                "env_var": "YANTRIKDB_TOKEN",
-                "url": "https://yantrikdb.com/server/quickstart/",
+                "key": "mode",
+                "description": (
+                    "Backend: 'embedded' (default since v0.2.0; in-process, "
+                    "~10 MB, no server) or 'http' (talks to a separately-run "
+                    "yantrikdb-server, for HA cluster setups)."
+                ),
+                "default": "embedded",
+                "env_var": "YANTRIKDB_MODE",
+                "url": readme_install,
             },
-            {
-                "key": "url",
-                "description": "YantrikDB HTTP endpoint.",
-                "default": "http://localhost:7438",
-                "env_var": "YANTRIKDB_URL",
-            },
+        ]
+
+        if mode == "http":
+            schema.extend([
+                {
+                    "key": "token",
+                    "description": (
+                        "YantrikDB bearer token (from `yantrikdb token create` "
+                        "in your running server). Required for HTTP mode only."
+                    ),
+                    "secret": True,
+                    "required": True,
+                    "env_var": "YANTRIKDB_TOKEN",
+                    "url": readme_http,
+                },
+                {
+                    "key": "url",
+                    "description": "YantrikDB HTTP endpoint.",
+                    "default": "http://localhost:7438",
+                    "env_var": "YANTRIKDB_URL",
+                },
+            ])
+        else:
+            # embedded mode — db_path is what matters; token/url are unused.
+            schema.append({
+                "key": "db_path",
+                "description": (
+                    "SQLite path for the embedded engine. Defaults to "
+                    "$HERMES_HOME/yantrikdb-memory.db when unset."
+                ),
+                "default": "",
+                "env_var": "YANTRIKDB_DB_PATH",
+                "url": readme_install,
+            })
+
+        schema.extend([
             {
                 "key": "namespace",
                 "description": "Tenant namespace prefix (combined with agent_workspace:agent_identity).",
@@ -592,7 +651,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "default": "10",
                 "env_var": "YANTRIKDB_TOP_K",
             },
-        ]
+        ])
+        return schema
 
     def save_config(self, values: dict[str, Any], hermes_home: str) -> None:
         """Persist non-secret config to $HERMES_HOME/yantrikdb.json."""

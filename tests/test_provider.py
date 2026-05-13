@@ -550,12 +550,43 @@ class TestDeriveNamespace:
 # ---------------------------------------------------------------------------
 
 class TestConfigSchema:
-    def test_schema_lists_required_token(self, provider_module):
+    def test_schema_is_mode_aware_embedded_default(self, provider_module, monkeypatch):
+        # v0.4.3+: default mode is embedded; token/url should NOT appear in
+        # the schema (and therefore not in `hermes memory status`'s "Missing"
+        # list) for embedded-mode users.
+        monkeypatch.delenv("YANTRIKDB_MODE", raising=False)
+        p = provider_module.YantrikDBMemoryProvider()
+        keys = {f["key"] for f in p.get_config_schema()}
+        assert "mode" in keys
+        assert "db_path" in keys
+        assert "namespace" in keys
+        assert "top_k" in keys
+        assert "token" not in keys, "embedded mode should not surface token as a config key"
+        assert "url" not in keys
+
+    def test_schema_lists_required_token_in_http_mode(self, provider_module, monkeypatch):
+        # HTTP mode keeps the v0.1.0 token-required contract.
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
         p = provider_module.YantrikDBMemoryProvider()
         fields = p.get_config_schema()
         token_field = next(f for f in fields if f["key"] == "token")
         assert token_field["secret"] is True
         assert token_field["required"] is True
+
+    def test_schema_url_points_at_repo_not_stale_quickstart(self, provider_module, monkeypatch):
+        # Regression test for Issue #2 (becks0815): the v0.1.0 schema pointed
+        # at https://yantrikdb.com/server/quickstart/ which has stale CLI
+        # commands. URLs should now point at the canonical install docs in
+        # this repo's README.
+        for mode in ("embedded", "http"):
+            monkeypatch.setenv("YANTRIKDB_MODE", mode)
+            p = provider_module.YantrikDBMemoryProvider()
+            for f in p.get_config_schema():
+                url = f.get("url", "")
+                assert "server/quickstart" not in url, (
+                    f"{mode}-mode schema entry for {f['key']!r} still points at the "
+                    f"stale quickstart URL: {url}"
+                )
 
     def test_save_config_writes_json(self, provider_module, tmp_path):
         p = provider_module.YantrikDBMemoryProvider()

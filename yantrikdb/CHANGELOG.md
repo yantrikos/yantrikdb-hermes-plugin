@@ -1,7 +1,19 @@
 # Changelog
 
 All notable changes to the YantrikDB Hermes memory plugin.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project aims for semantic versioning once merged into Hermes.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
+
+## [0.4.3] — 2026-05-13 — Mode-aware config schema, fixed install-doc URL
+
+Driven by [Issue #2](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/2) (becks0815): a user followed the `Missing: YANTRIKDB_TOKEN → https://yantrikdb.com/server/quickstart/` hint from `hermes memory status`, hit broken setup commands on that page (renamed during the engine's v0.7.x refactor), and went down a Docker + token rabbit hole — when in fact the v0.2.0+ default is embedded mode and they didn't need any of it.
+
+### Fixed
+- `get_config_schema()` is now **mode-aware**. Embedded-mode users (the default since v0.2.0) only see `mode` + `db_path` + `namespace` + `top_k` in the config surface; HTTP-only `token` / `url` aren't surfaced as required-but-missing. HTTP-mode users still get the full set with `token` marked required.
+- The `url` pointer on each schema entry now points at the canonical install docs in this repo's README (`#install-default--embedded-backend` for embedded, `#install-alternative--http-backend-for-ha-cluster-setups` for HTTP), not the stale `yantrikdb.com/server/quickstart/` URL that the v0.1.0 schema used.
+- New `mode` entry appears first in the schema so `hermes memory setup` makes the backend choice explicit instead of defaulting to "looks like you need a token".
+
+### Migration
+None — no behaviour change for users who already have working `.env` configuration. Affects only the on-boarding UX: `hermes memory status` no longer points new users at broken docs.
 
 ## [0.4.2] — 2026-05-12 — First-class embedder loaders
 
