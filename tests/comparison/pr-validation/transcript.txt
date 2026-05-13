@@ -1,0 +1,49 @@
+=== Step 1: load_memory_provider('yantrikdb') ===
+  loaded in 142.5ms; class=YantrikDBMemoryProvider
+  name='yantrikdb'
+  is_available()=True
+
+=== Step 2: initialize() ===
+  initialize() ok in 16.4ms
+
+=== Step 3: get_tool_schemas() ===
+  8 tools exposed:
+    - yantrikdb_remember: Store a durable memory. Use for decisions, preferences, facts about pe...
+    - yantrikdb_recall: Explainable recall — semantic search ranked by relevance × recency × i...
+    - yantrikdb_forget: Tombstone (soft-delete) a memory by its rid. Use when the user retract...
+    - yantrikdb_think: Run a bounded memory maintenance pass: canonicalize near-duplicates, f...
+    - yantrikdb_conflicts: List open contradictions detected by yantrikdb_think. Each conflict in...
+    - yantrikdb_resolve_conflict: Resolve a contradiction from yantrikdb_conflicts. Strategies: 'keep_wi...
+    - yantrikdb_relate: Record a relationship edge between two entities in the knowledge graph...
+    - yantrikdb_stats: Operational snapshot: active memory count, tombstoned count, graph edg...
+
+=== Step 4: remember -> recall -> why_retrieved ===
+  remember #1 (90.11ms): {"rid": "019e223a-5d6e-7446-ba14-addd609fcd51", "stored": true}
+  remember #2 (0.60ms): {"rid": "019e223a-5d70-7dea-bfd6-1cc055e5e766", "stored": true}
+  remember #3 (0.70ms): {"rid": "019e223a-5d70-7dea-bfd6-1cc3e2da2ce7", "stored": true}
+  remember #4 (0.56ms): {"rid": "019e223a-5d71-70f7-9b4a-b4db7ec52039", "stored": true}
+
+  recall (4.10ms) -- 5 results, top 3:
+    #1 score=1.393  text='Pranab actually prefers light mode in VS Code when reviewing...'
+        why_retrieved=['semantically similar (0.83)', 'recent', 'important (decay=0.70)', 'keyword_match']
+    #2 score=1.393  text='Pranab actually prefers light mode in VS Code when reviewing...'
+        why_retrieved=['semantically similar (0.83)', 'recent', 'important (decay=0.70)', 'keyword_match']
+    #3 score=1.327  text='Pranab prefers dark mode in VS Code with JetBrains Mono font...'
+        why_retrieved=['semantically similar (0.71)', 'recent', 'important (decay=0.70)', 'keyword_match']
+
+=== Step 5: yantrikdb_conflicts surfaces contradictions ===
+  0 conflict(s) found
+
+=== Step 6: yantrikdb_stats ===
+  {
+  "active_memories": 8,
+  "consolidated_memories": 0,
+  "tombstoned_memories": 0,
+  "edges": 0,
+  "entities": 0,
+  "operations": 25,
+  "open_conflicts": 0,
+  "pending_triggers": 0
+}
+
+=== ALL STEPS COMPLETED — PR v0.4.2 WORKS END-TO-END ===
