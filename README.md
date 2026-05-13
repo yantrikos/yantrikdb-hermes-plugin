@@ -11,7 +11,7 @@
 
 > **YantrikDB as a memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent).** Self-maintaining memory — canonicalizes duplicates, surfaces contradictions, explains recall — in a drop-in plugin. As of **v0.2.0** the default backend is **in-process** (`pip install` and go, no separate server).
 
-This repository tracks the plugin as a standalone artifact so users can install it immediately, without waiting on upstream review. [Issue NousResearch/hermes-agent#9975](https://github.com/NousResearch/hermes-agent/issues/9975) asks whether upstream would welcome it; a PR is in flight. Until that lands, install from here.
+This repository **is** the canonical distribution. Per Hermes maintainer guidance, new memory providers aren't being merged upstream — the recommended pattern is standalone plugins that users install via `pip` and copy into their Hermes tree. That keeps the version cadence, CI gating, issue triage, and review cycle on the plugin author's side, so fixes ship the same day they're ready instead of waiting on upstream review bandwidth.
 
 ## Install (default — embedded backend)
 
@@ -194,7 +194,7 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 
 ## Status
 
-**v0.4.2** (current) — first-class embedder loaders for the `model2vec` family and the HF `sentence-transformers` ecosystem; embedding dim auto-probed; default install stays slim via optional `[model2vec]` and `[sentence-transformers]` pip extras. 151 tests passing on Python 3.11/3.12/3.13. Upstream Hermes discussion still open at [hermes-agent#9975](https://github.com/NousResearch/hermes-agent/issues/9975) and PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989); the standalone install path doesn't depend on either.
+**v0.4.2** (current) — first-class embedder loaders for the `model2vec` family and the HF `sentence-transformers` ecosystem; embedding dim auto-probed; default install stays slim via optional `[model2vec]` and `[sentence-transformers]` pip extras. 151 tests passing on Python 3.11/3.12/3.13. **Standalone-by-design** per Hermes maintainer guidance — Hermes is not accepting new memory providers upstream; standalone plugins installed via `pip` are the recommended pattern. PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989) closed 2026-05-13 with that resolution.
 
 ### Release cadence
 
@@ -231,6 +231,5 @@ This plugin is **MIT** (matching Hermes — the code is intended for upstream co
 - **Architecture**: [yantrikdb/ARCHITECTURE.md](yantrikdb/ARCHITECTURE.md)
 - **Verification transcripts**: [VERIFICATION.md](VERIFICATION.md)
 - **Hermes Agent**: <https://github.com/NousResearch/hermes-agent>
-- **Upstream discussion**: [hermes-agent#9975](https://github.com/NousResearch/hermes-agent/issues/9975)
 - **YantrikDB server**: <https://github.com/yantrikos/yantrikdb-server>
 - **YantrikDB docs**: <https://yantrikdb.com>
