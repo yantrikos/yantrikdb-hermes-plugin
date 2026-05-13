@@ -10,7 +10,10 @@ os.environ.setdefault("YANTRIKDB_DB_PATH", "/tmp/yhp-pr-validate.db")
 os.environ.setdefault("YANTRIKDB_NAMESPACE", "pr-validation")
 
 # === Step 1: load via Hermes' own discovery mechanism ===
-from plugins.memory import load_memory_provider
+from plugins.memory import (
+    load_memory_provider,  # noqa: E402 — late import is intentional, sys.path is set above
+)
+
 print("=== Step 1: load_memory_provider('yantrikdb') ===")
 t0 = time.perf_counter()
 provider = load_memory_provider("yantrikdb")
