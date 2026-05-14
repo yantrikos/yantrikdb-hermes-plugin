@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
-[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.7.6-orange)](https://github.com/yantrikos/yantrikdb-server)
 [![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
@@ -185,7 +185,7 @@ Tier 1 (`with_default()`, ~8 MB) uses [`potion-base-2M`](https://huggingface.co/
 
 **Quality numbers cited in this README are R@5 vs `sentence-transformers/all-MiniLM-L6-v2` (dim=384) on the upstream [evaluation corpus](https://github.com/yantrikos/yantrikdb/blob/main/scratch/eval_potion_2m.py).** The "~89% / ~92% / ~95% of MiniLM" approximations are from that specific eval; your mileage will vary on a different corpus or task. Semantic separation is also corpus-size dependent — at 3 records all vectors look similar (top score ~0.58); at 8+ with real diversity the score range opens up (top score ~0.84). If you're evaluating, run against your own data.
 
-CI runs ruff + mypy + pytest on Python 3.11 / 3.12 / 3.13 on every push.
+CI runs ruff + mypy + pytest on Python 3.11 / 3.12 / 3.13 / 3.14 on every push.
 
 ## Running the tests
 
