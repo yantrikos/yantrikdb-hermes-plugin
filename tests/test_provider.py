@@ -312,7 +312,7 @@ class TestHandleToolCall:
 
     def test_stats_dispatches(self, provider, mock_client):
         out = provider.handle_tool_call("yantrikdb_stats", {})
-        mock_client.stats.assert_called_once()
+        mock_client.stats.assert_called_once_with(namespace="hermes:workspace:coder")
         parsed = json.loads(out)
         assert parsed["active_memories"] == 42
         assert parsed["open_conflicts"] == 1

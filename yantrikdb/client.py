@@ -298,6 +298,7 @@ class YantrikDBClient:
         method: str,
         path: str,
         body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         url = f"{self.config.url}{path}"
         req_id = uuid.uuid4().hex[:8]
@@ -307,6 +308,7 @@ class YantrikDBClient:
                 method,
                 url,
                 json=body,
+                params=params,
                 headers=self._headers(),
                 timeout=(self.config.connect_timeout, self.config.read_timeout),
             )
@@ -448,8 +450,9 @@ class YantrikDBClient:
             body["weight"] = float(weight)
         return self._request("POST", "/v1/relate", body)
 
-    def stats(self) -> dict[str, Any]:
-        return self._request("GET", "/v1/stats")
+    def stats(self, *, namespace: str | None = None) -> dict[str, Any]:
+        params = {"namespace": namespace} if namespace else None
+        return self._request("GET", "/v1/stats", params=params)
 
     # -- Skills (v0.3.0+) ---------------------------------------------
     #

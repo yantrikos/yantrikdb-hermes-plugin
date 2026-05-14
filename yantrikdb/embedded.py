@@ -452,8 +452,8 @@ class EmbeddedYantrikDBClient:
 
     # -- Stats --------------------------------------------------------
 
-    def stats(self) -> dict[str, Any]:
-        out = self._db.stats(namespace=self.config.namespace)
+    def stats(self, *, namespace: str | None = None) -> dict[str, Any]:
+        out = self._db.stats(namespace=namespace or self.config.namespace)
         return out if isinstance(out, dict) else {}
 
     # -- Skills (v0.3.0+) ---------------------------------------------

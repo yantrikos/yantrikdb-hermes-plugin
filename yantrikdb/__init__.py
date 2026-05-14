@@ -1108,7 +1108,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         return json.dumps({"edge_id": resp.get("edge_id"), "stored": True})
 
     def _do_stats(self) -> str:
-        resp = self._require_client().stats()
+        resp = self._require_client().stats(namespace=self._namespace)
         self._record_success()
         return json.dumps({
             "active_memories": resp.get("active_memories", 0),
