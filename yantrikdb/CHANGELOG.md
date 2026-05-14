@@ -3,6 +3,25 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.5] — 2026-05-14 — `hermes plugins install` one-command path; venv guidance
+
+Driven by Discord question from wysie: *"can you update it so that we can easily install with hermes plugin install command? also, for the pip portion, should we be using hermes venv when installing?"* Both fair asks. Until now we shipped only the `pip install yantrikdb-hermes-plugin && yantrikdb-hermes install <hermes>` two-step. This release adds the one-command path and makes the venv expectations explicit.
+
+### Added
+
+- **Top-level `__init__.py` + `plugin.yaml`** at the repo root, so `hermes plugins install yantrikos/yantrikdb-hermes-plugin` lands a working memory provider end-to-end. Hermes' user-plugin loader reads the root `plugin.yaml`, sees `name: yantrikdb`, and clones the repo to `~/.hermes/plugins/yantrikdb/`. The top-level `__init__.py` dynamically loads the real plugin source from the `yantrikdb/` subfolder so the two install paths share code.
+
+- **Hermes-loader workaround built into the top-level entry**: Hermes' user-installed-plugin loader registers the plugin module under `_hermes_user_memory.<name>` but never registers the `_hermes_user_memory` parent package. Python's import machinery then fails when our entry tries to register a child module. We pre-register a synthetic parent so the load succeeds. Forward-compatible — if Hermes fixes this upstream, our code does nothing extra.
+
+- **README "Install in the same Python env as Hermes" guidance**: explicit instructions for `pipx` users (`pipx inject hermes-agent yantrikdb-hermes-plugin`) and standard venv users (source the venv before pip-installing).
+
+- **Regression test** pinning the user-installed-plugin entry: simulates Hermes' loader by exec'ing the top-level `__init__.py` under a `_hermes_user_memory.yantrikdb` module name and verifies `register` + `YantrikDBMemoryProvider` are exposed.
+
+### Notes
+
+- The original `pip install yantrikdb-hermes-plugin && yantrikdb-hermes install <hermes>` flow is unchanged and remains the recommended path for users who already have the engine deps installed (it doesn't re-pull yantrikdb on each `pip install`).
+- `hermes plugins install` does NOT auto-install pip dependencies — users still need `pip install yantrikdb` (or the plugin via pip) in Hermes' Python env afterward to get the engine.
+
 ## [0.4.4] — 2026-05-14 — Surface init failures; pre-create engine cache dir
 
 Driven by [Issue #5](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/5) (donbowman): `hermes memory status` reported `Status: available ✓` but every tool call returned `{"error": "YantrikDB is not active for this session."}`. Root cause: when `set_embedder_named("potion-base-8M")` raised inside `initialize()` (the bundled-embedder download couldn't write to the engine's cache dir on his Hermes-sandboxed environment), the plugin caught it, logged WARNING, and returned silently — but `is_available()` still reported True because it only checks engine importability, not init success. UX trap.

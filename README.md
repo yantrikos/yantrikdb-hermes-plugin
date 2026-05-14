@@ -15,43 +15,47 @@ This repository **is** the canonical distribution. Per Hermes maintainer guidanc
 
 ## Install (default — embedded backend)
 
-The v0.2.0 default backend is **in-process**: `pip install` and go, no separate server.
+The v0.2.0 default backend is **in-process**: no separate server, no token, no GPU, no network. Bundled `potion-base-2M` static embedder (~8 MB, dim=64) loads on first call (~80 ms one-time warmup) and stays in-process.
 
-Step 1 — drop the plugin into your Hermes checkout:
-
-```bash
-cd path/to/hermes-agent/plugins/memory
-git clone https://github.com/yantrikos/yantrikdb-hermes-plugin tmp
-mv tmp/yantrikdb .
-rm -rf tmp
-```
-
-Step 2 — install the engine:
+### Option A — `hermes plugins install` (v0.4.5+, one command for the plugin source)
 
 ```bash
-pip install yantrikdb        # ~10 MB; pulls only uuid-utils + click
-```
-
-Step 3 — activate:
-
-```bash
+hermes plugins install yantrikos/yantrikdb-hermes-plugin
+pip install yantrikdb                    # ~10 MB; in the same Python env as Hermes
 hermes config set memory.provider yantrikdb
+hermes memory status                     # → Provider: yantrikdb  Status: available ✓
 ```
 
-Verify:
+`hermes plugins install` clones the repo into `~/.hermes/plugins/yantrikdb/` based on `plugin.yaml`'s `name:` field. The `pip install yantrikdb` step gets the engine — `hermes plugins install` doesn't auto-install pip dependencies, so this is a separate step. **Crucially: pip-install into the same Python environment Hermes runs from.** If Hermes was installed via `pipx`, use `pipx inject hermes-agent yantrikdb`. If you're using a regular venv, source it first.
+
+### Option B — `pip install yantrikdb-hermes-plugin` (bundled-discovery path)
 
 ```bash
-hermes memory status
-# → Provider: yantrikdb  Plugin: installed ✓  Status: available ✓
+pip install yantrikdb-hermes-plugin     # pulls yantrikdb engine + the plugin source
+yantrikdb-hermes install ~/.hermes/hermes-agent
+hermes config set memory.provider yantrikdb
+hermes memory status                     # → Provider: yantrikdb  Status: available ✓
 ```
 
-That's it. No Docker, no token mint, no URL configuration. The bundled `potion-base-2M` static embedder (~8 MB, dim=64, R@5 ≈ 0.90 vs MiniLM's 0.95) loads on first call (~80 ms one-time warmup) and stays in-process.
+This drops the plugin source into Hermes' bundled `plugins/memory/yantrikdb/` and pulls all deps in one step. Use this when you want a single `pip install` to handle both the plugin and the engine, or when you don't want to add a user-plugin entry.
 
-**Optional: tier up the embedder** (downloads on first use, cached in user data dir):
+### Same-venv guidance (both options)
+
+`yantrikdb` and `yantrikdb-hermes-plugin` must be importable from whatever Python interpreter Hermes uses:
+
+- **`pipx install hermes-agent`** → `pipx inject hermes-agent yantrikdb yantrikdb-hermes-plugin`
+- **Plain venv** → `source path/to/hermes-venv/bin/activate` first, then `pip install ...`
+- **System Python** → just `pip install`
+
+If `hermes memory status` shows `Status: not available ✗` after install, the most common cause is the plugin landed in a different Python than Hermes is using. `which hermes && which python` will confirm.
+
+### Optional: tier up the embedder
 
 ```bash
-echo "YANTRIKDB_EMBEDDER=potion-base-8M" >> ~/.hermes/.env   # 28 MB, dim=256, ~92% MiniLM
+echo "YANTRIKDB_EMBEDDER=potion-base-8M" >> ~/.hermes/.env     # 28 MB, dim=256, ~92% MiniLM
 # or potion-base-32M for 121 MB, dim=512, ~95% MiniLM
+# or multilingual via the v0.4.2 model2vec path:
+echo "YANTRIKDB_EMBEDDER_MODEL2VEC=minishlab/potion-multilingual-128M" >> ~/.hermes/.env
 ```
 
 ## Install (alternative — HTTP backend, for HA cluster setups)

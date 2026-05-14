@@ -630,6 +630,79 @@ class TestConfigSchema:
 
 
 # ---------------------------------------------------------------------------
+# `hermes plugins install` user-discovery entry point (v0.4.5)
+# ---------------------------------------------------------------------------
+
+class TestHermesPluginsInstallEntryPoint:
+    """The top-level repo __init__.py is loaded by Hermes when a user runs
+    `hermes plugins install yantrikos/yantrikdb-hermes-plugin`. Verify it
+    exposes `register` + `YantrikDBMemoryProvider` and tolerates Hermes'
+    quirky loader (parent module not pre-registered).
+    """
+
+    def test_top_level_init_exposes_register_and_provider(self):
+        import importlib.util
+        import sys
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parent.parent
+        top_init = repo_root / "__init__.py"
+        assert top_init.exists(), "v0.4.5 requires a top-level __init__.py at repo root"
+
+        # Simulate Hermes' user-installed-plugin loader: register under a
+        # dotted module name whose parent doesn't exist in sys.modules. The
+        # parent-module workaround in __init__.py should handle it.
+        mod_name = "_hermes_user_memory_test.yantrikdb"
+        # Don't pre-register parent — that's the bug we're working around.
+        spec = importlib.util.spec_from_file_location(
+            mod_name, str(top_init),
+            submodule_search_locations=[str(repo_root)],
+        )
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        try:
+            spec.loader.exec_module(mod)
+            assert hasattr(mod, "register"), "top-level __init__.py must export register"
+            assert hasattr(mod, "YantrikDBMemoryProvider"), (
+                "top-level __init__.py must export YantrikDBMemoryProvider"
+            )
+            # Verify the parent-module workaround did its job
+            assert "_hermes_user_memory_test" in sys.modules, (
+                "top-level __init__.py should self-register synthetic parent"
+            )
+            # The exposed provider class should be a real MemoryProvider subclass
+            from agent.memory_provider import MemoryProvider
+            assert issubclass(mod.YantrikDBMemoryProvider, MemoryProvider)
+        finally:
+            # Cleanup synthetic modules so other tests aren't affected
+            for key in list(sys.modules):
+                if key.startswith("_hermes_user_memory_test"):
+                    sys.modules.pop(key, None)
+
+    def test_top_level_plugin_yaml_declares_name_yantrikdb(self):
+        """Hermes installer uses `plugin.yaml.name` as the install-target
+        directory. For `hermes plugins install` to drop the plugin in
+        ~/.hermes/plugins/yantrikdb/ (matching the provider name), the
+        root manifest must declare name: yantrikdb."""
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parent.parent
+        manifest = repo_root / "plugin.yaml"
+        assert manifest.exists(), "v0.4.5 requires a top-level plugin.yaml"
+        text = manifest.read_text(encoding="utf-8")
+        # crude line check rather than pulling pyyaml as a test dep
+        name_line = next(
+            (line for line in text.splitlines() if line.strip().startswith("name:")),
+            None,
+        )
+        assert name_line is not None
+        assert "yantrikdb" in name_line and "yantrikdb-hermes-plugin" not in name_line, (
+            f"root plugin.yaml must declare name: yantrikdb (got: {name_line!r})"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Plugin registration
 # ---------------------------------------------------------------------------
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yantrikdb-hermes-plugin"
-version = "0.4.4"
+version = "0.4.5"
 description = "Self-maintaining memory plugin for Hermes Agent — embedded YantrikDB engine, ~10 MB, no server, no token, no GPU. Canonicalizes duplicates, surfaces contradictions, ranks with recency awareness, and explains recall."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -121,4 +121,11 @@ warn_return_any = false
 strict_optional = true
 check_untyped_defs = true
 disallow_untyped_defs = false
-exclude = ["reference/", "tests/"]
+# v0.4.5: the repo root has an __init__.py (entry point for `hermes plugins
+# install`). The repo dir name `yantrikdb-hermes-plugin` isn't a valid Python
+# identifier, so mypy errors when it walks up from yantrikdb/ to find a
+# parent package. explicit_package_bases tells mypy: trust me, yantrikdb/ IS
+# the package root — don't look higher.
+explicit_package_bases = true
+namespace_packages = true
+exclude = ["reference/", "tests/", "^__init__\\.py$"]
