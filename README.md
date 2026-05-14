@@ -52,7 +52,7 @@ uv pip install --python ~/.hermes/hermes-agent/venv/bin/python yantrikdb-hermes-
 ~/.hermes/hermes-agent/venv/bin/yantrikdb-hermes install
 ```
 
-`yantrikdb-hermes install` registers the pip-installed provider with Hermes by creating `~/.hermes/plugins/yantrikdb` (or `$HERMES_HOME/plugins/yantrikdb`) as a symlink to the installed provider package. Use `yantrikdb-hermes install --copy` if your environment prefers physical files instead of a symlink.
+`yantrikdb-hermes install` registers the pip-installed provider with Hermes by creating a lightweight shim at `~/.hermes/plugins/yantrikdb` (or `$HERMES_HOME/plugins/yantrikdb`). The shim imports the real provider from the installed `yantrikdb-hermes-plugin` package, so future package upgrades are picked up without copying the whole provider tree. Use `yantrikdb-hermes install --copy` if your environment prefers a physical copy instead of the default shim.
 
 ### Updating
 
@@ -72,7 +72,7 @@ If your Hermes CLI does not have `hermes plugins update`, reinstall the plugin s
 hermes plugins install yantrikos/yantrikdb-hermes-plugin --force
 ```
 
-Option B updates the pip package, then refreshes the registered symlink:
+Option B updates the pip package, then refreshes the registered shim:
 
 ```bash
 source ~/.hermes/hermes-agent/venv/bin/activate
@@ -89,7 +89,36 @@ uv pip install --python ~/.hermes/hermes-agent/venv/bin/python --upgrade yantrik
 uv pip install --python ~/.hermes/hermes-agent/venv/bin/python --upgrade yantrikdb-hermes-plugin
 ```
 
-`--force` replaces the registered plugin directory/symlink. Back up any plugin-local files first if you keep custom files under `~/.hermes/plugins/yantrikdb/`; normal YantrikDB settings belong in `~/.hermes/.env` and are not touched.
+`--force` replaces the registered plugin directory. Back up any plugin-local files first if you keep custom files under `~/.hermes/plugins/yantrikdb/`; normal YantrikDB settings belong in `~/.hermes/.env` and are not touched.
+
+### Uninstalling
+
+Option A uses Hermes' plugin manager for the plugin source, plus pip for the engine dependency:
+
+```bash
+source ~/.hermes/hermes-agent/venv/bin/activate
+hermes plugins remove yantrikdb
+pip uninstall yantrikdb
+hermes memory setup                      # choose another provider, or disable external memory
+hermes gateway restart                   # if Hermes is running as a gateway/service
+```
+
+Option B removes the user-plugin registration, then optionally removes the pip packages:
+
+```bash
+source ~/.hermes/hermes-agent/venv/bin/activate
+yantrikdb-hermes uninstall
+pip uninstall yantrikdb-hermes-plugin yantrikdb
+hermes memory setup                      # choose another provider, or disable external memory
+hermes gateway restart                   # if Hermes is running as a gateway/service
+```
+
+If your installed version does not yet have `yantrikdb-hermes uninstall`, remove the registration manually:
+
+```bash
+rm -rf ~/.hermes/plugins/yantrikdb
+pip uninstall yantrikdb-hermes-plugin yantrikdb
+```
 
 ### Same-venv guidance (both options)
 
