@@ -8,10 +8,11 @@ this CLI creates the small bridge:
     pip install yantrikdb-hermes-plugin
     yantrikdb-hermes install
 
-By default the bridge is a symlink from ``$HERMES_HOME/plugins/yantrikdb``
-to this pip-installed provider package, so package upgrades are picked up
-without copying files again. Use ``--copy`` on platforms where symlinks are
-not desirable.
+By default the bridge is a tiny shim directory at
+``$HERMES_HOME/plugins/yantrikdb`` that imports the pip-installed provider
+package. This keeps package upgrades in site-packages while avoiding Hermes'
+user-plugin namespace from breaking package-relative imports. Use ``--copy``
+to install a physical copy instead.
 """
 
 from __future__ import annotations
@@ -52,6 +53,28 @@ def _copy_provider(src: Path, target: Path) -> None:
             shutil.copy2(entry, target / entry.name)
 
 
+def _install_provider_shim(src: Path, target: Path) -> None:
+    """Install a Hermes-discoverable shim for the pip package.
+
+    Hermes loads user memory providers under an internal namespace
+    (``_hermes_user_memory.<name>``). Loading the full pip package directory
+    directly under that namespace breaks package-relative imports in the
+    provider. The shim keeps Hermes discovery filesystem-based while importing
+    the real provider through its normal package name.
+    """
+    target.mkdir(parents=True, exist_ok=False)
+    (target / "__init__.py").write_text(
+        '"""Hermes user-plugin shim for the pip-installed YantrikDB provider."""\n'
+        "from yantrikdb_hermes_plugin import YantrikDBMemoryProvider\n\n\n"
+        "def register(ctx):\n"
+        "    ctx.register_memory_provider(YantrikDBMemoryProvider())\n",
+        encoding="utf-8",
+    )
+    plugin_yaml = src / "plugin.yaml"
+    if plugin_yaml.exists():
+        shutil.copy2(plugin_yaml, target / "plugin.yaml")
+
+
 def _replace_target(target: Path, *, force: bool) -> None:
     if not target.exists() and not target.is_symlink():
         return
@@ -84,23 +107,8 @@ def _install_user_plugin(args: argparse.Namespace) -> int:
         _copy_provider(src, target)
         action = "copied"
     else:
-        try:
-            target.symlink_to(src, target_is_directory=True)
-            action = "linked"
-        except OSError as e:
-            # Windows raises OSError when symlinks require admin or
-            # developer-mode (the default on stock Windows). Give the user
-            # an actionable next step instead of a bare stack trace.
-            if sys.platform == "win32":
-                print(
-                    f"error: could not create symlink at {target}: {e}\n"
-                    "Windows requires admin or developer-mode for symlinks. "
-                    "Re-run with --copy to install a physical copy instead:\n"
-                    f"  yantrikdb-hermes install --hermes-home {hermes_home} --copy",
-                    file=sys.stderr,
-                )
-                return 4
-            raise
+        _install_provider_shim(src, target)
+        action = "registered"
 
     print(f"{action} yantrikdb plugin into {target}")
     print()
@@ -151,6 +159,34 @@ def cmd_install(args: argparse.Namespace) -> int:
     return _install_user_plugin(args)
 
 
+def cmd_uninstall(args: argparse.Namespace) -> int:
+    """Remove the Hermes user-plugin registration created by install."""
+    hermes_home = Path(args.hermes_home).expanduser().resolve() if args.hermes_home else _default_hermes_home()
+    target = hermes_home / "plugins" / DEFAULT_PLUGIN_NAME
+
+    if not target.exists() and not target.is_symlink():
+        print(f"yantrikdb plugin registration not found at {target}")
+        return 0
+
+    if target.is_symlink() or target.is_file():
+        target.unlink()
+    else:
+        shutil.rmtree(target)
+
+    print(f"removed yantrikdb plugin registration from {target}")
+    print()
+    print("Next steps:")
+    print("  1. If YantrikDB is the active provider, choose another provider:")
+    print("       hermes memory setup")
+    print("     or disable the external provider:")
+    print("       hermes config set memory.provider null")
+    print("  2. Optionally uninstall the pip package from the Hermes environment:")
+    print("       pip uninstall yantrikdb-hermes-plugin yantrikdb")
+    print("  3. Restart Hermes if it is running as a gateway/service:")
+    print("       hermes gateway restart")
+    return 0
+
+
 def cmd_path(args: argparse.Namespace) -> int:
     """Print the on-disk path of the installed provider source.
 
@@ -194,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     p_install.add_argument(
         "--copy",
         action="store_true",
-        help="copy files instead of creating a symlink for the user-plugin install",
+        help="copy the full provider package instead of creating the default lightweight shim",
     )
     p_install.add_argument(
         "-f", "--force",
@@ -202,6 +238,18 @@ def main(argv: list[str] | None = None) -> int:
         help="overwrite an existing yantrikdb provider directory or symlink",
     )
     p_install.set_defaults(func=cmd_install)
+
+    p_uninstall = sub.add_parser(
+        "uninstall",
+        help="remove the Hermes user-plugin registration",
+    )
+    p_uninstall.add_argument(
+        "--hermes-home",
+        type=str,
+        default=None,
+        help="Hermes home directory for user-plugin uninstall (default: $HERMES_HOME or ~/.hermes)",
+    )
+    p_uninstall.set_defaults(func=cmd_uninstall)
 
     p_path = sub.add_parser(
         "path",

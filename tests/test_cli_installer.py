@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
 from pathlib import Path
-
-import pytest
 
 CLI_PATH = Path(__file__).resolve().parents[1] / "yantrikdb" / "cli.py"
 
@@ -19,11 +16,7 @@ def _load_cli():
     return module
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Windows pathlib symlink_to requires admin/developer-mode; --copy is the documented path on Windows.",
-)
-def test_install_defaults_to_user_plugin_symlink(tmp_path, capsys):
+def test_install_defaults_to_user_plugin_shim(tmp_path, capsys):
     cli = _load_cli()
     hermes_home = tmp_path / "home"
 
@@ -31,10 +24,14 @@ def test_install_defaults_to_user_plugin_symlink(tmp_path, capsys):
 
     assert rc == 0
     target = hermes_home / "plugins" / "yantrikdb"
-    assert target.is_symlink()
-    assert target.resolve() == CLI_PATH.parent.resolve()
+    assert target.is_dir()
+    assert not target.is_symlink()
+    init_text = (target / "__init__.py").read_text(encoding="utf-8")
+    assert "from yantrikdb_hermes_plugin import YantrikDBMemoryProvider" in init_text
+    assert "register_memory_provider(YantrikDBMemoryProvider())" in init_text
+    assert (target / "plugin.yaml").exists()
     out = capsys.readouterr().out
-    assert "linked yantrikdb plugin into" in out
+    assert "registered yantrikdb plugin into" in out
     assert "hermes config set memory.provider yantrikdb" in out
 
 
@@ -78,3 +75,30 @@ def test_legacy_positional_path_still_installs_into_checkout(tmp_path):
     assert target.is_dir()
     assert (target / "__init__.py").exists()
     assert (target / "plugin.yaml").exists()
+
+
+def test_uninstall_removes_user_plugin_registration(tmp_path, capsys):
+    cli = _load_cli()
+    hermes_home = tmp_path / "home"
+    assert cli.main(["install", "--hermes-home", str(hermes_home)]) == 0
+    capsys.readouterr()
+
+    rc = cli.main(["uninstall", "--hermes-home", str(hermes_home)])
+
+    assert rc == 0
+    target = hermes_home / "plugins" / "yantrikdb"
+    assert not target.exists()
+    out = capsys.readouterr().out
+    assert "removed yantrikdb plugin registration" in out
+    assert "pip uninstall yantrikdb-hermes-plugin yantrikdb" in out
+
+
+def test_uninstall_is_idempotent_when_not_installed(tmp_path, capsys):
+    cli = _load_cli()
+    hermes_home = tmp_path / "home"
+
+    rc = cli.main(["uninstall", "--hermes-home", str(hermes_home)])
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "not found" in out
