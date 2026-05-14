@@ -1,5 +1,5 @@
 name: yantrikdb
-version: 0.4.7
+version: 0.4.8
 # Note: plugin.yaml lives at both the repo root AND yantrikdb/ subfolder. The
 # root copy is the manifest Hermes' user-installed plugin loader reads when a
 # user does `hermes plugins install yantrikos/yantrikdb-hermes-plugin`; the

@@ -3,6 +3,21 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.8] — 2026-05-14 — Scope `yantrikdb_stats` to the derived namespace
+
+Lands [#10](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/10) from **@wysie** — fourth PR this stretch, catching another silent inconsistency we hadn't noticed.
+
+### Fixed
+
+- **`yantrikdb_stats` was querying the wrong namespace.** YantrikDB derives a per-identity runtime namespace from the configured base plus Hermes workspace/identity, e.g. `hermes:hermes:default`. `remember` and `recall` already used this derived namespace, but `stats` went through the backend at the *base* config namespace (`hermes`). Result: `hermes memory status` (or any direct `yantrikdb_stats` tool call) could report **zero active memories** while the derived runtime namespace actually contained plenty — a silent UX inconsistency that misled anyone trying to verify their setup.
+- Fix: pass the derived namespace through `yantrikdb_stats` so it reports against the same namespace `remember`/`recall` operate on.
+- Both embedded and HTTP backends updated to accept an optional `namespace` arg on `stats`.
+- New regression test in `tests/test_client.py` pinning the namespaced-stats request shape.
+
+### Credit
+
+[@wysie](https://github.com/wysie) — fourth PR in the same arc that started with #6 (#6 symlink installer → #7 venv/uv docs → #8 shim fix for the symlink-was-actually-broken bug → #10 derived-namespace stats fix). Each one independently substantive, each one with its own test coverage.
+
 ## [0.4.7] — 2026-05-14 — Shim installer replaces symlink; `yantrikdb-hermes uninstall`
 
 Lands [#8](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/8) from **@wysie** — third PR this evening, this one catching a real bug we both missed in the v0.4.6 symlink approach.
