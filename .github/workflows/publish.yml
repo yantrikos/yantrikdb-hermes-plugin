@@ -1,9 +1,18 @@
 name: Publish to PyPI
 
-# Triggered by tag pushes matching v* (e.g. v0.3.1, v0.4.0).
-# The build step runs ruff + mypy + pytest first as a gate; PyPI publish
-# only fires if all checks pass. Uses PyPI Trusted Publisher (no API
-# token in repo secrets) — configure once via PyPI's web UI:
+# Triggered when a GitHub Release is *published* (not on raw tag pushes).
+# This is the deliberate-release gate: pushing a `vX.Y.Z` tag now creates
+# the tag but does NOT ship to PyPI until a Release is also published from
+# that tag — either via the GitHub web UI or `gh release create`.
+#
+# Rationale: tags are cheap to push by accident or for in-progress work;
+# Releases are an explicit "this is the version we want users to install"
+# signal. The pre-v0.4.7 workflow fired on every tag, which works but
+# loses that distinction.
+#
+# Pipeline remains: ruff + mypy + pytest gate FIRST; PyPI upload only
+# on pass. Uses PyPI Trusted Publisher (no API token in repo secrets) —
+# configure once via PyPI's web UI:
 #   https://pypi.org/manage/project/yantrikdb-hermes-plugin/settings/publishing/
 #
 # Trusted Publisher config to set on PyPI:
@@ -12,12 +21,17 @@ name: Publish to PyPI
 #   Workflow:     publish.yml
 #   Environment:  pypi
 #
-# That's the entire setup — no secrets to rotate, no tokens to leak.
+# Ship sequence going forward:
+#   git tag vX.Y.Z
+#   git push origin main vX.Y.Z
+#   gh release create vX.Y.Z --notes-from-tag    # → triggers PyPI publish
+#
+# Or do tag + release in one shot:
+#   gh release create vX.Y.Z --target main --title "vX.Y.Z" --notes "…"
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
 
 jobs:
   build:
