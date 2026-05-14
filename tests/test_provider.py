@@ -594,6 +594,32 @@ class TestConfigSchema:
         saved = json.loads((tmp_path / "yantrikdb.json").read_text())
         assert saved["namespace"] == "custom"
 
+    def test_init_error_surfaces_in_system_prompt_block(self, provider_module, monkeypatch):
+        # v0.4.4 regression test for Issue #5: when initialize() fails to
+        # construct the backend, the system_prompt_block must surface the
+        # reason so the agent sees memory as NOT AVAILABLE instead of
+        # silently absent.
+        from yantrikdb_plugin_under_test.client import YantrikDBError
+
+        def _boom(_cfg):
+            raise YantrikDBError("simulated cache-dir failure")
+
+        monkeypatch.setattr(provider_module, "make_backend", _boom)
+        monkeypatch.setenv("YANTRIKDB_MODE", "embedded")
+
+        p = provider_module.YantrikDBMemoryProvider()
+        p.initialize(session_id="test")
+
+        # Backend wasn't constructed -> _client stays None, _init_error set
+        assert p._client is None
+        assert p._init_error is not None
+        assert "simulated cache-dir failure" in p._init_error
+
+        # system_prompt_block surfaces the failure to the model
+        block = p.system_prompt_block()
+        assert "NOT AVAILABLE" in block
+        assert "simulated cache-dir failure" in block
+
     def test_save_config_merges_with_existing(self, provider_module, tmp_path):
         (tmp_path / "yantrikdb.json").write_text(json.dumps({"url": "http://x"}))
         p = provider_module.YantrikDBMemoryProvider()

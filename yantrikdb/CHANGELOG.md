@@ -3,6 +3,17 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.4] — 2026-05-14 — Surface init failures; pre-create engine cache dir
+
+Driven by [Issue #5](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/5) (donbowman): `hermes memory status` reported `Status: available ✓` but every tool call returned `{"error": "YantrikDB is not active for this session."}`. Root cause: when `set_embedder_named("potion-base-8M")` raised inside `initialize()` (the bundled-embedder download couldn't write to the engine's cache dir on his Hermes-sandboxed environment), the plugin caught it, logged WARNING, and returned silently — but `is_available()` still reported True because it only checks engine importability, not init success. UX trap.
+
+### Fixed
+- **Init failures are now surfaced, not buried.** When `initialize()` can't construct the backend, the error message is captured on `self._init_error` and exposed via `system_prompt_block()` so the model sees `# YantrikDB Memory — NOT AVAILABLE\nThe plugin failed to initialize: <reason>` instead of memory appearing silently absent. Logging bumped from WARNING to ERROR for backend-construction failures.
+- **Engine cache dir is pre-created defensively** in `initialize()` (embedded mode only). Walks `$XDG_CACHE_HOME` then `$HOME/.cache` then `Path.home()/.cache` and `mkdir -p`s `yantrikdb/models/` under each — covers Hermes-sandboxed environments where `dirs::cache_dir()` resolves to a path the engine can't auto-create. Eliminates the `mkdir -p ~/.hermes/.yantrikdb` workaround donbowman had to discover.
+
+### Migration
+None — no behaviour change for users whose plugin was already initialising cleanly. Affects only the "what happens when init fails" path.
+
 ## [0.4.3] — 2026-05-13 — Mode-aware config schema, fixed install-doc URL
 
 Driven by [Issue #2](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/2) (becks0815): a user followed the `Missing: YANTRIKDB_TOKEN → https://yantrikdb.com/server/quickstart/` hint from `hermes memory status`, hit broken setup commands on that page (renamed during the engine's v0.7.x refactor), and went down a Docker + token rabbit hole — when in fact the v0.2.0+ default is embedded mode and they didn't need any of it.

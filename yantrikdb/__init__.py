@@ -32,6 +32,7 @@ Config via env + $HERMES_HOME/yantrikdb.json:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -457,6 +458,38 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _ensure_engine_cache_dir() -> None:
+    """Pre-create the engine's model-cache directory if it doesn't exist.
+
+    The yantrikdb engine downloads bundled-named embedders to
+    ``dirs::cache_dir()/yantrikdb/models/`` — on Linux that resolves via
+    ``$XDG_CACHE_HOME`` or ``$HOME/.cache``. On a vanilla install the engine
+    auto-creates it; in environments where the parent dir doesn't exist or
+    where ``dirs::cache_dir()`` returns ``None`` (HOME unset, or strict
+    sandboxing), the auto-create can fail silently and the embedder-attach
+    call raises later inside ``set_embedder_named``.
+
+    We side-step that by ensuring the candidate paths exist before any
+    download path runs. Failure here is non-fatal — if we can't create the
+    dir, the engine will surface its own error message and ``initialize()``
+    will capture it as ``self._init_error``.
+    """
+    candidates: list[Path] = []
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        candidates.append(Path(xdg) / "yantrikdb" / "models")
+    home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
+    if home:
+        candidates.append(Path(home) / ".cache" / "yantrikdb" / "models")
+    with contextlib.suppress(RuntimeError, OSError):
+        candidates.append(Path.home() / ".cache" / "yantrikdb" / "models")
+    for p in candidates:
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.debug("Could not pre-create engine cache dir %s: %s", p, e)
+
+
 def _derive_namespace(base: str, kwargs: dict[str, Any]) -> str:
     """Scope the namespace to ``{base}:{agent_workspace}:{agent_identity}``.
 
@@ -532,6 +565,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._namespace: str = DEFAULT_NAMESPACE
         self._session_id: str = ""
         self._cron_skipped: bool = False
+        # v0.4.4: when initialize() fails to construct the backend (e.g.
+        # bundled-embedder download couldn't write to the engine's cache
+        # dir), capture the reason here so system_prompt_block can surface
+        # it to the model instead of yantrikdb appearing silently absent.
+        self._init_error: str | None = None
 
         self._prefetch_result: str = ""
         self._prefetch_lock = threading.Lock()
@@ -692,10 +730,25 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return
 
         self._namespace = _derive_namespace(self._config.namespace, kwargs)
+
+        # v0.4.4: defensively pre-create the engine's model-cache dir before
+        # any bundled-named download path runs. Otherwise an environment
+        # where dirs::cache_dir() resolves to a path the engine can't create
+        # (e.g. Hermes sandboxing with a custom HOME / XDG_CACHE_HOME, per
+        # Issue #5) will fail set_embedder_named() and leave self._client
+        # unset — and is_available() will still report True. Pre-creating
+        # eliminates the trap; if it raises here, the error gets captured
+        # by self._init_error and surfaced via the system prompt block
+        # instead of disappearing into a WARNING log.
+        if self._config.mode == "embedded":
+            _ensure_engine_cache_dir()
+
         try:
             backend = make_backend(self._config)
         except YantrikDBError as e:
-            logger.warning("YantrikDB %s mode init failed: %s", self._config.mode, e)
+            msg = f"{self._config.mode} mode init failed: {e}"
+            logger.error("YantrikDB %s", msg)
+            self._init_error = msg
             return
         with self._client_lock:
             self._client = backend
@@ -732,7 +785,26 @@ class YantrikDBMemoryProvider(MemoryProvider):
     # -- Prompt / prefetch -----------------------------------------------
 
     def system_prompt_block(self) -> str:
-        if self._cron_skipped or self._client is None:
+        if self._cron_skipped:
+            return ""
+        if self._client is None:
+            # v0.4.4: surface the init failure to the model instead of
+            # silently pretending memory is absent. Without this, an agent
+            # whose plugin failed to initialize keeps trying to call the
+            # tools and getting "not active" errors — better to tell it
+            # upfront so it can adapt or alert the user.
+            if self._init_error:
+                return (
+                    "# YantrikDB Memory — NOT AVAILABLE\n"
+                    f"The plugin failed to initialize: {self._init_error}\n"
+                    "Memory tools (`yantrikdb_*`) will not work this session. "
+                    "Inform the user and proceed without memory tooling. "
+                    "Common cause: the engine's model-cache directory "
+                    "(`$XDG_CACHE_HOME/yantrikdb/models/` or "
+                    "`$HOME/.cache/yantrikdb/models/`) isn't writable. "
+                    "See https://github.com/yantrikos/yantrikdb-hermes-plugin/issues "
+                    "for diagnostics."
+                )
             return ""
         return (
             "# YantrikDB Memory\n"
