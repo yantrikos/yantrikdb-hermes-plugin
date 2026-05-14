@@ -3,6 +3,30 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.7] — 2026-05-14 — Shim installer replaces symlink; `yantrikdb-hermes uninstall`
+
+Lands [#8](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/8) from **@wysie** — third PR this evening, this one catching a real bug we both missed in the v0.4.6 symlink approach.
+
+### Fixed
+
+- **Option B was silently broken on some installs.** v0.4.6's `yantrikdb-hermes install` created `$HERMES_HOME/plugins/yantrikdb/` as a symlink to the pip-installed `yantrikdb_hermes_plugin` package directory. Hermes' user-plugin loader then imported that directory under the synthetic namespace `_hermes_user_memory.yantrikdb`, where the provider's `from .client import …` style relative imports failed silently — and `hermes memory status` would report the plugin as not available. Smoke-tests during v0.4.6 development didn't catch it; wysie's repro did.
+- **Fix: shim directory instead of symlink.** `yantrikdb-hermes install` now creates a tiny shim at `$HERMES_HOME/plugins/yantrikdb/` with its own `__init__.py` that does `from yantrikdb_hermes_plugin import YantrikDBMemoryProvider` — an *absolute* import using the pip package's real name, which sidesteps the synthetic-namespace issue entirely. The provider code lives in `site-packages/yantrikdb_hermes_plugin/` and its relative imports resolve normally because it's loaded by its real package name, not under Hermes' synthetic prefix.
+- Same fix-class as v0.4.5's top-level `__init__.py` synthetic-parent-module workaround (for the `hermes plugins install` path), reached from the other direction: instead of pre-registering a synthetic parent, route the import through the real package.
+
+### Added (this release)
+
+- **`yantrikdb-hermes uninstall`** subcommand — removes the user-plugin registration at `$HERMES_HOME/plugins/yantrikdb/` (works on shim, copy, or any existing target). Idempotent: prints "not found" and exits 0 when nothing's registered. Includes next-step prompts (choose another provider, optional pip-uninstall, restart Hermes gateway if running).
+- **2 new tests** in `tests/test_cli_installer.py`: shim shape (verifies `from yantrikdb_hermes_plugin import …` in the generated `__init__.py`), uninstall removes the registration, uninstall is idempotent when nothing's installed.
+- README "Uninstalling" section covering both Option A and Option B clean-removal paths.
+
+### Migration
+
+Existing v0.4.6 users on Option B should re-run `yantrikdb-hermes install --force` after upgrading — that replaces the broken symlink with the working shim. No data loss; memory DB stays at its configured path. v0.4.6 users on Option A or on the legacy `<hermes_root>` positional path are unaffected.
+
+### Credit
+
+[@wysie](https://github.com/wysie) — three PRs in one evening (#6 symlink-default installer, #7 venv/uv docs, this one #8 catching that #6's approach was actually broken and fixing it). Reasoned diagnosis, reproducible test, clean test coverage on the fix. Real first-external-contributor experience.
+
 ## [0.4.6] — 2026-05-14 — Symlink-by-default installer (community contribution); Windows fallback
 
 Lands [#6](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/6) from **@wysie** — first external contribution to this repo. The `yantrikdb-hermes install` CLI now defaults to creating a **symlink** at `$HERMES_HOME/plugins/yantrikdb/` pointing at the pip-installed provider source, so subsequent `pip install --upgrade yantrikdb-hermes-plugin` calls flow through to Hermes automatically without re-running the installer. The previous behaviour (copy files into `<hermes-root>/plugins/memory/yantrikdb/`) is preserved as a backward-compat fallback when a positional `<hermes_root>` argument is given.
