@@ -11,7 +11,7 @@
 
 > **YantrikDB as a memory provider for [Hermes Agent](https://github.com/NousResearch/hermes-agent).** Self-maintaining memory — canonicalizes duplicates, surfaces contradictions, explains recall — in a drop-in plugin. As of **v0.2.0** the default backend is **in-process** (`pip install` and go, no separate server).
 
-This repository **is** the canonical distribution. Per Hermes maintainer guidance, new memory providers aren't being merged upstream — the recommended pattern is standalone plugins that users install via `pip` and copy into their Hermes tree. That keeps the version cadence, CI gating, issue triage, and review cycle on the plugin author's side, so fixes ship the same day they're ready instead of waiting on upstream review bandwidth.
+This repository **is** the canonical distribution. Per Hermes maintainer guidance, new memory providers aren't being merged upstream — the recommended pattern is standalone plugins that users install via `pip` and register with their Hermes home directory. That keeps the version cadence, CI gating, issue triage, and review cycle on the plugin author's side, so fixes ship the same day they're ready instead of waiting on upstream review bandwidth.
 
 ## Install (default — embedded backend)
 
@@ -22,22 +22,22 @@ The v0.2.0 default backend is **in-process**: no separate server, no token, no G
 ```bash
 hermes plugins install yantrikos/yantrikdb-hermes-plugin
 pip install yantrikdb                    # ~10 MB; in the same Python env as Hermes
-hermes config set memory.provider yantrikdb
+hermes memory setup                      # → Select "yantrikdb" and press Enter
 hermes memory status                     # → Provider: yantrikdb  Status: available ✓
 ```
 
 `hermes plugins install` clones the repo into `~/.hermes/plugins/yantrikdb/` based on `plugin.yaml`'s `name:` field. The `pip install yantrikdb` step gets the engine — `hermes plugins install` doesn't auto-install pip dependencies, so this is a separate step. **Crucially: pip-install into the same Python environment Hermes runs from.** If Hermes was installed via `pipx`, use `pipx inject hermes-agent yantrikdb`. If you're using a regular venv, source it first.
 
-### Option B — `pip install yantrikdb-hermes-plugin` (bundled-discovery path)
+### Option B — `pip install yantrikdb-hermes-plugin` (bundled package path)
 
 ```bash
-pip install yantrikdb-hermes-plugin     # pulls yantrikdb engine + the plugin source
-yantrikdb-hermes install ~/.hermes/hermes-agent
-hermes config set memory.provider yantrikdb
-hermes memory status                     # → Provider: yantrikdb  Status: available ✓
+pip install yantrikdb-hermes-plugin     # pulls yantrikdb engine + the provider source
+yantrikdb-hermes install                # registers ~/.hermes/plugins/yantrikdb
+hermes memory setup                     # → Select "yantrikdb" and press Enter
+hermes memory status                    # → Provider: yantrikdb  Status: available ✓
 ```
 
-This drops the plugin source into Hermes' bundled `plugins/memory/yantrikdb/` and pulls all deps in one step. Use this when you want a single `pip install` to handle both the plugin and the engine, or when you don't want to add a user-plugin entry.
+`yantrikdb-hermes install` registers the pip-installed provider with Hermes by creating `~/.hermes/plugins/yantrikdb` (or `$HERMES_HOME/plugins/yantrikdb`) as a symlink to the installed provider package. Use `yantrikdb-hermes install --copy` if your environment prefers physical files instead of a symlink.
 
 ### Same-venv guidance (both options)
 
