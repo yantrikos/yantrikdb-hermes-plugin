@@ -20,6 +20,7 @@ The v0.2.0 default backend is **in-process**: no separate server, no token, no G
 ### Option A — `hermes plugins install` (v0.4.5+, one command for the plugin source)
 
 ```bash
+source ~/.hermes/hermes-agent/venv/bin/activate
 hermes plugins install yantrikos/yantrikdb-hermes-plugin
 pip install yantrikdb                    # ~10 MB; in the same Python env as Hermes
 hermes memory setup                      # → Select "yantrikdb" and press Enter
@@ -28,23 +29,76 @@ hermes memory status                     # → Provider: yantrikdb  Status: avai
 
 `hermes plugins install` clones the repo into `~/.hermes/plugins/yantrikdb/` based on `plugin.yaml`'s `name:` field. The `pip install yantrikdb` step gets the engine — `hermes plugins install` doesn't auto-install pip dependencies, so this is a separate step. **Crucially: pip-install into the same Python environment Hermes runs from.** If Hermes was installed via `pipx`, use `pipx inject hermes-agent yantrikdb`. If you're using a regular venv, source it first.
 
+If your Hermes environment uses `uv` and does not have `pip` available, install with the Hermes Python explicitly:
+
+```bash
+uv pip install --python ~/.hermes/hermes-agent/venv/bin/python yantrikdb
+```
+
 ### Option B — `pip install yantrikdb-hermes-plugin` (bundled package path)
 
 ```bash
+source ~/.hermes/hermes-agent/venv/bin/activate
 pip install yantrikdb-hermes-plugin     # pulls yantrikdb engine + the provider source
 yantrikdb-hermes install                # registers ~/.hermes/plugins/yantrikdb
 hermes memory setup                     # → Select "yantrikdb" and press Enter
 hermes memory status                    # → Provider: yantrikdb  Status: available ✓
 ```
 
+If your Hermes environment uses `uv` and does not have `pip` available, install with the Hermes Python explicitly:
+
+```bash
+uv pip install --python ~/.hermes/hermes-agent/venv/bin/python yantrikdb-hermes-plugin
+~/.hermes/hermes-agent/venv/bin/yantrikdb-hermes install
+```
+
 `yantrikdb-hermes install` registers the pip-installed provider with Hermes by creating `~/.hermes/plugins/yantrikdb` (or `$HERMES_HOME/plugins/yantrikdb`) as a symlink to the installed provider package. Use `yantrikdb-hermes install --copy` if your environment prefers physical files instead of a symlink.
+
+### Updating
+
+Option A updates the plugin checkout and the engine dependency separately:
+
+```bash
+source ~/.hermes/hermes-agent/venv/bin/activate
+hermes plugins update yantrikdb
+pip install --upgrade yantrikdb
+hermes gateway restart                    # if Hermes is running as a gateway/service
+hermes memory status
+```
+
+If your Hermes CLI does not have `hermes plugins update`, reinstall the plugin source in place:
+
+```bash
+hermes plugins install yantrikos/yantrikdb-hermes-plugin --force
+```
+
+Option B updates the pip package, then refreshes the registered symlink:
+
+```bash
+source ~/.hermes/hermes-agent/venv/bin/activate
+pip install --upgrade yantrikdb-hermes-plugin
+yantrikdb-hermes install --force
+hermes gateway restart                    # if Hermes is running as a gateway/service
+hermes memory status
+```
+
+For uv-only environments, target the Hermes Python explicitly:
+
+```bash
+uv pip install --python ~/.hermes/hermes-agent/venv/bin/python --upgrade yantrikdb
+uv pip install --python ~/.hermes/hermes-agent/venv/bin/python --upgrade yantrikdb-hermes-plugin
+```
+
+`--force` replaces the registered plugin directory/symlink. Back up any plugin-local files first if you keep custom files under `~/.hermes/plugins/yantrikdb/`; normal YantrikDB settings belong in `~/.hermes/.env` and are not touched.
 
 ### Same-venv guidance (both options)
 
 `yantrikdb` and `yantrikdb-hermes-plugin` must be importable from whatever Python interpreter Hermes uses:
 
 - **`pipx install hermes-agent`** → `pipx inject hermes-agent yantrikdb yantrikdb-hermes-plugin`
-- **Plain venv** → `source path/to/hermes-venv/bin/activate` first, then `pip install ...`
+- **Default Hermes venv** → `source ~/.hermes/hermes-agent/venv/bin/activate` first, then `pip install ...`
+- **Other plain venv** → `source path/to/hermes-venv/bin/activate` first, then `pip install ...`
+- **uv-only venv** → `uv pip install --python path/to/hermes-venv/bin/python ...`
 - **System Python** → just `pip install`
 
 If `hermes memory status` shows `Status: not available ✗` after install, the most common cause is the plugin landed in a different Python than Hermes is using. `which hermes && which python` will confirm.
