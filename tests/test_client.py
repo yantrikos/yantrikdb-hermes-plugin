@@ -271,6 +271,21 @@ class TestRequestFormation:
             "GET", "http://test:7438/v1/stats",
         )
         assert mock_session.request.call_args.kwargs["json"] is None
+        assert mock_session.request.call_args.kwargs["params"] is None
+        assert result == {"active_memories": 42, "open_conflicts": 1}
+
+    def test_stats_with_namespace(self, client, mock_session):
+        mock_session.request.return_value = _make_response(
+            200, {"active_memories": 42, "open_conflicts": 1},
+        )
+        result = client.stats(namespace="hermes:workspace:coder")
+        assert mock_session.request.call_args.args == (
+            "GET", "http://test:7438/v1/stats",
+        )
+        assert mock_session.request.call_args.kwargs["json"] is None
+        assert mock_session.request.call_args.kwargs["params"] == {
+            "namespace": "hermes:workspace:coder",
+        }
         assert result == {"active_memories": 42, "open_conflicts": 1}
 
     def test_resolve_conflict_keep_winner(self, client, mock_session):
