@@ -84,8 +84,23 @@ def _install_user_plugin(args: argparse.Namespace) -> int:
         _copy_provider(src, target)
         action = "copied"
     else:
-        target.symlink_to(src, target_is_directory=True)
-        action = "linked"
+        try:
+            target.symlink_to(src, target_is_directory=True)
+            action = "linked"
+        except OSError as e:
+            # Windows raises OSError when symlinks require admin or
+            # developer-mode (the default on stock Windows). Give the user
+            # an actionable next step instead of a bare stack trace.
+            if sys.platform == "win32":
+                print(
+                    f"error: could not create symlink at {target}: {e}\n"
+                    "Windows requires admin or developer-mode for symlinks. "
+                    "Re-run with --copy to install a physical copy instead:\n"
+                    f"  yantrikdb-hermes install --hermes-home {hermes_home} --copy",
+                    file=sys.stderr,
+                )
+                return 4
+            raise
 
     print(f"{action} yantrikdb plugin into {target}")
     print()

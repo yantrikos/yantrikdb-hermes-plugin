@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yantrikdb-hermes-plugin"
-version = "0.4.5"
+version = "0.4.6"
 description = "Self-maintaining memory plugin for Hermes Agent — embedded YantrikDB engine, ~10 MB, no server, no token, no GPU. Canonicalizes duplicates, surfaces contradictions, ranks with recency awareness, and explains recall."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -3,6 +3,36 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.6] — 2026-05-14 — Symlink-by-default installer (community contribution); Windows fallback
+
+Lands [#6](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/6) from **@wysie** — first external contribution to this repo. The `yantrikdb-hermes install` CLI now defaults to creating a **symlink** at `$HERMES_HOME/plugins/yantrikdb/` pointing at the pip-installed provider source, so subsequent `pip install --upgrade yantrikdb-hermes-plugin` calls flow through to Hermes automatically without re-running the installer. The previous behaviour (copy files into `<hermes-root>/plugins/memory/yantrikdb/`) is preserved as a backward-compat fallback when a positional `<hermes_root>` argument is given.
+
+### Added (from #6)
+
+- **`yantrikdb-hermes install` (no args)** now installs as a user plugin under `$HERMES_HOME/plugins/yantrikdb/` via a symlink to the pip-installed provider package. Pip upgrades pick up automatically.
+- **`--copy` flag** to install a physical copy instead of a symlink (for filesystems / platforms that don't support symlinks).
+- **`--hermes-home <path>`** to override the default `$HERMES_HOME` / `~/.hermes` target.
+- **`-f` / `--force`** to overwrite an existing target.
+- **`yantrikdb-hermes path`** subcommand prints the on-disk path of the installed provider source — useful for users wanting to symlink manually.
+- **Legacy `yantrikdb-hermes install <hermes_root>`** (positional argument) still works and copies into `<hermes_root>/plugins/memory/yantrikdb/` for users following the old README flow.
+- **`tests/test_cli_installer.py`** — 4-test coverage of the new CLI paths (symlink default, copy mode, refuses existing target without `--force`, legacy positional path).
+- **Exit codes**: 0 success / 2 invalid hermes_root / 3 target exists without --force / 4 Windows symlink failure (this release).
+
+### Fixed (this release, on top of #6)
+
+- **Windows symlink fallback**: `Path.symlink_to` requires admin or developer-mode on Windows. Without this fix end-users on stock Windows hit a bare `OSError` stack trace when running `yantrikdb-hermes install`. The CLI now catches that and prints an actionable message:
+  ```
+  error: could not create symlink at <target>: <reason>
+  Windows requires admin or developer-mode for symlinks. Re-run with --copy
+  to install a physical copy instead:
+    yantrikdb-hermes install --hermes-home <home> --copy
+  ```
+- **`test_install_defaults_to_user_plugin_symlink`** is now `@pytest.mark.skipif(sys.platform == "win32", ...)` so the test suite is green on Windows local dev. Linux CI (which is the gating environment) continues to exercise the symlink path.
+
+### Credit
+
+Thanks to [@wysie](https://github.com/wysie) for the symlink-by-default design and the test coverage. First-time external contribution; clean engineering through and through.
+
 ## [0.4.5] — 2026-05-14 — `hermes plugins install` one-command path; venv guidance
 
 Driven by Discord question from wysie: *"can you update it so that we can easily install with hermes plugin install command? also, for the pip portion, should we be using hermes venv when installing?"* Both fair asks. Until now we shipped only the `pip install yantrikdb-hermes-plugin && yantrikdb-hermes install <hermes>` two-step. This release adds the one-command path and makes the venv expectations explicit.
