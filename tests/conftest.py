@@ -165,6 +165,8 @@ def _clean_yantrikdb_env(monkeypatch):
         "YANTRIKDB_EMBEDDER_HF",
         "YANTRIKDB_EMBEDDING_DIM",
         "YANTRIKDB_SKILLS_ENABLED",
+        "YANTRIKDB_SYNC_USER_MESSAGES",
+        "YANTRIKDB_AUTO_THINK_ON_SESSION_END",
     ):
         monkeypatch.delenv(var, raising=False)
     yield

@@ -69,11 +69,15 @@ class TestConfigFromEnv:
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_abc")
         monkeypatch.setenv("YANTRIKDB_NAMESPACE", "myns")
         monkeypatch.setenv("YANTRIKDB_TOP_K", "25")
+        monkeypatch.setenv("YANTRIKDB_SYNC_USER_MESSAGES", "false")
+        monkeypatch.setenv("YANTRIKDB_AUTO_THINK_ON_SESSION_END", "false")
         cfg = client_module.YantrikDBConfig.from_env()
         assert cfg.url == "http://remote:7438"  # trailing slash stripped
         assert cfg.token == "ydb_abc"
         assert cfg.namespace == "myns"
         assert cfg.top_k == 25
+        assert cfg.sync_user_messages is False
+        assert cfg.auto_think_on_session_end is False
 
     def test_bad_top_k_falls_back_to_default(self, client_module, monkeypatch):
         monkeypatch.setenv("YANTRIKDB_TOP_K", "not-a-number")
@@ -230,27 +234,40 @@ class TestRequestFormation:
 
     def test_think_with_pattern_mining(self, client, mock_session):
         mock_session.request.return_value = _make_response(200, {})
-        client.think(run_pattern_mining=True, consolidation_limit=100)
+        client.think(
+            run_pattern_mining=True,
+            consolidation_limit=100,
+            namespace="hermes:workspace:coder",
+        )
         body = mock_session.request.call_args.kwargs["json"]
         assert body["run_pattern_mining"] is True
         assert body["consolidation_limit"] == 100
+        assert body["namespace"] == "hermes:workspace:coder"
 
     def test_conflicts_is_get_with_no_body(self, client, mock_session):
         mock_session.request.return_value = _make_response(200, {"conflicts": []})
-        client.conflicts()
+        client.conflicts(namespace="hermes:workspace:coder")
         assert mock_session.request.call_args.args == (
             "GET", "http://test:7438/v1/conflicts",
         )
         assert mock_session.request.call_args.kwargs["json"] is None
+        assert mock_session.request.call_args.kwargs["params"] == {
+            "namespace": "hermes:workspace:coder",
+        }
 
     def test_relate(self, client, mock_session):
         mock_session.request.return_value = _make_response(200, {"edge_id": "e1"})
-        client.relate("Alice", "Acme", "works_at", weight=0.9)
+        client.relate(
+            "Alice", "Acme", "works_at",
+            weight=0.9,
+            namespace="hermes:workspace:coder",
+        )
         body = mock_session.request.call_args.kwargs["json"]
         assert body == {
             "entity": "Alice",
             "target": "Acme",
             "relationship": "works_at",
+            "namespace": "hermes:workspace:coder",
             "weight": 0.9,
         }
 

@@ -98,6 +98,12 @@ class YantrikDBConfig:
             skills_enabled=_parse_bool(
                 os.environ.get("YANTRIKDB_SKILLS_ENABLED"), default=False,
             ),
+            auto_think_on_session_end=_parse_bool(
+                os.environ.get("YANTRIKDB_AUTO_THINK_ON_SESSION_END"), default=True,
+            ),
+            sync_user_messages=_parse_bool(
+                os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
+            ),
             namespace=os.environ.get("YANTRIKDB_NAMESPACE", DEFAULT_NAMESPACE),
             top_k=_parse_int(os.environ.get("YANTRIKDB_TOP_K"), DEFAULT_TOP_K),
             connect_timeout=_parse_float(
@@ -399,6 +405,7 @@ class YantrikDBClient:
         run_pattern_mining: bool = False,
         run_personality: bool = False,
         consolidation_limit: int | None = None,
+        namespace: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "run_consolidation": run_consolidation,
@@ -406,12 +413,15 @@ class YantrikDBClient:
             "run_pattern_mining": run_pattern_mining,
             "run_personality": run_personality,
         }
+        if namespace:
+            body["namespace"] = namespace
         if consolidation_limit is not None:
             body["consolidation_limit"] = int(consolidation_limit)
         return self._request("POST", "/v1/think", body)
 
-    def conflicts(self) -> dict[str, Any]:
-        return self._request("GET", "/v1/conflicts")
+    def conflicts(self, *, namespace: str | None = None) -> dict[str, Any]:
+        params = {"namespace": namespace} if namespace else None
+        return self._request("GET", "/v1/conflicts", params=params)
 
     def resolve_conflict(
         self,
@@ -440,12 +450,15 @@ class YantrikDBClient:
         relationship: str,
         *,
         weight: float | None = None,
+        namespace: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "entity": entity,
             "target": target,
             "relationship": relationship,
         }
+        if namespace:
+            body["namespace"] = namespace
         if weight is not None:
             body["weight"] = float(weight)
         return self._request("POST", "/v1/relate", body)

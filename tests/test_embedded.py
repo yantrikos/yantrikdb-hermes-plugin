@@ -490,3 +490,25 @@ class TestPathPrecedence:
         instance = mock_engine_class.return_value
         instance.set_embedder_named.assert_not_called()
         instance.set_embedder.assert_called_once()
+class TestEmbeddedErrorMapping:
+    def test_queue_full_maps_to_transient_error(
+        self, embedded_module, client_module, mock_engine_class, make_config,
+    ):
+        engine = mock_engine_class.with_default.return_value
+        engine.record_text.side_effect = RuntimeError(
+            "ingest queue full (256 pending ops, max=256); retry after 50ms"
+        )
+        client = embedded_module.EmbeddedYantrikDBClient(make_config())
+
+        with pytest.raises(client_module.YantrikDBTransientError):
+            client.remember("durable fact")
+
+    def test_unknown_engine_error_maps_to_server_error(
+        self, embedded_module, client_module, mock_engine_class, make_config,
+    ):
+        engine = mock_engine_class.with_default.return_value
+        engine.recall.side_effect = RuntimeError("rust panic: boom")
+        client = embedded_module.EmbeddedYantrikDBClient(make_config())
+
+        with pytest.raises(client_module.YantrikDBServerError):
+            client.recall("durable fact")

@@ -34,10 +34,31 @@ from .client import (
     YantrikDBConfig,
     YantrikDBError,
     YantrikDBServerError,
+    YantrikDBTransientError,
     truncate_text,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _map_engine_error(operation: str, exc: Exception) -> YantrikDBError:
+    """Map embedded-engine exceptions into the plugin's error taxonomy."""
+    if isinstance(exc, YantrikDBError):
+        return exc
+    msg = str(exc)
+    lowered = msg.lower()
+    if (
+        "queue full" in lowered
+        or "retry after" in lowered
+        or "database is locked" in lowered
+        or "database locked" in lowered
+        or "busy" in lowered
+        or "timeout" in lowered
+    ):
+        return YantrikDBTransientError(f"{operation} failed transiently: {msg}")
+    if "invalid" in lowered or "bad rid" in lowered or "not found" in lowered:
+        return YantrikDBClientError(f"{operation} failed: {msg}")
+    return YantrikDBServerError(f"{operation} failed: {msg}")
 
 
 # ---------------------------------------------------------------------------
@@ -344,14 +365,17 @@ class EmbeddedYantrikDBClient:
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         safe_text = truncate_text(text, self.config.max_text_len)
-        rid = self._db.record_text(
-            safe_text,
-            memory_type=memory_type or "semantic",
-            importance=float(importance),
-            namespace=namespace or self.config.namespace,
-            domain=domain or "general",
-            metadata=metadata,
-        )
+        try:
+            rid = self._db.record_text(
+                safe_text,
+                memory_type=memory_type or "semantic",
+                importance=float(importance),
+                namespace=namespace or self.config.namespace,
+                domain=domain or "general",
+                metadata=metadata,
+            )
+        except Exception as e:
+            raise _map_engine_error("remember", e) from e
         return {"rid": rid}
 
     def recall(
@@ -363,13 +387,16 @@ class EmbeddedYantrikDBClient:
         memory_type: str | None = None,
         domain: str | None = None,
     ) -> dict[str, Any]:
-        results = self._db.recall(
-            query=query,
-            top_k=int(top_k or self.config.top_k),
-            namespace=namespace or self.config.namespace,
-            domain=domain,
-            memory_type=memory_type,
-        )
+        try:
+            results = self._db.recall(
+                query=query,
+                top_k=int(top_k or self.config.top_k),
+                namespace=namespace or self.config.namespace,
+                domain=domain,
+                memory_type=memory_type,
+            )
+        except Exception as e:
+            raise _map_engine_error("recall", e) from e
         items = list(results) if results else []
         return {"results": items, "total": len(items)}
 
@@ -407,11 +434,17 @@ class EmbeddedYantrikDBClient:
             cfg["namespace"] = namespace
         if consolidation_limit is not None:
             cfg["consolidation_limit"] = int(consolidation_limit)
-        out = self._db.think(cfg)
+        try:
+            out = self._db.think(cfg)
+        except Exception as e:
+            raise _map_engine_error("think", e) from e
         return out if isinstance(out, dict) else {}
 
-    def conflicts(self) -> dict[str, Any]:
-        out = self._db.get_conflicts(namespace=self.config.namespace)
+    def conflicts(self, *, namespace: str | None = None) -> dict[str, Any]:
+        try:
+            out = self._db.get_conflicts(namespace=namespace or self.config.namespace)
+        except Exception as e:
+            raise _map_engine_error("conflicts", e) from e
         items = list(out) if out else []
         return {"conflicts": items}
 
@@ -434,7 +467,10 @@ class EmbeddedYantrikDBClient:
             kwargs["new_text"] = new_text
         if resolution_note:
             kwargs["resolution_note"] = resolution_note
-        out = self._db.resolve_conflict(**kwargs)
+        try:
+            out = self._db.resolve_conflict(**kwargs)
+        except Exception as e:
+            raise _map_engine_error("resolve_conflict", e) from e
         if isinstance(out, dict):
             return out
         return {"conflict_id": conflict_id, "strategy": strategy}
@@ -460,13 +496,19 @@ class EmbeddedYantrikDBClient:
         }
         if namespace:
             rel_kwargs["namespace"] = namespace
-        edge_id = self._db.relate(entity, target, **rel_kwargs)
+        try:
+            edge_id = self._db.relate(entity, target, **rel_kwargs)
+        except Exception as e:
+            raise _map_engine_error("relate", e) from e
         return {"edge_id": edge_id}
 
     # -- Stats --------------------------------------------------------
 
     def stats(self, *, namespace: str | None = None) -> dict[str, Any]:
-        out = self._db.stats(namespace=namespace or self.config.namespace)
+        try:
+            out = self._db.stats(namespace=namespace or self.config.namespace)
+        except Exception as e:
+            raise _map_engine_error("stats", e) from e
         return out if isinstance(out, dict) else {}
 
     # -- Skills (v0.3.0+) ---------------------------------------------
