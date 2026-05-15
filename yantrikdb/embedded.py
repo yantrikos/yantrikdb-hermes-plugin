@@ -392,6 +392,7 @@ class EmbeddedYantrikDBClient:
         run_pattern_mining: bool = False,
         run_personality: bool = False,
         consolidation_limit: int | None = None,
+        namespace: str | None = None,
     ) -> dict[str, Any]:
         cfg: dict[str, Any] = {
             "run_consolidation": run_consolidation,
@@ -399,6 +400,11 @@ class EmbeddedYantrikDBClient:
             "run_pattern_mining": run_pattern_mining,
             "run_personality": run_personality,
         }
+        # Only set namespace when provided so older engine versions that
+        # don't read the key from cfg keep their existing behavior. Engine
+        # pin is `yantrikdb >= 0.7.4`; current engines honor it.
+        if namespace:
+            cfg["namespace"] = namespace
         if consolidation_limit is not None:
             cfg["consolidation_limit"] = int(consolidation_limit)
         out = self._db.think(cfg)
@@ -442,12 +448,19 @@ class EmbeddedYantrikDBClient:
         relationship: str,
         *,
         weight: float | None = None,
+        namespace: str | None = None,
     ) -> dict[str, Any]:
-        edge_id = self._db.relate(
-            entity, target,
-            rel_type=relationship,
-            weight=float(weight) if weight is not None else 1.0,
-        )
+        # Conditionally pass namespace so older engines that don't accept
+        # the kwarg keep working. When the provider derives a workspace-
+        # scoped namespace, this routes the edge into that namespace
+        # rather than the engine's constructor-time default.
+        rel_kwargs: dict[str, Any] = {
+            "rel_type": relationship,
+            "weight": float(weight) if weight is not None else 1.0,
+        }
+        if namespace:
+            rel_kwargs["namespace"] = namespace
+        edge_id = self._db.relate(entity, target, **rel_kwargs)
         return {"edge_id": edge_id}
 
     # -- Stats --------------------------------------------------------
