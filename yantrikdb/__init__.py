@@ -571,7 +571,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # it to the model instead of yantrikdb appearing silently absent.
         self._init_error: str | None = None
 
-        self._prefetch_result: str = ""
+        self._prefetch_results: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
         self._prefetch_thread: threading.Thread | None = None
         self._sync_thread: threading.Thread | None = None
@@ -771,10 +771,45 @@ class YantrikDBMemoryProvider(MemoryProvider):
         for t in (self._prefetch_thread, self._sync_thread):
             if t and t.is_alive():
                 t.join(timeout=_SYNC_JOIN_SECS)
+        with self._prefetch_lock:
+            self._prefetch_results.clear()
         with self._client_lock:
             if self._client is not None:
                 self._client.close()
                 self._client = None
+
+    def on_session_switch(
+        self,
+        new_session_id: str,
+        *,
+        parent_session_id: str = "",
+        reset: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Update cached per-session state when Hermes changes session id."""
+        if self._prefetch_thread and self._prefetch_thread.is_alive():
+            self._prefetch_thread.join(timeout=_PREFETCH_JOIN_SECS)
+        if self._sync_thread and self._sync_thread.is_alive():
+            self._sync_thread.join(timeout=_SYNC_JOIN_SECS)
+
+        old_session_id = self._session_id
+        self._session_id = new_session_id or ""
+
+        # A reset/new conversation should not consume stale prefetched recall.
+        # For resume/branch/compression, drop only the session we just left;
+        # the new session has its own cache slot if one was queued explicitly.
+        with self._prefetch_lock:
+            if reset:
+                self._prefetch_results.clear()
+            elif old_session_id:
+                self._prefetch_results.pop(old_session_id, None)
+            if parent_session_id:
+                self._prefetch_results.pop(parent_session_id, None)
+
+        logger.debug(
+            "YantrikDB session switched: %s -> %s (reset=%s)",
+            old_session_id, self._session_id, reset,
+        )
 
     def _require_client(self) -> YantrikDBClient:
         """Return the client or raise — keeps dispatch paths type-clean."""
@@ -825,8 +860,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return ""
         if self._prefetch_thread and self._prefetch_thread.is_alive():
             self._prefetch_thread.join(timeout=_PREFETCH_JOIN_SECS)
+        key = session_id or self._session_id or "__default__"
         with self._prefetch_lock:
-            result, self._prefetch_result = self._prefetch_result, ""
+            result = self._prefetch_results.pop(key, "")
+            if not result and key != "__default__":
+                result = self._prefetch_results.pop("__default__", "")
         if not result:
             return ""
         return f"## YantrikDB Recall\n{result}"
@@ -839,6 +877,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
         client = self._client
         namespace = self._namespace
+        key = session_id or self._session_id or "__default__"
 
         def _run() -> None:
             try:
@@ -846,7 +885,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 block = _format_recall_block(resp.get("results", []), limit=5)
                 if block:
                     with self._prefetch_lock:
-                        self._prefetch_result = block
+                        self._prefetch_results[key] = block
                 self._record_success()
             except YantrikDBClientError as e:
                 logger.debug("YantrikDB prefetch rejected: %s", e)
@@ -1049,6 +1088,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         resp = self._require_client().think(
             run_pattern_mining=bool(args.get("run_pattern_mining", False)),
             consolidation_limit=args.get("consolidation_limit"),
+            namespace=self._namespace,
         )
         self._record_success()
         return json.dumps({
@@ -1062,7 +1102,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         })
 
     def _do_conflicts(self) -> str:
-        resp = self._require_client().conflicts()
+        resp = self._require_client().conflicts(namespace=self._namespace)
         self._record_success()
         conflicts = resp.get("conflicts", []) or []
         return json.dumps({"count": len(conflicts), "conflicts": conflicts})
@@ -1103,6 +1143,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             )
         resp = self._require_client().relate(
             entity, target, relationship,
+            namespace=self._namespace,
         )
         self._record_success()
         return json.dumps({"edge_id": resp.get("edge_id"), "stored": True})
@@ -1205,7 +1246,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return
         try:
             stats = self._client.think(
-                run_pattern_mining=False, run_personality=False,
+                run_pattern_mining=False,
+                run_personality=False,
+                namespace=self._namespace,
             )
             logger.info(
                 "YantrikDB session-end think: consolidated=%s conflicts=%s duration_ms=%s",

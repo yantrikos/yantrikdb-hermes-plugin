@@ -286,13 +286,14 @@ class TestHandleToolCall:
             "yantrikdb_think", {"run_pattern_mining": True},
         )
         assert mock_client.think.call_args.kwargs["run_pattern_mining"] is True
+        assert mock_client.think.call_args.kwargs["namespace"] == "hermes:workspace:coder"
         parsed = json.loads(out)
         assert parsed["consolidated"] == 2
         assert parsed["conflicts_found"] == 1
 
     def test_conflicts_dispatches(self, provider, mock_client):
         out = provider.handle_tool_call("yantrikdb_conflicts", {})
-        mock_client.conflicts.assert_called_once()
+        mock_client.conflicts.assert_called_once_with(namespace="hermes:workspace:coder")
         assert json.loads(out)["count"] == 0
 
     def test_relate_dispatches(self, provider, mock_client):
@@ -300,7 +301,9 @@ class TestHandleToolCall:
             "yantrikdb_relate",
             {"entity": "Alice", "target": "Acme", "relationship": "works_at"},
         )
-        mock_client.relate.assert_called_once_with("Alice", "Acme", "works_at")
+        mock_client.relate.assert_called_once_with(
+            "Alice", "Acme", "works_at", namespace="hermes:workspace:coder",
+        )
         assert json.loads(out)["edge_id"] == "e1"
 
     def test_relate_requires_all_three_fields(self, provider, mock_client):
@@ -454,6 +457,33 @@ class TestSyncTurn:
 # ---------------------------------------------------------------------------
 # Optional hooks
 # ---------------------------------------------------------------------------
+
+class TestSessionSwitch:
+    def test_updates_cached_session_id(self, provider):
+        assert provider._session_id == "sess-1"
+        provider.on_session_switch("sess-2", parent_session_id="sess-1")
+        assert provider._session_id == "sess-2"
+
+    def test_reset_clears_prefetch_cache(self, provider):
+        with provider._prefetch_lock:
+            provider._prefetch_results["sess-1"] = "old recall"
+        provider.on_session_switch("sess-2", reset=True)
+        assert provider._prefetch_results == {}
+
+
+class TestPrefetch:
+    def test_prefetch_is_scoped_by_session_id(self, provider, mock_client):
+        mock_client.recall.return_value = {
+            "results": [{"text": "alpha memory", "score": 0.9}],
+        }
+
+        provider.queue_prefetch("alpha", session_id="sess-a")
+        _wait_for_thread(provider._prefetch_thread)
+
+        assert provider.prefetch("alpha", session_id="sess-b") == ""
+        block = provider.prefetch("alpha", session_id="sess-a")
+        assert "alpha memory" in block
+
 
 class TestOnSessionEnd:
     def test_triggers_think(self, provider, mock_client):
