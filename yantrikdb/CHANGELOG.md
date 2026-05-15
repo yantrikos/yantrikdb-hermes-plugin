@@ -3,6 +3,27 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.9] — 2026-05-14 — Provider session hardening + embedded signature parity
+
+Lands [#11](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/11) from **@wysie** — fifth PR in this arc, this one a substantive five-concern hardening pass on long-lived provider state. Plus [#12](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/12) from us, closing the embedded-backend signature gap #11's namespace propagation would otherwise have introduced.
+
+### Added (from #11)
+
+- **`YANTRIKDB_SYNC_USER_MESSAGES` and `YANTRIKDB_AUTO_THINK_ON_SESSION_END` env vars are now read by `YantrikDBConfig.from_env()`.** The config fields already existed but weren't wired to env, so users couldn't disable ambient user-message sync or automatic session-end maintenance from outside their config file. Both default `True` (existing behavior preserved).
+- **`on_session_switch(new_session_id, *, parent_session_id="", reset=False)` lifecycle hook.** Hermes can change session id inside a long-lived process (resume / branch / pre-compress); the provider now updates its cached `_session_id`, joins any in-flight prefetch/sync threads, and selectively clears prefetch cache entries (everything on `reset=True`; just the prior session on resume/branch).
+- **Session-scoped prefetch cache.** `_prefetch_result: str` (single global slot — last-write-wins, sessions could cross-contaminate) became `_prefetch_results: dict[str, str]` keyed by session id. `prefetch()` falls back to a `__default__` slot for callers that don't pass `session_id` yet.
+- **Namespace propagation through `think`, `conflicts`, `relate`, and session-end maintenance `think`.** The provider derives a per-identity namespace from base config + Hermes workspace; previously `remember`/`recall`/`stats` honored it but the maintenance and graph endpoints went to the engine's constructor-time namespace. Now consistent across all paths on both HTTP and embedded backends.
+- **Embedded-engine error mapping.** `_map_engine_error()` classifies engine `RuntimeError` strings ("queue full", "retry after", "database locked", "busy", "timeout" → `YantrikDBTransientError`; "invalid", "bad rid", "not found" → `YantrikDBClientError`; else → `YantrikDBServerError`) and `remember`/`recall`/`think`/`conflicts`/`resolve_conflict`/`relate`/`stats` are all wrapped. Engine backpressure and locked-database errors now surface as transient (retriable) rather than as raw engine exceptions that would trip the breaker.
+
+### Fixed (from #12)
+
+- **`EmbeddedYantrikDBClient.think()` and `.relate()` accept `namespace` kwarg.** #11's namespace propagation widened the HTTP client signatures but not the embedded ones; in embedded mode (the default `pip install` backend) every `yantrikdb_think` / `yantrikdb_relate` tool call would have `TypeError`'d on the unexpected `namespace=…` kwarg. `tests/test_provider.py` uses a mocked client that accepts any kwargs, so the gap was invisible to the existing suite.
+- **`tests/test_signature_parity.py`** (new): inspects both client classes (no instantiation, no engine binary) and asserts every kwarg `YantrikDBClient` accepts on a provider-dispatched method is also accepted by `EmbeddedYantrikDBClient`. Asymmetric on purpose — embedded may have local-only extras, but missing something HTTP exposes is the production-break shape. Catches the next instance of mock-vs-real signature drift at test time rather than at user-report time.
+
+### Credit
+
+[@wysie](https://github.com/wysie) — fifth PR. The arc now reads: #6 symlink installer → #7 venv/uv docs → #8 shim fix for #6's silent breakage → #10 stats-namespace fix → #11 provider session hardening across five concerns. Each PR independently substantive, each with its own tests, each catching something the prior pass missed.
+
 ## [0.4.8] — 2026-05-14 — Scope `yantrikdb_stats` to the derived namespace
 
 Lands [#10](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/10) from **@wysie** — fourth PR this stretch, catching another silent inconsistency we hadn't noticed.
