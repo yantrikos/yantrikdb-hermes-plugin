@@ -71,10 +71,48 @@ Optional config file: `$HERMES_HOME/yantrikdb.json`. Env vars are the primary so
 | `token`           | `YANTRIKDB_TOKEN`           | *required*              | Bearer token from `yantrikdb token create`.                                        |
 | `namespace`       | `YANTRIKDB_NAMESPACE`       | `hermes`                | Tenant prefix. Combined with `agent_workspace:agent_identity` at init time.        |
 | `top_k`           | `YANTRIKDB_TOP_K`           | `10`                    | Default recall result count (capped at 50 via tool param).                         |
+| `owner_scoping`   | `YANTRIKDB_OWNER_SCOPING`   | `false`                 | Optional Hermes gateway scoping: append resolved-owner shard to the namespace.     |
+| `identity_map_path` | `YANTRIKDB_IDENTITY_MAP_PATH` | empty                 | Optional JSON file mapping platform actors to canonical owners.                    |
 | `connect_timeout` | `YANTRIKDB_CONNECT_TIMEOUT` | `5.0`                   | TCP connect timeout (seconds).                                                     |
 | `read_timeout`    | `YANTRIKDB_READ_TIMEOUT`    | `15.0`                  | Per-request read timeout.                                                          |
 | `retry_total`     | `YANTRIKDB_RETRY_TOTAL`     | `3`                     | Bounded retries on transient 5xx / connection blips (exponential backoff).         |
 | `max_text_len`    | `YANTRIKDB_MAX_TEXT_LEN`    | `25000`                 | Hard cap on memory body length; longer text is truncated client-side with a marker.|
+
+## Optional owner scoping for multi-user Hermes gateways
+
+By default, the effective namespace remains `namespace:agent_workspace:agent_identity`, preserving existing behavior. If one Hermes gateway serves multiple users and you want hard memory isolation without changing YantrikDB core, enable owner scoping:
+
+```json
+{
+  "owner_scoping": true,
+  "identity_map_path": "/path/to/identity-map.json"
+}
+```
+
+Identity map formats:
+
+```json
+{
+  "owners": {
+    "owner:primary-user": {
+      "actors": ["whatsapp:actor-a", "telegram:actor-b"]
+    }
+  }
+}
+```
+
+or:
+
+```json
+{
+  "actors": {
+    "whatsapp:actor-a": "owner:primary-user",
+    "telegram:actor-b": "owner:primary-user"
+  }
+}
+```
+
+When enabled, the plugin resolves the current Hermes `platform` + `user_id` to an owner, appends a stable non-PII owner shard to the namespace, and writes `owner_id`, `actor_id`, `channel`, and `conversation_id` into metadata. If no identity map is configured, the actor becomes its own owner by default, so actors are still stored and isolated without any owner config. This is a plugin/application concern; YantrikDB core does not need to know platform alias policy.
 
 ## Tools
 

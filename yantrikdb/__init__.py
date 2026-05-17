@@ -24,6 +24,8 @@ Config via env + $HERMES_HOME/yantrikdb.json:
   YANTRIKDB_TOKEN            — required, Bearer token from `yantrikdb token create`
   YANTRIKDB_NAMESPACE        — default "hermes"; combined with agent_workspace:agent_identity
   YANTRIKDB_TOP_K            — default 10
+  YANTRIKDB_OWNER_SCOPING    — optional; if true, append resolved-owner shard to namespace
+  YANTRIKDB_IDENTITY_MAP_PATH — optional JSON actor->owner alias map
   YANTRIKDB_READ_TIMEOUT     — default 15.0 seconds
   YANTRIKDB_CONNECT_TIMEOUT  — default 5.0 seconds
   YANTRIKDB_RETRY_TOTAL      — default 3 retries on transient 5xx
@@ -33,7 +35,9 @@ Config via env + $HERMES_HOME/yantrikdb.json:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
+import re
 import logging
 import os
 import threading
@@ -490,6 +494,88 @@ def _ensure_engine_cache_dir() -> None:
             logger.debug("Could not pre-create engine cache dir %s: %s", p, e)
 
 
+
+def _identity_actor_id(kwargs: dict[str, Any]) -> str:
+    """Return the raw platform actor id Hermes threaded into provider init."""
+    platform = (kwargs.get("platform") or "cli").strip() or "cli"
+    raw_user = (
+        kwargs.get("user_id")
+        or kwargs.get("user_name")
+        or kwargs.get("agent_identity")
+        or "default"
+    )
+    return f"{platform}:{str(raw_user).strip() or 'default'}"
+
+
+def _conversation_id(kwargs: dict[str, Any]) -> str | None:
+    platform = (kwargs.get("platform") or "cli").strip() or "cli"
+    chat_id = (kwargs.get("chat_id") or "").strip()
+    thread_id = (kwargs.get("thread_id") or "").strip()
+    if not chat_id:
+        return None
+    return f"{platform}:{chat_id}:{thread_id}" if thread_id else f"{platform}:{chat_id}"
+
+
+def _safe_namespace_part(value: str) -> str:
+    """Stable non-PII namespace shard for owner ids."""
+    text = str(value or "default")
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", text).strip("-").lower()[:32]
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    return f"{slug or 'owner'}-{digest}"
+
+
+def _load_identity_map(config: YantrikDBConfig) -> dict[str, str]:
+    """Load actor->owner aliases from plugin/app config.
+
+    Supported shapes:
+      {"actors": {"whatsapp:123": "owner:primary"}}
+      {"owners": {"owner:primary": {"actors": ["whatsapp:123"]}}}
+    """
+    raw: Any = None
+    if config.identity_map_json:
+        try:
+            raw = json.loads(config.identity_map_json)
+        except json.JSONDecodeError:
+            logger.warning("Invalid YANTRIKDB_IDENTITY_MAP_JSON; owner aliases disabled")
+            raw = None
+    elif config.identity_map_path:
+        try:
+            raw = json.loads(Path(config.identity_map_path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning("Failed to read identity map %s: %s", config.identity_map_path, e)
+            raw = None
+    if not isinstance(raw, dict):
+        return {}
+
+    out: dict[str, str] = {}
+    actors = raw.get("actors")
+    if isinstance(actors, dict):
+        for actor, owner in actors.items():
+            if actor and owner:
+                out[str(actor)] = str(owner)
+
+    owners = raw.get("owners")
+    if isinstance(owners, dict):
+        for owner, spec in owners.items():
+            if isinstance(spec, dict):
+                for actor in spec.get("actors") or []:
+                    if actor:
+                        out[str(actor)] = str(owner)
+    return out
+
+
+def _derive_owner_scope(config: YantrikDBConfig, kwargs: dict[str, Any]) -> dict[str, Any]:
+    actor_id = _identity_actor_id(kwargs)
+    aliases = _load_identity_map(config)
+    owner_id = aliases.get(actor_id, actor_id)
+    platform = (kwargs.get("platform") or "cli").strip() or "cli"
+    return {
+        "owner_id": owner_id,
+        "actor_id": actor_id,
+        "channel": platform,
+        "conversation_id": _conversation_id(kwargs),
+    }
+
 def _derive_namespace(base: str, kwargs: dict[str, Any]) -> str:
     """Scope the namespace to ``{base}:{agent_workspace}:{agent_identity}``.
 
@@ -563,6 +649,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._client_lock = threading.Lock()
 
         self._namespace: str = DEFAULT_NAMESPACE
+        self._base_namespace: str = DEFAULT_NAMESPACE
+        self._scope_metadata: dict[str, Any] = {}
         self._session_id: str = ""
         self._cron_skipped: bool = False
         # v0.4.4: when initialize() fails to construct the backend (e.g.
@@ -689,6 +777,26 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "default": "10",
                 "env_var": "YANTRIKDB_TOP_K",
             },
+            {
+                "key": "owner_scoping",
+                "description": (
+                    "Optional Hermes gateway scoping: append a stable resolved-owner shard "
+                    "to the namespace so one agent can isolate multiple users without "
+                    "requiring YantrikDB core provenance columns."
+                ),
+                "default": "false",
+                "env_var": "YANTRIKDB_OWNER_SCOPING",
+            },
+            {
+                "key": "identity_map_path",
+                "description": (
+                    "Optional JSON file mapping platform actors to canonical owners. "
+                    "Supports {'actors': {'platform:id': 'owner:id'}} or "
+                    "{'owners': {'owner:id': {'actors': [...]}}}."
+                ),
+                "default": "",
+                "env_var": "YANTRIKDB_IDENTITY_MAP_PATH",
+            },
         ])
         return schema
 
@@ -729,7 +837,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
             logger.debug("YantrikDB http mode but no token — plugin inactive")
             return
 
-        self._namespace = _derive_namespace(self._config.namespace, kwargs)
+        self._base_namespace = _derive_namespace(self._config.namespace, kwargs)
+        self._namespace = self._base_namespace
+        self._scope_metadata = {}
+        if self._config.owner_scoping:
+            self._scope_metadata = _derive_owner_scope(self._config, kwargs)
+            self._namespace = f"{self._base_namespace}:owner:{_safe_namespace_part(self._scope_metadata['owner_id'])}"
 
         # v0.4.4: defensively pre-create the engine's model-cache dir before
         # any bundled-named download path runs. Otherwise an environment
@@ -841,9 +954,15 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     "for diagnostics."
                 )
             return ""
+        scope_line = (
+            "Owner scoping enabled; memories are isolated by resolved owner namespace.\n"
+            if self._scope_metadata
+            else ""
+        )
         return (
             "# YantrikDB Memory\n"
             f"Active. Namespace: `{self._namespace}`.\n"
+            f"{scope_line}"
             "Self-maintaining memory: canonicalizes duplicates, surfaces "
             "contradictions, ranks with recency awareness, and explains recall. "
             "Use `yantrikdb_recall` before claiming facts about the user or "
@@ -933,7 +1052,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     text,
                     namespace=namespace,
                     importance=_estimate_importance(text),
-                    metadata={"session_id": snapshot_sid, "role": "user"},
+                    metadata={"session_id": snapshot_sid, "role": "user", **self._scope_metadata},
                 )
                 self._record_success()
             except YantrikDBClientError as e:
@@ -1042,7 +1161,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             namespace=self._namespace,
             importance=importance,
             domain=args.get("domain"),
-            metadata={"session_id": self._session_id},
+            metadata={"session_id": self._session_id, **self._scope_metadata},
         )
         self._record_success()
         return json.dumps({"rid": resp.get("rid"), "stored": True})
@@ -1313,6 +1432,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                         "source": "hermes_memory_md",
                         "target": target,
                         "session_id": session_id,
+                        **self._scope_metadata,
                     },
                 )
                 self._record_success()

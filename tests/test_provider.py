@@ -154,6 +154,61 @@ class TestInitialize:
             p.initialize("sess", agent_workspace="w", agent_identity="i")
         assert p._client is mock_client
 
+    def test_owner_scoping_appends_resolved_owner_namespace(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_OWNER_SCOPING", "true")
+        monkeypatch.setenv(
+            "YANTRIKDB_IDENTITY_MAP_JSON",
+            json.dumps({
+                "owners": {
+                    "owner:primary-user": {
+                        "actors": ["whatsapp:actor-a", "telegram:actor-b"],
+                    },
+                },
+            }),
+        )
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="whatsapp",
+                user_id="actor-a",
+                chat_id="chat-1",
+            )
+
+        assert p._namespace.startswith("hermes:workspace:coder:owner:owner-primary-user-")
+        assert p._scope_metadata == {
+            "owner_id": "owner:primary-user",
+            "actor_id": "whatsapp:actor-a",
+            "channel": "whatsapp",
+            "conversation_id": "whatsapp:chat-1",
+        }
+
+    def test_owner_scoping_defaults_to_actor_owner_without_map(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_OWNER_SCOPING", "true")
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="telegram",
+                user_id="123456789",
+            )
+
+        assert p._scope_metadata["owner_id"] == "telegram:123456789"
+        assert p._scope_metadata["actor_id"] == "telegram:123456789"
+        assert p._scope_metadata["channel"] == "telegram"
+
 
 # ---------------------------------------------------------------------------
 # Tool schemas
@@ -237,6 +292,32 @@ class TestHandleToolCall:
         out = provider.handle_tool_call("yantrikdb_remember", {})
         mock_client.remember.assert_not_called()
         assert "Missing required parameter" in json.loads(out)["error"]
+
+    def test_remember_includes_scope_metadata_when_enabled(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_OWNER_SCOPING", "true")
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess-1",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="whatsapp",
+                user_id="actor-a",
+                chat_id="chat-1",
+            )
+
+        p.handle_tool_call("yantrikdb_remember", {"text": "hello"})
+
+        call = mock_client.remember.call_args
+        assert call.kwargs["namespace"].startswith("hermes:workspace:coder:owner:whatsapp-actor-a-")
+        assert call.kwargs["metadata"]["owner_id"] == "whatsapp:actor-a"
+        assert call.kwargs["metadata"]["actor_id"] == "whatsapp:actor-a"
+        assert call.kwargs["metadata"]["channel"] == "whatsapp"
+        assert call.kwargs["metadata"]["conversation_id"] == "whatsapp:chat-1"
 
     def test_recall_dispatches(self, provider, mock_client):
         mock_client.recall.return_value = {

@@ -167,6 +167,9 @@ def _clean_yantrikdb_env(monkeypatch):
         "YANTRIKDB_SKILLS_ENABLED",
         "YANTRIKDB_SYNC_USER_MESSAGES",
         "YANTRIKDB_AUTO_THINK_ON_SESSION_END",
+        "YANTRIKDB_OWNER_SCOPING",
+        "YANTRIKDB_IDENTITY_MAP_PATH",
+        "YANTRIKDB_IDENTITY_MAP_JSON",
     ):
         monkeypatch.delenv(var, raising=False)
     yield
