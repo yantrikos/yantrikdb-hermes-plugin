@@ -113,7 +113,7 @@ or:
 }
 ```
 
-When enabled, the plugin resolves the current Hermes `platform` + `user_id` to an owner, appends a stable non-PII owner shard to the namespace, and writes `owner_id`, `actor_id`, `channel`, and `conversation_id` into metadata. If no identity map is configured, the actor becomes its own owner by default, so actors are still stored and isolated without any owner config. Recall also includes the base pre-owner namespace by default (`include_base_namespace_recall=true`), so existing memories behave as shared/global legacy memory while new writes go only to the owner-scoped namespace. Set `include_base_namespace_recall=false` if you want strict owner-only recall. This is a plugin/application concern; YantrikDB core does not need to know platform alias policy.
+When enabled, the plugin resolves the current Hermes `platform` + `user_id` to an owner, appends a stable non-PII owner shard to the namespace, and writes `owner_id`, `actor_id`, `channel`, and `conversation_id` into metadata. If no identity map is configured, the actor becomes its own owner by default, so actors are still stored and isolated without any owner config. Recall also includes fallback namespaces by default (`include_base_namespace_recall=true`): the pre-map actor namespace first, then the base pre-owner namespace. This means memories written before an owner alias map existed remain findable, and older unscoped memories behave as shared/global legacy memory, while new writes go only to the owner-scoped namespace. Set `include_base_namespace_recall=false` if you want strict owner-only recall. This is a plugin/application concern; YantrikDB core does not need to know platform alias policy.
 
 ## Tools
 

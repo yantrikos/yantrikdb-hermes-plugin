@@ -678,6 +678,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
         self._namespace: str = DEFAULT_NAMESPACE
         self._base_namespace: str = DEFAULT_NAMESPACE
+        self._legacy_actor_namespace: str = ""
         self._scope_metadata: dict[str, Any] = {}
         self._session_id: str = ""
         self._cron_skipped: bool = False
@@ -877,10 +878,14 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
         self._base_namespace = _derive_namespace(self._config.namespace, kwargs)
         self._namespace = self._base_namespace
+        self._legacy_actor_namespace = ""
         self._scope_metadata = {}
         if self._config.owner_scoping:
             self._scope_metadata = _derive_owner_scope(self._config, kwargs)
-            self._namespace = f"{self._base_namespace}:owner:{_safe_namespace_part(self._scope_metadata['owner_id'])}"
+            owner_shard = _safe_namespace_part(self._scope_metadata["owner_id"])
+            actor_shard = _safe_namespace_part(self._scope_metadata["actor_id"])
+            self._namespace = f"{self._base_namespace}:owner:{owner_shard}"
+            self._legacy_actor_namespace = f"{self._base_namespace}:owner:{actor_shard}"
 
         # v0.4.4: defensively pre-create the engine's model-cache dir before
         # any bundled-named download path runs. Otherwise an environment
@@ -977,6 +982,19 @@ class YantrikDBMemoryProvider(MemoryProvider):
             and self._namespace != self._base_namespace
         )
 
+    def _fallback_recall_namespaces(self) -> list[str]:
+        if not self._should_recall_base_namespace():
+            return []
+        namespaces: list[str] = []
+        if (
+            self._legacy_actor_namespace
+            and self._legacy_actor_namespace != self._namespace
+        ):
+            namespaces.append(self._legacy_actor_namespace)
+        if self._base_namespace and self._base_namespace not in namespaces:
+            namespaces.append(self._base_namespace)
+        return namespaces
+
     def _recall_with_base_fallback(
         self,
         query: str,
@@ -991,15 +1009,19 @@ class YantrikDBMemoryProvider(MemoryProvider):
             top_k=top_k,
             domain=domain,
         ).get("results", []) or []
-        if not self._should_recall_base_namespace():
+        fallback_sets: list[list[dict[str, Any]]] = []
+        for namespace in self._fallback_recall_namespaces():
+            fallback_sets.append(
+                client.recall(
+                    query,
+                    namespace=namespace,
+                    top_k=top_k,
+                    domain=domain,
+                ).get("results", []) or [],
+            )
+        if not fallback_sets:
             return scoped[:top_k]
-        base = client.recall(
-            query,
-            namespace=self._base_namespace,
-            top_k=top_k,
-            domain=domain,
-        ).get("results", []) or []
-        return _dedupe_and_rank_results([scoped, base], limit=top_k)
+        return _dedupe_and_rank_results([scoped, *fallback_sets], limit=top_k)
 
     # -- Prompt / prefetch -----------------------------------------------
 

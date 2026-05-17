@@ -344,12 +344,16 @@ class TestHandleToolCall:
             "semantic_match", "graph-connected via Alice",
         ]
 
-    def test_owner_scoped_recall_includes_base_namespace_by_default(
+    def test_owner_scoped_recall_includes_legacy_actor_and_base_namespaces(
         self, provider_module, mock_client, monkeypatch,
     ):
         monkeypatch.setenv("YANTRIKDB_MODE", "http")
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
         monkeypatch.setenv("YANTRIKDB_OWNER_SCOPING", "true")
+        monkeypatch.setenv(
+            "YANTRIKDB_IDENTITY_MAP_JSON",
+            json.dumps({"actors": {"whatsapp:actor-a": "owner:primary-user"}}),
+        )
         p = provider_module.YantrikDBMemoryProvider()
         with patch.object(provider_module, "make_backend", return_value=mock_client):
             p.initialize(
@@ -362,14 +366,18 @@ class TestHandleToolCall:
 
         mock_client.recall.side_effect = [
             {"results": [{"rid": "scoped", "text": "private", "score": 0.8}]},
+            {"results": [{"rid": "legacy-actor", "text": "pre-map", "score": 0.95}]},
             {"results": [{"rid": "global", "text": "legacy", "score": 0.9}]},
         ]
         out = p.handle_tool_call("yantrikdb_recall", {"query": "prefs", "top_k": 5})
 
         namespaces = [call.kwargs["namespace"] for call in mock_client.recall.call_args_list]
-        assert namespaces[0].startswith("hermes:workspace:coder:owner:whatsapp-actor-a-")
-        assert namespaces[1] == "hermes:workspace:coder"
-        assert [r["rid"] for r in json.loads(out)["results"]] == ["global", "scoped"]
+        assert namespaces[0].startswith("hermes:workspace:coder:owner:owner-primary-user-")
+        assert namespaces[1].startswith("hermes:workspace:coder:owner:whatsapp-actor-a-")
+        assert namespaces[2] == "hermes:workspace:coder"
+        assert [r["rid"] for r in json.loads(out)["results"]] == [
+            "legacy-actor", "global", "scoped",
+        ]
 
     def test_owner_scoped_recall_can_disable_base_namespace_fallback(
         self, provider_module, mock_client, monkeypatch,
