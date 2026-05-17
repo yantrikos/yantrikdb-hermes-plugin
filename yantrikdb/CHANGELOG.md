@@ -3,6 +3,32 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.10] — 2026-05-17 — Optional owner-scoped namespaces for multi-user Hermes gateways
+
+Lands [#13](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/13) from **@wysie** — sixth PR in the arc, and the first to add new capability rather than fix a regression. One Hermes gateway can now hard-isolate memories across multiple users without requiring YantrikDB core to know anything about platform alias policy.
+
+Opt-in via `YANTRIKDB_OWNER_SCOPING=true`. Default behavior is unchanged.
+
+### Added
+
+- **`owner_scoping` mode.** When enabled, the plugin resolves the current Hermes `platform` + `user_id` to a canonical owner and appends a stable, collision-resistant owner shard to the effective namespace: `{base}:{agent_workspace}:{agent_identity}:owner:{shard}`. New actors automatically get their own isolated shard without any config; mapping is only needed when you decide multiple actors are the same person.
+- **Identity map** (`identity_map_path` or `identity_map_json`) supports two natural JSON shapes — flat `{"actors": {"platform:id": "owner:id"}}` or nested `{"owners": {"owner:id": {"actors": [...]}}}`. Both contribute to the merged alias table.
+- **Memory metadata provenance.** Every write under `owner_scoping=true` carries `owner_id`, `actor_id`, `channel`, and `conversation_id` so downstream consumers can filter by gateway context.
+- **Legacy recall fallback** (default on, configurable). When you introduce an alias map mid-deployment, recall transparently searches: (1) the owner-scoped namespace, (2) each per-actor namespace mapped to the same owner (`include_legacy_actor_namespace_recall=true`), and (3) the base pre-owner namespace (`include_base_namespace_recall=true`). Means memories written before aliasing remain visible after — no rewrite, no migration. New writes still go only to the canonical owner-scoped namespace. Set either fallback false to opt out.
+- **New env vars / config keys**: `YANTRIKDB_OWNER_SCOPING`, `YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL`, `YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL`, `YANTRIKDB_IDENTITY_MAP_PATH`, `YANTRIKDB_IDENTITY_MAP_JSON`. All also accepted in `$HERMES_HOME/yantrikdb.json` and reflected in `provider.system_prompt_block()` when active.
+- 6 new tests in `tests/test_provider.py` covering owner shard creation, default-no-map fallback, write metadata propagation, full recall fallback chain, multi-actor merge, and disable-base-fallback. 181 tests total (was 175); CI green Python 3.11/3.12/3.13/3.14.
+
+### Notes
+
+- The owner shard preserves the first 32 chars of the original identifier as a debuggable slug plus a sha256-12 suffix. If you want pure-hash sharding without identifier leakage, pre-hash owner ids in your identity map before passing them in.
+- The identity map is loaded once at `initialize()`. Edits to `identity-map.json` take effect on the next Hermes session, not mid-session.
+- With N actors mapped to one owner, each recall fires up to N+2 backend calls in HTTP mode (1 owner-scoped + N legacy + 1 base). Sub-ms per call in embedded mode is negligible; in HTTP mode disable either fallback flag if latency budget matters.
+- This is a plugin/application concern; YantrikDB core continues to operate purely on namespaces + metadata, no platform alias awareness required.
+
+### Credit
+
+[@wysie](https://github.com/wysie) — sixth PR. The arc now reads: #6 symlink installer → #7 venv/uv docs → #8 shim fix → #10 stats-namespace fix → #11 provider session hardening → #13 owner-scoped namespaces. First five fixed regressions or closed gaps; this one shapes plugin direction.
+
 ## [0.4.9] — 2026-05-14 — Provider session hardening + embedded signature parity
 
 Lands [#11](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/11) from **@wysie** — fifth PR in this arc, this one a substantive five-concern hardening pass on long-lived provider state. Plus [#12](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/12) from us, closing the embedded-backend signature gap #11's namespace propagation would otherwise have introduced.

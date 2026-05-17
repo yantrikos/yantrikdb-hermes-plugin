@@ -10,7 +10,7 @@ Config resolution matches the mem0 pattern:
      YANTRIKDB_RETRY_TOTAL / YANTRIKDB_MAX_TEXT_LEN /
      YANTRIKDB_OWNER_SCOPING / YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL /
      YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL /
-     YANTRIKDB_IDENTITY_MAP_PATH)
+     YANTRIKDB_IDENTITY_MAP_PATH / YANTRIKDB_IDENTITY_MAP_JSON)
   2. $HERMES_HOME/yantrikdb.json (overrides individual keys when present)
 
 Errors are mapped into a small taxonomy so the provider can decide which

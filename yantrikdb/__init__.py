@@ -517,7 +517,15 @@ def _conversation_id(kwargs: dict[str, Any]) -> str | None:
 
 
 def _safe_namespace_part(value: str) -> str:
-    """Stable non-PII namespace shard for owner ids."""
+    """Stable, collision-resistant namespace shard for owner ids.
+
+    The shard preserves the first 32 chars of the original identifier
+    as a debuggable slug (lowercased, non-[a-z0-9_-] stripped) plus a
+    sha256-12 suffix for uniqueness. The slug carries the identifier
+    substring by design (debuggability); operators who want pure-hash
+    sharding without identifier leakage can pre-hash owner ids in
+    their identity map before passing them in.
+    """
     text = str(value or "default")
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", text).strip("-").lower()[:32]
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
@@ -1114,6 +1122,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if self._breaker_open():
             return
 
+        # Cache key is session-scoped, which is owner-scoped in practice:
+        # Hermes creates one provider instance per gateway-init, and each
+        # provider's owner identity is locked at initialize() time. If
+        # Hermes ever shares one provider across multiple owner identities,
+        # this key would need to include the owner shard.
         key = session_id or self._session_id or "__default__"
 
         def _run() -> None:
