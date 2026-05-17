@@ -540,7 +540,7 @@ def _load_identity_map(config: YantrikDBConfig) -> dict[str, str]:
             raw = None
     elif config.identity_map_path:
         try:
-            raw = json.loads(Path(config.identity_map_path).read_text(encoding="utf-8"))
+            raw = json.loads(Path(config.identity_map_path).expanduser().read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as e:
             logger.warning("Failed to read identity map %s: %s", config.identity_map_path, e)
             raw = None
@@ -568,12 +568,14 @@ def _derive_owner_scope(config: YantrikDBConfig, kwargs: dict[str, Any]) -> dict
     actor_id = _identity_actor_id(kwargs)
     aliases = _load_identity_map(config)
     owner_id = aliases.get(actor_id, actor_id)
+    owner_actors = sorted(actor for actor, owner in aliases.items() if owner == owner_id)
     platform = (kwargs.get("platform") or "cli").strip() or "cli"
     return {
         "owner_id": owner_id,
         "actor_id": actor_id,
         "channel": platform,
         "conversation_id": _conversation_id(kwargs),
+        "owner_actors": owner_actors,
     }
 
 def _derive_namespace(base: str, kwargs: dict[str, Any]) -> str:
@@ -827,6 +829,16 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "env_var": "YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL",
             },
             {
+                "key": "include_legacy_actor_namespace_recall",
+                "description": (
+                    "When owner_scoping merges actors via an identity map, also recall "
+                    "old per-actor owner namespaces so memories written before aliasing "
+                    "remain visible to the canonical owner."
+                ),
+                "default": "true",
+                "env_var": "YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL",
+            },
+            {
                 "key": "identity_map_path",
                 "description": (
                     "Optional JSON file mapping platform actors to canonical owners. "
@@ -982,16 +994,31 @@ class YantrikDBMemoryProvider(MemoryProvider):
             and self._namespace != self._base_namespace
         )
 
-    def _fallback_recall_namespaces(self) -> list[str]:
-        if not self._should_recall_base_namespace():
+    def _legacy_actor_namespaces(self) -> list[str]:
+        if not (
+            self._config
+            and self._config.owner_scoping
+            and self._config.include_legacy_actor_namespace_recall
+            and self._base_namespace
+        ):
             return []
         namespaces: list[str] = []
-        if (
-            self._legacy_actor_namespace
-            and self._legacy_actor_namespace != self._namespace
-        ):
-            namespaces.append(self._legacy_actor_namespace)
-        if self._base_namespace and self._base_namespace not in namespaces:
+        for actor in self._scope_metadata.get("owner_actors") or []:
+            ns = f"{self._base_namespace}:owner:{_safe_namespace_part(str(actor))}"
+            if ns != self._namespace and ns not in namespaces:
+                namespaces.append(ns)
+        return namespaces
+
+    def _write_scope_metadata(self) -> dict[str, Any]:
+        return {
+            k: v for k, v in self._scope_metadata.items()
+            if k != "owner_actors"
+        }
+
+    def _fallback_recall_namespaces(self) -> list[str]:
+        namespaces: list[str] = []
+        namespaces.extend(self._legacy_actor_namespaces())
+        if self._should_recall_base_namespace() and self._base_namespace not in namespaces:
             namespaces.append(self._base_namespace)
         return namespaces
 
@@ -1143,7 +1170,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     text,
                     namespace=namespace,
                     importance=_estimate_importance(text),
-                    metadata={"session_id": snapshot_sid, "role": "user", **self._scope_metadata},
+                    metadata={"session_id": snapshot_sid, "role": "user", **self._write_scope_metadata()},
                 )
                 self._record_success()
             except YantrikDBClientError as e:
@@ -1252,7 +1279,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             namespace=self._namespace,
             importance=importance,
             domain=args.get("domain"),
-            metadata={"session_id": self._session_id, **self._scope_metadata},
+            metadata={"session_id": self._session_id, **self._write_scope_metadata()},
         )
         self._record_success()
         return json.dumps({"rid": resp.get("rid"), "stored": True})
@@ -1521,7 +1548,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                         "source": "hermes_memory_md",
                         "target": target,
                         "session_id": session_id,
-                        **self._scope_metadata,
+                        **self._write_scope_metadata(),
                     },
                 )
                 self._record_success()

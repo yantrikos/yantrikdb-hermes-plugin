@@ -187,6 +187,7 @@ class TestInitialize:
             "actor_id": "whatsapp:actor-a",
             "channel": "whatsapp",
             "conversation_id": "whatsapp:chat-1",
+            "owner_actors": ["telegram:actor-b", "whatsapp:actor-a"],
         }
 
     def test_owner_scoping_defaults_to_actor_owner_without_map(
@@ -377,6 +378,49 @@ class TestHandleToolCall:
         assert namespaces[2] == "hermes:workspace:coder"
         assert [r["rid"] for r in json.loads(out)["results"]] == [
             "legacy-actor", "global", "scoped",
+        ]
+
+    def test_owner_scoped_recall_includes_all_owner_actor_legacy_namespaces(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_OWNER_SCOPING", "true")
+        monkeypatch.setenv("YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL", "false")
+        monkeypatch.setenv(
+            "YANTRIKDB_IDENTITY_MAP_JSON",
+            json.dumps({
+                "owners": {
+                    "owner:yc": {
+                        "actors": ["whatsapp:actor-a", "telegram:actor-b"],
+                    },
+                },
+            }),
+        )
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess-1",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="telegram",
+                user_id="actor-b",
+            )
+
+        mock_client.recall.side_effect = [
+            {"results": []},
+            {"results": [{"rid": "telegram-old", "text": "old telegram", "score": 0.7}]},
+            {"results": [{"rid": "whatsapp-old", "text": "old whatsapp", "score": 0.9}]},
+        ]
+        out = p.handle_tool_call("yantrikdb_recall", {"query": "prefs", "top_k": 5})
+
+        namespaces = [call.kwargs["namespace"] for call in mock_client.recall.call_args_list]
+        assert namespaces[0].startswith("hermes:workspace:coder:owner:owner-yc-")
+        assert any(ns.startswith("hermes:workspace:coder:owner:telegram-actor-b-") for ns in namespaces)
+        assert any(ns.startswith("hermes:workspace:coder:owner:whatsapp-actor-a-") for ns in namespaces)
+        assert "hermes:workspace:coder" not in namespaces
+        assert [r["rid"] for r in json.loads(out)["results"]] == [
+            "whatsapp-old", "telegram-old",
         ]
 
     def test_owner_scoped_recall_can_disable_base_namespace_fallback(

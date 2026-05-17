@@ -9,6 +9,7 @@ Config resolution matches the mem0 pattern:
      YANTRIKDB_TOP_K / YANTRIKDB_READ_TIMEOUT / YANTRIKDB_CONNECT_TIMEOUT /
      YANTRIKDB_RETRY_TOTAL / YANTRIKDB_MAX_TEXT_LEN /
      YANTRIKDB_OWNER_SCOPING / YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL /
+     YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL /
      YANTRIKDB_IDENTITY_MAP_PATH)
   2. $HERMES_HOME/yantrikdb.json (overrides individual keys when present)
 
@@ -86,6 +87,10 @@ class YantrikDBConfig:
     # pre-scoping memories behave as shared/global legacy memory. Writes still
     # go only to the owner-scoped namespace.
     include_base_namespace_recall: bool = True
+    # When owner_scoping is on and an identity map merges multiple actors into
+    # one owner, recall old per-actor owner namespaces too. This preserves
+    # memories written before aliases were introduced.
+    include_legacy_actor_namespace_recall: bool = True
     identity_map_path: str = ""
     identity_map_json: str = ""
     # v0.3.0+ skills surface — opt-in. Disabled by default so adding the
@@ -122,6 +127,10 @@ class YantrikDBConfig:
             ),
             include_base_namespace_recall=_parse_bool(
                 os.environ.get("YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL"),
+                default=True,
+            ),
+            include_legacy_actor_namespace_recall=_parse_bool(
+                os.environ.get("YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL"),
                 default=True,
             ),
             identity_map_path=os.environ.get("YANTRIKDB_IDENTITY_MAP_PATH", ""),
@@ -168,6 +177,7 @@ class YantrikDBConfig:
             "sync_user_messages",
             "owner_scoping",
             "include_base_namespace_recall",
+            "include_legacy_actor_namespace_recall",
         }
         for key, val in overrides.items():
             if val in (None, ""):
