@@ -344,6 +344,58 @@ class TestHandleToolCall:
             "semantic_match", "graph-connected via Alice",
         ]
 
+    def test_owner_scoped_recall_includes_base_namespace_by_default(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_OWNER_SCOPING", "true")
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess-1",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="whatsapp",
+                user_id="actor-a",
+            )
+
+        mock_client.recall.side_effect = [
+            {"results": [{"rid": "scoped", "text": "private", "score": 0.8}]},
+            {"results": [{"rid": "global", "text": "legacy", "score": 0.9}]},
+        ]
+        out = p.handle_tool_call("yantrikdb_recall", {"query": "prefs", "top_k": 5})
+
+        namespaces = [call.kwargs["namespace"] for call in mock_client.recall.call_args_list]
+        assert namespaces[0].startswith("hermes:workspace:coder:owner:whatsapp-actor-a-")
+        assert namespaces[1] == "hermes:workspace:coder"
+        assert [r["rid"] for r in json.loads(out)["results"]] == ["global", "scoped"]
+
+    def test_owner_scoped_recall_can_disable_base_namespace_fallback(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_OWNER_SCOPING", "true")
+        monkeypatch.setenv("YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL", "false")
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess-1",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="whatsapp",
+                user_id="actor-a",
+            )
+
+        mock_client.recall.return_value = {
+            "results": [{"rid": "scoped", "text": "private", "score": 0.8}],
+        }
+        out = p.handle_tool_call("yantrikdb_recall", {"query": "prefs", "top_k": 5})
+
+        mock_client.recall.assert_called_once()
+        assert json.loads(out)["results"][0]["rid"] == "scoped"
+
     def test_recall_handles_missing_why_retrieved(self, provider, mock_client):
         mock_client.recall.return_value = {
             "results": [{"rid": "r1", "text": "fact", "score": 0.9}],

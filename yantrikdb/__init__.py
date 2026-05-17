@@ -608,6 +608,34 @@ def _format_recall_block(results: list[dict[str, Any]], limit: int = 8) -> str:
     return "\n".join(lines)
 
 
+def _dedupe_and_rank_results(
+    result_sets: list[list[dict[str, Any]]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Merge recall results from scoped + shared namespaces.
+
+    Prefer the first occurrence of the same rid/text so owner-scoped results win
+    ties over base-namespace fallback results, then rank by score.
+    """
+    seen: set[str] = set()
+    merged: list[dict[str, Any]] = []
+    for results in result_sets:
+        for r in results or []:
+            key = str(r.get("rid") or r.get("text") or id(r))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(r)
+
+    def _score(r: dict[str, Any]) -> float:
+        raw = r.get("score")
+        return float(raw) if isinstance(raw, (int, float)) else 0.0
+
+    merged.sort(key=_score, reverse=True)
+    return merged[:limit]
+
+
 def _estimate_importance(text: str) -> float:
     """Cheap heuristic for ambient writes via sync_turn.
 
@@ -788,6 +816,16 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "env_var": "YANTRIKDB_OWNER_SCOPING",
             },
             {
+                "key": "include_base_namespace_recall",
+                "description": (
+                    "When owner_scoping is enabled, also recall from the base namespace "
+                    "so pre-scoping memories behave as shared/global legacy memory. "
+                    "Writes still go only to the owner-scoped namespace."
+                ),
+                "default": "true",
+                "env_var": "YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL",
+            },
+            {
                 "key": "identity_map_path",
                 "description": (
                     "Optional JSON file mapping platform actors to canonical owners. "
@@ -930,6 +968,39 @@ class YantrikDBMemoryProvider(MemoryProvider):
             raise RuntimeError("YantrikDB client not initialized")
         return self._client
 
+    def _should_recall_base_namespace(self) -> bool:
+        return bool(
+            self._config
+            and self._config.owner_scoping
+            and self._config.include_base_namespace_recall
+            and self._base_namespace
+            and self._namespace != self._base_namespace
+        )
+
+    def _recall_with_base_fallback(
+        self,
+        query: str,
+        *,
+        top_k: int,
+        domain: str | None = None,
+    ) -> list[dict[str, Any]]:
+        client = self._require_client()
+        scoped = client.recall(
+            query,
+            namespace=self._namespace,
+            top_k=top_k,
+            domain=domain,
+        ).get("results", []) or []
+        if not self._should_recall_base_namespace():
+            return scoped[:top_k]
+        base = client.recall(
+            query,
+            namespace=self._base_namespace,
+            top_k=top_k,
+            domain=domain,
+        ).get("results", []) or []
+        return _dedupe_and_rank_results([scoped, base], limit=top_k)
+
     # -- Prompt / prefetch -----------------------------------------------
 
     def system_prompt_block(self) -> str:
@@ -994,14 +1065,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if self._breaker_open():
             return
 
-        client = self._client
-        namespace = self._namespace
         key = session_id or self._session_id or "__default__"
 
         def _run() -> None:
             try:
-                resp = client.recall(query, namespace=namespace, top_k=5)
-                block = _format_recall_block(resp.get("results", []), limit=5)
+                results = self._recall_with_base_fallback(query, top_k=5)
+                block = _format_recall_block(results, limit=5)
                 if block:
                     with self._prefetch_lock:
                         self._prefetch_results[key] = block
@@ -1172,14 +1241,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return tool_error("Missing required parameter: query")
         default_top_k = self._config.top_k if self._config else 10
         top_k = min(_coerce_int(args.get("top_k"), default_top_k), 50)
-        resp = self._require_client().recall(
+        results = self._recall_with_base_fallback(
             query,
-            namespace=self._namespace,
             top_k=top_k,
             domain=args.get("domain"),
         )
         self._record_success()
-        results = resp.get("results", []) or []
         compact = [
             {
                 "rid": r.get("rid"),

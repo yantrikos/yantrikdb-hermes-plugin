@@ -72,6 +72,7 @@ Optional config file: `$HERMES_HOME/yantrikdb.json`. Env vars are the primary so
 | `namespace`       | `YANTRIKDB_NAMESPACE`       | `hermes`                | Tenant prefix. Combined with `agent_workspace:agent_identity` at init time.        |
 | `top_k`           | `YANTRIKDB_TOP_K`           | `10`                    | Default recall result count (capped at 50 via tool param).                         |
 | `owner_scoping`   | `YANTRIKDB_OWNER_SCOPING`   | `false`                 | Optional Hermes gateway scoping: append resolved-owner shard to the namespace.     |
+| `include_base_namespace_recall` | `YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL` | `true` | With owner scoping, also recall from the base namespace as shared/global legacy memory. |
 | `identity_map_path` | `YANTRIKDB_IDENTITY_MAP_PATH` | empty                 | Optional JSON file mapping platform actors to canonical owners.                    |
 | `connect_timeout` | `YANTRIKDB_CONNECT_TIMEOUT` | `5.0`                   | TCP connect timeout (seconds).                                                     |
 | `read_timeout`    | `YANTRIKDB_READ_TIMEOUT`    | `15.0`                  | Per-request read timeout.                                                          |
@@ -112,7 +113,7 @@ or:
 }
 ```
 
-When enabled, the plugin resolves the current Hermes `platform` + `user_id` to an owner, appends a stable non-PII owner shard to the namespace, and writes `owner_id`, `actor_id`, `channel`, and `conversation_id` into metadata. If no identity map is configured, the actor becomes its own owner by default, so actors are still stored and isolated without any owner config. This is a plugin/application concern; YantrikDB core does not need to know platform alias policy.
+When enabled, the plugin resolves the current Hermes `platform` + `user_id` to an owner, appends a stable non-PII owner shard to the namespace, and writes `owner_id`, `actor_id`, `channel`, and `conversation_id` into metadata. If no identity map is configured, the actor becomes its own owner by default, so actors are still stored and isolated without any owner config. Recall also includes the base pre-owner namespace by default (`include_base_namespace_recall=true`), so existing memories behave as shared/global legacy memory while new writes go only to the owner-scoped namespace. Set `include_base_namespace_recall=false` if you want strict owner-only recall. This is a plugin/application concern; YantrikDB core does not need to know platform alias policy.
 
 ## Tools
 

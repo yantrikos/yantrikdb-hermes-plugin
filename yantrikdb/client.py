@@ -8,7 +8,8 @@ Config resolution matches the mem0 pattern:
   1. Environment variables (YANTRIKDB_URL / YANTRIKDB_TOKEN / YANTRIKDB_NAMESPACE /
      YANTRIKDB_TOP_K / YANTRIKDB_READ_TIMEOUT / YANTRIKDB_CONNECT_TIMEOUT /
      YANTRIKDB_RETRY_TOTAL / YANTRIKDB_MAX_TEXT_LEN /
-     YANTRIKDB_OWNER_SCOPING / YANTRIKDB_IDENTITY_MAP_PATH)
+     YANTRIKDB_OWNER_SCOPING / YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL /
+     YANTRIKDB_IDENTITY_MAP_PATH)
   2. $HERMES_HOME/yantrikdb.json (overrides individual keys when present)
 
 Errors are mapped into a small taxonomy so the provider can decide which
@@ -81,6 +82,10 @@ class YantrikDBConfig:
     # isolate memories for multiple users without requiring YantrikDB core
     # provenance columns. Actor->owner aliases live in the plugin/app config.
     owner_scoping: bool = False
+    # When owner_scoping is on, also recall from the base namespace so existing
+    # pre-scoping memories behave as shared/global legacy memory. Writes still
+    # go only to the owner-scoped namespace.
+    include_base_namespace_recall: bool = True
     identity_map_path: str = ""
     identity_map_json: str = ""
     # v0.3.0+ skills surface — opt-in. Disabled by default so adding the
@@ -114,6 +119,10 @@ class YantrikDBConfig:
             ),
             owner_scoping=_parse_bool(
                 os.environ.get("YANTRIKDB_OWNER_SCOPING"), default=False,
+            ),
+            include_base_namespace_recall=_parse_bool(
+                os.environ.get("YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL"),
+                default=True,
             ),
             identity_map_path=os.environ.get("YANTRIKDB_IDENTITY_MAP_PATH", ""),
             identity_map_json=os.environ.get("YANTRIKDB_IDENTITY_MAP_JSON", ""),
@@ -158,6 +167,7 @@ class YantrikDBConfig:
             "auto_think_on_session_end",
             "sync_user_messages",
             "owner_scoping",
+            "include_base_namespace_recall",
         }
         for key, val in overrides.items():
             if val in (None, ""):
