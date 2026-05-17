@@ -24,6 +24,8 @@ Config via env + $HERMES_HOME/yantrikdb.json:
   YANTRIKDB_TOKEN            — required, Bearer token from `yantrikdb token create`
   YANTRIKDB_NAMESPACE        — default "hermes"; combined with agent_workspace:agent_identity
   YANTRIKDB_TOP_K            — default 10
+  YANTRIKDB_OWNER_SCOPING    — optional; if true, append resolved-owner shard to namespace
+  YANTRIKDB_IDENTITY_MAP_PATH — optional JSON actor->owner alias map
   YANTRIKDB_READ_TIMEOUT     — default 15.0 seconds
   YANTRIKDB_CONNECT_TIMEOUT  — default 5.0 seconds
   YANTRIKDB_RETRY_TOTAL      — default 3 retries on transient 5xx
@@ -33,9 +35,11 @@ Config via env + $HERMES_HOME/yantrikdb.json:
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -490,6 +494,90 @@ def _ensure_engine_cache_dir() -> None:
             logger.debug("Could not pre-create engine cache dir %s: %s", p, e)
 
 
+
+def _identity_actor_id(kwargs: dict[str, Any]) -> str:
+    """Return the raw platform actor id Hermes threaded into provider init."""
+    platform = (kwargs.get("platform") or "cli").strip() or "cli"
+    raw_user = (
+        kwargs.get("user_id")
+        or kwargs.get("user_name")
+        or kwargs.get("agent_identity")
+        or "default"
+    )
+    return f"{platform}:{str(raw_user).strip() or 'default'}"
+
+
+def _conversation_id(kwargs: dict[str, Any]) -> str | None:
+    platform = (kwargs.get("platform") or "cli").strip() or "cli"
+    chat_id = (kwargs.get("chat_id") or "").strip()
+    thread_id = (kwargs.get("thread_id") or "").strip()
+    if not chat_id:
+        return None
+    return f"{platform}:{chat_id}:{thread_id}" if thread_id else f"{platform}:{chat_id}"
+
+
+def _safe_namespace_part(value: str) -> str:
+    """Stable non-PII namespace shard for owner ids."""
+    text = str(value or "default")
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", text).strip("-").lower()[:32]
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    return f"{slug or 'owner'}-{digest}"
+
+
+def _load_identity_map(config: YantrikDBConfig) -> dict[str, str]:
+    """Load actor->owner aliases from plugin/app config.
+
+    Supported shapes:
+      {"actors": {"whatsapp:123": "owner:primary"}}
+      {"owners": {"owner:primary": {"actors": ["whatsapp:123"]}}}
+    """
+    raw: Any = None
+    if config.identity_map_json:
+        try:
+            raw = json.loads(config.identity_map_json)
+        except json.JSONDecodeError:
+            logger.warning("Invalid YANTRIKDB_IDENTITY_MAP_JSON; owner aliases disabled")
+            raw = None
+    elif config.identity_map_path:
+        try:
+            raw = json.loads(Path(config.identity_map_path).expanduser().read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning("Failed to read identity map %s: %s", config.identity_map_path, e)
+            raw = None
+    if not isinstance(raw, dict):
+        return {}
+
+    out: dict[str, str] = {}
+    actors = raw.get("actors")
+    if isinstance(actors, dict):
+        for actor, owner in actors.items():
+            if actor and owner:
+                out[str(actor)] = str(owner)
+
+    owners = raw.get("owners")
+    if isinstance(owners, dict):
+        for owner, spec in owners.items():
+            if isinstance(spec, dict):
+                for actor in spec.get("actors") or []:
+                    if actor:
+                        out[str(actor)] = str(owner)
+    return out
+
+
+def _derive_owner_scope(config: YantrikDBConfig, kwargs: dict[str, Any]) -> dict[str, Any]:
+    actor_id = _identity_actor_id(kwargs)
+    aliases = _load_identity_map(config)
+    owner_id = aliases.get(actor_id, actor_id)
+    owner_actors = sorted(actor for actor, owner in aliases.items() if owner == owner_id)
+    platform = (kwargs.get("platform") or "cli").strip() or "cli"
+    return {
+        "owner_id": owner_id,
+        "actor_id": actor_id,
+        "channel": platform,
+        "conversation_id": _conversation_id(kwargs),
+        "owner_actors": owner_actors,
+    }
+
 def _derive_namespace(base: str, kwargs: dict[str, Any]) -> str:
     """Scope the namespace to ``{base}:{agent_workspace}:{agent_identity}``.
 
@@ -520,6 +608,34 @@ def _format_recall_block(results: list[dict[str, Any]], limit: int = 8) -> str:
         tag = f" _(score {score:.2f})_" if isinstance(score, (int, float)) else ""
         lines.append(f"- {text}{tag}")
     return "\n".join(lines)
+
+
+def _dedupe_and_rank_results(
+    result_sets: list[list[dict[str, Any]]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Merge recall results from scoped + shared namespaces.
+
+    Prefer the first occurrence of the same rid/text so owner-scoped results win
+    ties over base-namespace fallback results, then rank by score.
+    """
+    seen: set[str] = set()
+    merged: list[dict[str, Any]] = []
+    for results in result_sets:
+        for r in results or []:
+            key = str(r.get("rid") or r.get("text") or id(r))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(r)
+
+    def _score(r: dict[str, Any]) -> float:
+        raw = r.get("score")
+        return float(raw) if isinstance(raw, (int, float)) else 0.0
+
+    merged.sort(key=_score, reverse=True)
+    return merged[:limit]
 
 
 def _estimate_importance(text: str) -> float:
@@ -563,6 +679,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._client_lock = threading.Lock()
 
         self._namespace: str = DEFAULT_NAMESPACE
+        self._base_namespace: str = DEFAULT_NAMESPACE
+        self._legacy_actor_namespace: str = ""
+        self._scope_metadata: dict[str, Any] = {}
         self._session_id: str = ""
         self._cron_skipped: bool = False
         # v0.4.4: when initialize() fails to construct the backend (e.g.
@@ -689,6 +808,46 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "default": "10",
                 "env_var": "YANTRIKDB_TOP_K",
             },
+            {
+                "key": "owner_scoping",
+                "description": (
+                    "Optional Hermes gateway scoping: append a stable resolved-owner shard "
+                    "to the namespace so one agent can isolate multiple users without "
+                    "requiring YantrikDB core provenance columns."
+                ),
+                "default": "false",
+                "env_var": "YANTRIKDB_OWNER_SCOPING",
+            },
+            {
+                "key": "include_base_namespace_recall",
+                "description": (
+                    "When owner_scoping is enabled, also recall from the base namespace "
+                    "so pre-scoping memories behave as shared/global legacy memory. "
+                    "Writes still go only to the owner-scoped namespace."
+                ),
+                "default": "true",
+                "env_var": "YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL",
+            },
+            {
+                "key": "include_legacy_actor_namespace_recall",
+                "description": (
+                    "When owner_scoping merges actors via an identity map, also recall "
+                    "old per-actor owner namespaces so memories written before aliasing "
+                    "remain visible to the canonical owner."
+                ),
+                "default": "true",
+                "env_var": "YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL",
+            },
+            {
+                "key": "identity_map_path",
+                "description": (
+                    "Optional JSON file mapping platform actors to canonical owners. "
+                    "Supports {'actors': {'platform:id': 'owner:id'}} or "
+                    "{'owners': {'owner:id': {'actors': [...]}}}."
+                ),
+                "default": "",
+                "env_var": "YANTRIKDB_IDENTITY_MAP_PATH",
+            },
         ])
         return schema
 
@@ -729,7 +888,16 @@ class YantrikDBMemoryProvider(MemoryProvider):
             logger.debug("YantrikDB http mode but no token — plugin inactive")
             return
 
-        self._namespace = _derive_namespace(self._config.namespace, kwargs)
+        self._base_namespace = _derive_namespace(self._config.namespace, kwargs)
+        self._namespace = self._base_namespace
+        self._legacy_actor_namespace = ""
+        self._scope_metadata = {}
+        if self._config.owner_scoping:
+            self._scope_metadata = _derive_owner_scope(self._config, kwargs)
+            owner_shard = _safe_namespace_part(self._scope_metadata["owner_id"])
+            actor_shard = _safe_namespace_part(self._scope_metadata["actor_id"])
+            self._namespace = f"{self._base_namespace}:owner:{owner_shard}"
+            self._legacy_actor_namespace = f"{self._base_namespace}:owner:{actor_shard}"
 
         # v0.4.4: defensively pre-create the engine's model-cache dir before
         # any bundled-named download path runs. Otherwise an environment
@@ -817,6 +985,71 @@ class YantrikDBMemoryProvider(MemoryProvider):
             raise RuntimeError("YantrikDB client not initialized")
         return self._client
 
+    def _should_recall_base_namespace(self) -> bool:
+        return bool(
+            self._config
+            and self._config.owner_scoping
+            and self._config.include_base_namespace_recall
+            and self._base_namespace
+            and self._namespace != self._base_namespace
+        )
+
+    def _legacy_actor_namespaces(self) -> list[str]:
+        if not (
+            self._config
+            and self._config.owner_scoping
+            and self._config.include_legacy_actor_namespace_recall
+            and self._base_namespace
+        ):
+            return []
+        namespaces: list[str] = []
+        for actor in self._scope_metadata.get("owner_actors") or []:
+            ns = f"{self._base_namespace}:owner:{_safe_namespace_part(str(actor))}"
+            if ns != self._namespace and ns not in namespaces:
+                namespaces.append(ns)
+        return namespaces
+
+    def _write_scope_metadata(self) -> dict[str, Any]:
+        return {
+            k: v for k, v in self._scope_metadata.items()
+            if k != "owner_actors"
+        }
+
+    def _fallback_recall_namespaces(self) -> list[str]:
+        namespaces: list[str] = []
+        namespaces.extend(self._legacy_actor_namespaces())
+        if self._should_recall_base_namespace() and self._base_namespace not in namespaces:
+            namespaces.append(self._base_namespace)
+        return namespaces
+
+    def _recall_with_base_fallback(
+        self,
+        query: str,
+        *,
+        top_k: int,
+        domain: str | None = None,
+    ) -> list[dict[str, Any]]:
+        client = self._require_client()
+        scoped = client.recall(
+            query,
+            namespace=self._namespace,
+            top_k=top_k,
+            domain=domain,
+        ).get("results", []) or []
+        fallback_sets: list[list[dict[str, Any]]] = []
+        for namespace in self._fallback_recall_namespaces():
+            fallback_sets.append(
+                client.recall(
+                    query,
+                    namespace=namespace,
+                    top_k=top_k,
+                    domain=domain,
+                ).get("results", []) or [],
+            )
+        if not fallback_sets:
+            return scoped[:top_k]
+        return _dedupe_and_rank_results([scoped, *fallback_sets], limit=top_k)
+
     # -- Prompt / prefetch -----------------------------------------------
 
     def system_prompt_block(self) -> str:
@@ -841,9 +1074,15 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     "for diagnostics."
                 )
             return ""
+        scope_line = (
+            "Owner scoping enabled; memories are isolated by resolved owner namespace.\n"
+            if self._scope_metadata
+            else ""
+        )
         return (
             "# YantrikDB Memory\n"
             f"Active. Namespace: `{self._namespace}`.\n"
+            f"{scope_line}"
             "Self-maintaining memory: canonicalizes duplicates, surfaces "
             "contradictions, ranks with recency awareness, and explains recall. "
             "Use `yantrikdb_recall` before claiming facts about the user or "
@@ -875,14 +1114,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if self._breaker_open():
             return
 
-        client = self._client
-        namespace = self._namespace
         key = session_id or self._session_id or "__default__"
 
         def _run() -> None:
             try:
-                resp = client.recall(query, namespace=namespace, top_k=5)
-                block = _format_recall_block(resp.get("results", []), limit=5)
+                results = self._recall_with_base_fallback(query, top_k=5)
+                block = _format_recall_block(results, limit=5)
                 if block:
                     with self._prefetch_lock:
                         self._prefetch_results[key] = block
@@ -933,7 +1170,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     text,
                     namespace=namespace,
                     importance=_estimate_importance(text),
-                    metadata={"session_id": snapshot_sid, "role": "user"},
+                    metadata={"session_id": snapshot_sid, "role": "user", **self._write_scope_metadata()},
                 )
                 self._record_success()
             except YantrikDBClientError as e:
@@ -1042,7 +1279,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             namespace=self._namespace,
             importance=importance,
             domain=args.get("domain"),
-            metadata={"session_id": self._session_id},
+            metadata={"session_id": self._session_id, **self._write_scope_metadata()},
         )
         self._record_success()
         return json.dumps({"rid": resp.get("rid"), "stored": True})
@@ -1053,14 +1290,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return tool_error("Missing required parameter: query")
         default_top_k = self._config.top_k if self._config else 10
         top_k = min(_coerce_int(args.get("top_k"), default_top_k), 50)
-        resp = self._require_client().recall(
+        results = self._recall_with_base_fallback(
             query,
-            namespace=self._namespace,
             top_k=top_k,
             domain=args.get("domain"),
         )
         self._record_success()
-        results = resp.get("results", []) or []
         compact = [
             {
                 "rid": r.get("rid"),
@@ -1313,6 +1548,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                         "source": "hermes_memory_md",
                         "target": target,
                         "session_id": session_id,
+                        **self._write_scope_metadata(),
                     },
                 )
                 self._record_success()
