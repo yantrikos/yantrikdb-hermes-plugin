@@ -3,6 +3,44 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.11] — 2026-05-18 — Shared group owner scopes on top of owner scoping
+
+Lands [#14](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/14) from **@wysie** — seventh PR in the arc, building directly on v0.4.10's owner-scoping foundation. Adds shared group namespaces so memories created in a configured group conversation are recallable by every current group member across platforms, while personal-DM memories stay isolated.
+
+Opt-in via the same `YANTRIKDB_OWNER_SCOPING=true`. No new env vars — group config lives in the existing identity-map JSON.
+
+### Added
+
+- **`groups` key in the identity map JSON.** Declare a shared group namespace with `members` (list of canonical owner ids that may recall from it during personal recall) and `conversations` (list of platform-prefixed conversation ids whose writes route to the group namespace):
+  ```json
+  {
+    "actors": {
+      "whatsapp:actor-a": "owner:primary-user",
+      "telegram:actor-b": "owner:primary-user"
+    },
+    "groups": {
+      "group:household": {
+        "members": ["owner:primary-user", "owner:secondary-user"],
+        "conversations": ["whatsapp:family-chat", "telegram:family-chat"]
+      }
+    }
+  }
+  ```
+- **Conversation-to-group routing.** A message written inside a configured group conversation stores under the group namespace instead of the sender's personal-owner namespace. Provenance metadata records `owner_id: group:household`, `actor_owner_id: owner:primary-user`, and `actor_id: whatsapp:actor-a` so writes are still attributable to the human.
+- **Group membership in personal recall.** A user's DM recall transparently searches the group namespaces they are listed as members of, in addition to their own owner namespace. Non-members do not get those groups — privacy boundary verified by test.
+- **Group-context recall is group-scoped.** When a user is currently in a group conversation, recall is scoped to the group namespace (plus legacy/base fallbacks if enabled). Personal memories don't bleed into group context.
+- **2 new tests** covering write-routing (`test_group_conversation_writes_to_configured_group_namespace`) and member-only recall fallback (`test_personal_recall_includes_configured_group_memberships`). 183 tests total (was 181); CI green Python 3.11/3.12/3.13/3.14.
+
+### Notes
+
+- Membership changes are app/config operations and not retroactive: existing memories written under a group namespace stay there. Removing a user from `members` revokes their personal-recall access to that group on the next session.
+- Conversation→group mapping is first-match-wins by iteration order; if the same conversation id is listed in multiple groups, only the first matched wins silently. Use distinct conversation ids per group.
+- The plugin enforces only the configured allow-list; identity-map updates require restarting the agent session (the map is loaded once at `initialize()`).
+
+### Credit
+
+[@wysie](https://github.com/wysie) — seventh PR. Arc: #6 → #7 → #8 → #10 → #11 → #13 → #14. Second consecutive capability-shaping PR (after #13's owner-scoping foundation), now adding the shared-group layer on top.
+
 ## [0.4.10] — 2026-05-17 — Optional owner-scoped namespaces for multi-user Hermes gateways
 
 Lands [#13](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/13) from **@wysie** — sixth PR in the arc, and the first to add new capability rather than fix a regression. One Hermes gateway can now hard-isolate memories across multiple users without requiring YantrikDB core to know anything about platform alias policy.
