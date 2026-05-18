@@ -532,13 +532,8 @@ def _safe_namespace_part(value: str) -> str:
     return f"{slug or 'owner'}-{digest}"
 
 
-def _load_identity_map(config: YantrikDBConfig) -> dict[str, str]:
-    """Load actor->owner aliases from plugin/app config.
-
-    Supported shapes:
-      {"actors": {"whatsapp:123": "owner:primary"}}
-      {"owners": {"owner:primary": {"actors": ["whatsapp:123"]}}}
-    """
+def _load_identity_config(config: YantrikDBConfig) -> dict[str, Any]:
+    """Load identity config containing actor aliases and optional groups."""
     raw: Any = None
     if config.identity_map_json:
         try:
@@ -552,9 +547,17 @@ def _load_identity_map(config: YantrikDBConfig) -> dict[str, str]:
         except (OSError, json.JSONDecodeError) as e:
             logger.warning("Failed to read identity map %s: %s", config.identity_map_path, e)
             raw = None
-    if not isinstance(raw, dict):
-        return {}
+    return raw if isinstance(raw, dict) else {}
 
+
+def _load_identity_map(config: YantrikDBConfig) -> dict[str, str]:
+    """Load actor->owner aliases from plugin/app config.
+
+    Supported shapes:
+      {"actors": {"whatsapp:123": "owner:primary"}}
+      {"owners": {"owner:primary": {"actors": ["whatsapp:123"]}}}
+    """
+    raw = _load_identity_config(config)
     out: dict[str, str] = {}
     actors = raw.get("actors")
     if isinstance(actors, dict):
@@ -572,18 +575,69 @@ def _load_identity_map(config: YantrikDBConfig) -> dict[str, str]:
     return out
 
 
+def _load_group_map(config: YantrikDBConfig) -> dict[str, dict[str, list[str]]]:
+    """Load shared group/space owner config.
+
+    Shape:
+      {"groups": {"group:household": {
+          "members": ["owner:primary"],
+          "conversations": ["whatsapp:family-chat"]
+      }}}
+
+    The plugin only enforces this configured allow-list. Updating membership is
+    an app/config operation; existing group memories stay in the group namespace.
+    """
+    raw = _load_identity_config(config)
+    groups = raw.get("groups")
+    if not isinstance(groups, dict):
+        return {}
+    out: dict[str, dict[str, list[str]]] = {}
+    for group_id, spec in groups.items():
+        if not group_id or not isinstance(spec, dict):
+            continue
+        members = [str(v) for v in (spec.get("members") or []) if v]
+        conversations = [str(v) for v in (spec.get("conversations") or []) if v]
+        out[str(group_id)] = {"members": members, "conversations": conversations}
+    return out
+
+
+def _configured_group_for_conversation(
+    config: YantrikDBConfig,
+    conversation_id: str | None,
+) -> str | None:
+    if not conversation_id:
+        return None
+    for group_id, spec in _load_group_map(config).items():
+        if conversation_id in spec.get("conversations", []):
+            return group_id
+    return None
+
+
+def _shared_groups_for_owner(config: YantrikDBConfig, owner_id: str) -> list[str]:
+    groups: list[str] = []
+    for group_id, spec in _load_group_map(config).items():
+        if owner_id in spec.get("members", []) and group_id not in groups:
+            groups.append(group_id)
+    return groups
+
 def _derive_owner_scope(config: YantrikDBConfig, kwargs: dict[str, Any]) -> dict[str, Any]:
     actor_id = _identity_actor_id(kwargs)
+    conversation_id = _conversation_id(kwargs)
     aliases = _load_identity_map(config)
-    owner_id = aliases.get(actor_id, actor_id)
-    owner_actors = sorted(actor for actor, owner in aliases.items() if owner == owner_id)
+    actor_owner_id = aliases.get(actor_id, actor_id)
+    group_owner_id = _configured_group_for_conversation(config, conversation_id)
+    owner_id = group_owner_id or actor_owner_id
+    owner_actors = sorted(actor for actor, owner in aliases.items() if owner == actor_owner_id)
+    shared_owner_ids = [] if group_owner_id else _shared_groups_for_owner(config, actor_owner_id)
     platform = (kwargs.get("platform") or "cli").strip() or "cli"
     return {
         "owner_id": owner_id,
+        "actor_owner_id": actor_owner_id,
         "actor_id": actor_id,
         "channel": platform,
-        "conversation_id": _conversation_id(kwargs),
+        "conversation_id": conversation_id,
         "owner_actors": owner_actors,
+        "shared_owner_ids": shared_owner_ids,
     }
 
 def _derive_namespace(base: str, kwargs: dict[str, Any]) -> str:
@@ -689,6 +743,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._namespace: str = DEFAULT_NAMESPACE
         self._base_namespace: str = DEFAULT_NAMESPACE
         self._legacy_actor_namespace: str = ""
+        self._shared_owner_namespaces: list[str] = []
         self._scope_metadata: dict[str, Any] = {}
         self._session_id: str = ""
         self._cron_skipped: bool = False
@@ -899,6 +954,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._base_namespace = _derive_namespace(self._config.namespace, kwargs)
         self._namespace = self._base_namespace
         self._legacy_actor_namespace = ""
+        self._shared_owner_namespaces = []
         self._scope_metadata = {}
         if self._config.owner_scoping:
             self._scope_metadata = _derive_owner_scope(self._config, kwargs)
@@ -906,6 +962,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
             actor_shard = _safe_namespace_part(self._scope_metadata["actor_id"])
             self._namespace = f"{self._base_namespace}:owner:{owner_shard}"
             self._legacy_actor_namespace = f"{self._base_namespace}:owner:{actor_shard}"
+            self._shared_owner_namespaces = [
+                f"{self._base_namespace}:owner:{_safe_namespace_part(str(owner_id))}"
+                for owner_id in self._scope_metadata.get("shared_owner_ids", [])
+            ]
 
         # v0.4.4: defensively pre-create the engine's model-cache dir before
         # any bundled-named download path runs. Otherwise an environment
@@ -1020,12 +1080,15 @@ class YantrikDBMemoryProvider(MemoryProvider):
     def _write_scope_metadata(self) -> dict[str, Any]:
         return {
             k: v for k, v in self._scope_metadata.items()
-            if k != "owner_actors"
+            if k not in {"owner_actors", "shared_owner_ids"}
         }
 
     def _fallback_recall_namespaces(self) -> list[str]:
         namespaces: list[str] = []
         namespaces.extend(self._legacy_actor_namespaces())
+        for namespace in self._shared_owner_namespaces:
+            if namespace != self._namespace and namespace not in namespaces:
+                namespaces.append(namespace)
         if self._should_recall_base_namespace() and self._base_namespace not in namespaces:
             namespaces.append(self._base_namespace)
         return namespaces

@@ -184,10 +184,12 @@ class TestInitialize:
         assert p._namespace.startswith("hermes:workspace:coder:owner:owner-primary-user-")
         assert p._scope_metadata == {
             "owner_id": "owner:primary-user",
+            "actor_owner_id": "owner:primary-user",
             "actor_id": "whatsapp:actor-a",
             "channel": "whatsapp",
             "conversation_id": "whatsapp:chat-1",
             "owner_actors": ["telegram:actor-b", "whatsapp:actor-a"],
+            "shared_owner_ids": [],
         }
 
     def test_owner_scoping_defaults_to_actor_owner_without_map(
@@ -447,6 +449,98 @@ class TestHandleToolCall:
 
         mock_client.recall.assert_called_once()
         assert json.loads(out)["results"][0]["rid"] == "scoped"
+
+    def test_group_conversation_writes_to_configured_group_namespace(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_OWNER_SCOPING", "true")
+        monkeypatch.setenv(
+            "YANTRIKDB_IDENTITY_MAP_JSON",
+            json.dumps({
+                "actors": {"whatsapp:actor-a": "owner:primary-user"},
+                "groups": {
+                    "group:household": {
+                        "members": ["owner:primary-user", "owner:secondary-user"],
+                        "conversations": ["whatsapp:family-chat"],
+                    },
+                },
+            }),
+        )
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess-1",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="whatsapp",
+                user_id="actor-a",
+                chat_id="family-chat",
+                chat_type="group",
+            )
+
+        p.handle_tool_call("yantrikdb_remember", {"text": "Shared household fact"})
+
+        call = mock_client.remember.call_args
+        assert call.kwargs["namespace"].startswith("hermes:workspace:coder:owner:group-household-")
+        assert call.kwargs["metadata"]["owner_id"] == "group:household"
+        assert call.kwargs["metadata"]["actor_id"] == "whatsapp:actor-a"
+        assert call.kwargs["metadata"]["actor_owner_id"] == "owner:primary-user"
+        assert call.kwargs["metadata"]["conversation_id"] == "whatsapp:family-chat"
+
+    def test_personal_recall_includes_configured_group_memberships(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_OWNER_SCOPING", "true")
+        monkeypatch.setenv("YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL", "false")
+        monkeypatch.setenv("YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL", "false")
+        monkeypatch.setenv(
+            "YANTRIKDB_IDENTITY_MAP_JSON",
+            json.dumps({
+                "actors": {
+                    "telegram:actor-b": "owner:primary-user",
+                    "whatsapp:actor-a": "owner:primary-user",
+                    "whatsapp:actor-c": "owner:removed-user",
+                },
+                "groups": {
+                    "group:household": {
+                        "members": ["owner:primary-user", "owner:secondary-user"],
+                        "conversations": ["whatsapp:family-chat"],
+                    },
+                    "group:other": {
+                        "members": ["owner:someone-else"],
+                        "conversations": ["telegram:other-chat"],
+                    },
+                },
+            }),
+        )
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess-1",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="telegram",
+                user_id="actor-b",
+                chat_id="actor-b-dm",
+                chat_type="dm",
+            )
+
+        mock_client.recall.side_effect = [
+            {"results": [{"rid": "personal", "text": "personal", "score": 0.8}]},
+            {"results": [{"rid": "household", "text": "shared", "score": 0.9}]},
+        ]
+        out = p.handle_tool_call("yantrikdb_recall", {"query": "prefs", "top_k": 5})
+
+        namespaces = [call.kwargs["namespace"] for call in mock_client.recall.call_args_list]
+        assert len(namespaces) == 2
+        assert namespaces[0].startswith("hermes:workspace:coder:owner:owner-primary-user-")
+        assert namespaces[1].startswith("hermes:workspace:coder:owner:group-household-")
+        assert not any("group-other" in ns for ns in namespaces)
+        assert [r["rid"] for r in json.loads(out)["results"]] == ["household", "personal"]
 
     def test_recall_handles_missing_why_retrieved(self, provider, mock_client):
         mock_client.recall.return_value = {

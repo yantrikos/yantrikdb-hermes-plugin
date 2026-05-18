@@ -82,13 +82,24 @@ Optional config file: `$HERMES_HOME/yantrikdb.json`. Env vars are the primary so
 
 ## Optional owner scoping for multi-user Hermes gateways
 
-By default, the effective namespace remains `namespace:agent_workspace:agent_identity`, preserving existing behavior. If one Hermes gateway serves multiple users and you want hard memory isolation without changing YantrikDB core, enable owner scoping:
+By default, the effective namespace remains `namespace:agent_workspace:agent_identity`, preserving existing behavior. If one Hermes gateway serves multiple users and you want hard memory isolation without changing YantrikDB core, enable owner scoping in `$HERMES_HOME/yantrikdb.json`:
 
 ```json
 {
   "owner_scoping": true,
-  "identity_map_path": "/path/to/identity-map.json"
+  "identity_map_path": "/path/to/identity-map.json",
+  "include_base_namespace_recall": true,
+  "include_legacy_actor_namespace_recall": true
 }
+```
+
+Equivalent environment variables:
+
+```bash
+export YANTRIKDB_OWNER_SCOPING=true
+export YANTRIKDB_IDENTITY_MAP_PATH=/path/to/identity-map.json
+export YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL=true
+export YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL=true
 ```
 
 Identity map formats:
@@ -114,7 +125,55 @@ or:
 }
 ```
 
-When enabled, the plugin resolves the current Hermes `platform` + `user_id` to an owner, appends a stable, collision-resistant owner shard to the namespace, and writes `owner_id`, `actor_id`, `channel`, and `conversation_id` into metadata. The shard preserves the first 32 chars of the original identifier as a debuggable slug plus a sha256-12 suffix; if you want pure-hash sharding without identifier leakage, pre-hash the owner ids in your identity map before passing them in. If no identity map is configured, the actor becomes its own owner by default, so actors are still stored and isolated without any owner config. Recall also includes fallback namespaces by default: old per-actor owner namespaces for every actor mapped to the same owner (`include_legacy_actor_namespace_recall=true`), then the base pre-owner namespace (`include_base_namespace_recall=true`). This means memories written as `whatsapp:actor-a` remain visible after `whatsapp:actor-a` and `telegram:actor-b` are mapped to `owner:primary-user`, and older unscoped memories behave as shared/global legacy memory. New writes still go only to the canonical owner-scoped namespace. Set either fallback false if you want stricter recall. This is a plugin/application concern; YantrikDB core does not need to know platform alias policy.
+Shared groups can be declared in the same identity map. Use stable, app-owned ids for both owners and groups; the plugin hashes these ids into namespace shards, so they do not have to be database ids.
+
+Example: one person across WhatsApp + Telegram, plus a household group shared by two owners:
+
+```json
+{
+  "actors": {
+    "whatsapp:actor-a": "owner:primary-user",
+    "telegram:actor-b": "owner:primary-user",
+    "whatsapp:actor-c": "owner:secondary-user"
+  },
+  "groups": {
+    "group:household": {
+      "members": ["owner:primary-user", "owner:secondary-user"],
+      "conversations": ["whatsapp:family-chat", "telegram:family-chat"]
+    }
+  }
+}
+```
+
+How to read the example:
+
+- `actors` maps platform actor ids to canonical personal owners. `whatsapp:actor-a` and `telegram:actor-b` are the same person, so their personal memories share `owner:primary-user`.
+- `groups.group:household.members` lists canonical owners who may recall memories from that shared group namespace during personal recall.
+- `groups.group:household.conversations` lists group chat conversation ids whose writes should be stored under `group:household` instead of the sender's personal owner.
+- A message from `whatsapp:actor-a` inside `whatsapp:family-chat` writes to the `group:household` namespace and records `actor_owner_id: owner:primary-user` in metadata for provenance.
+- A later DM recall by `telegram:actor-b` searches `owner:primary-user` plus `group:household`, because `owner:primary-user` is a current group member.
+- A user not listed in `members` does not get that group namespace during personal recall, even if they have an actor mapping elsewhere.
+
+To remove access for a member, edit the identity map and remove that owner id from the group's `members` list:
+
+```json
+{
+  "groups": {
+    "group:household": {
+      "members": ["owner:primary-user"],
+      "conversations": ["whatsapp:family-chat", "telegram:family-chat"]
+    }
+  }
+}
+```
+
+After the provider is restarted or a fresh session initializes, `owner:secondary-user` no longer recalls `group:household` during personal recall. Historical rows remain in the group namespace; the plugin does not rewrite or tombstone them automatically.
+
+When enabled, the plugin resolves the current Hermes `platform` + `user_id` to an owner, appends a stable, collision-resistant owner shard to the namespace, and writes `owner_id`, `actor_id`, `actor_owner_id`, `channel`, and `conversation_id` into metadata. The shard preserves the first 32 chars of the original identifier as a debuggable slug plus a sha256-12 suffix; if you want pure-hash sharding without identifier leakage, pre-hash the owner ids in your identity map before passing them in. If no identity map is configured, the actor becomes its own owner by default, so actors are still stored and isolated without any owner config.
+
+If the current `conversation_id` matches a configured group conversation, writes go to that group owner namespace (for example `group:household`) rather than the actor's personal namespace. Personal recalls include the actor's own namespace plus any configured group namespaces where the resolved owner is a current `member`. Removing someone from a group is therefore a config edit: remove their owner id from `groups.<group>.members`, restart/new-session the provider, and future personal recall stops including that group namespace. Historical memories remain under the group owner; nothing is rewritten.
+
+Recall also includes fallback namespaces by default: old per-actor owner namespaces for every actor mapped to the same owner (`include_legacy_actor_namespace_recall=true`), then the base pre-owner namespace (`include_base_namespace_recall=true`). This means memories written as `whatsapp:actor-a` remain visible after `whatsapp:actor-a` and `telegram:actor-b` are mapped to `owner:primary-user`, and older unscoped memories behave as shared/global legacy memory. New writes still go only to the canonical current owner namespace. Set either fallback false if you want stricter recall. This is a plugin/application concern; YantrikDB core does not need to know platform alias policy.
 
 **Operational notes:**
 
