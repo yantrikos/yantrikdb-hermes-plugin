@@ -139,7 +139,22 @@ echo "YANTRIKDB_EMBEDDER=potion-base-8M" >> ~/.hermes/.env     # 28 MB, dim=256,
 # or potion-base-32M for 121 MB, dim=512, ~95% MiniLM
 # or multilingual via the v0.4.2 model2vec path:
 echo "YANTRIKDB_EMBEDDER_MODEL2VEC=minishlab/potion-multilingual-128M" >> ~/.hermes/.env
+# or the broader HF ecosystem via sentence-transformers:
+echo "YANTRIKDB_EMBEDDER_HF=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" >> ~/.hermes/.env
 ```
+
+### Optional: quiet the HuggingFace embedder
+
+`YANTRIKDB_EMBEDDER_HF` uses `sentence-transformers`, which by default emits noise to stdout — tqdm progress bars on every encode and a one-time HF Hub auth warning at startup. The plugin disables the per-encode progress bars internally (v0.4.12+). For the rest, add to your `.env`:
+
+```bash
+HF_HUB_DISABLE_PROGRESS_BARS=1
+TRANSFORMERS_VERBOSITY=error
+# Optional, when running fully offline after the first download:
+HF_HUB_OFFLINE=1
+```
+
+Without these, sentence-transformers / huggingface_hub output can pollute the agent's own stdout stream.
 
 ## Install (alternative — HTTP backend, for HA cluster setups)
 

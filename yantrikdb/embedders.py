@@ -156,7 +156,7 @@ class SentenceTransformerEmbedder:
         # hand it to the engine and as a fallback when declared dim isn't
         # available.
         probe = _coerce_to_float_list(
-            self._model.encode(_PROBE_TEXT),
+            self._model.encode(_PROBE_TEXT, show_progress_bar=False),
             model_name=model_name, family="sentence-transformers",
         )
         probed = len(probe)
@@ -179,7 +179,9 @@ class SentenceTransformerEmbedder:
     def encode(self, text: str) -> list[float]:
         # SentenceTransformer.encode with a single string returns a 1-D
         # ndarray of shape (dim,). With a list it returns 2-D.
-        vec = self._model.encode(text)
+        # show_progress_bar=False keeps stdout clean — tqdm bars on every
+        # memory write would pollute the agent's own output stream.
+        vec = self._model.encode(text, show_progress_bar=False)
         return _coerce_to_float_list(
             vec, model_name=self.model_name, family="sentence-transformers",
         )
