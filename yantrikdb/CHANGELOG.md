@@ -3,6 +3,19 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.12] — 2026-05-18 — Quiet HuggingFace embedder
+
+Bugfix landing [#15](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/15) from **@alienos**. The `SentenceTransformerEmbedder` (selected by `YANTRIKDB_EMBEDDER_HF`) was leaking tqdm progress bars to stdout on every memory write. Under Hermes the plugin's stdout is the agent's own output stream, so per-write `Batches: 0%|...` bars polluted agent output and could interfere with log parsing or TTY rendering.
+
+### Fixed
+
+- **`SentenceTransformerEmbedder.encode()`** now passes `show_progress_bar=False` to `sentence_transformers.SentenceTransformer.encode`. Affects the startup probe (where the loader confirms the model works) and every runtime encode call from the engine. Internal fix — no API change, no env-var change, no breaking behaviour for existing callers.
+- **README** adds an "Optional: quiet the HuggingFace embedder" section documenting the complementary env vars (`HF_HUB_DISABLE_PROGRESS_BARS=1`, `TRANSFORMERS_VERBOSITY=error`, `HF_HUB_OFFLINE=1`) for the HF Hub auth warning + transformers-library output that the plugin can't suppress from inside.
+
+### Credit
+
+Thanks to **@alienos** for the bug report, root-cause diagnosis, and the working-fix workaround in [#15](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/15). Third confirmed fix from this reporter (after #4 + #9 closed cleanly).
+
 ## [0.4.11] — 2026-05-18 — Shared group owner scopes on top of owner scoping
 
 Lands [#14](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/14) from **@wysie** — seventh PR in the arc, building directly on v0.4.10's owner-scoping foundation. Adds shared group namespaces so memories created in a configured group conversation are recallable by every current group member across platforms, while personal-DM memories stay isolated.
