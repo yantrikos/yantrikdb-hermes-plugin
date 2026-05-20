@@ -13,6 +13,29 @@
 
 This repository **is** the canonical distribution. Per Hermes maintainer guidance, new memory providers aren't being merged upstream — the recommended pattern is standalone plugins that users install via `pip` and register with their Hermes home directory. That keeps the version cadence, CI gating, issue triage, and review cycle on the plugin author's side, so fixes ship the same day they're ready instead of waiting on upstream review bandwidth.
 
+## Why this exists
+
+Two recurring observations from the Hermes community map directly to what yantrikdb does:
+
+> "Compression was silently dropping earlier constraints by turn 50." — Hermes developer building a long-running coding agent ([user-stories](https://hermes-agent.nousresearch.com/docs/user-stories))
+
+The `on_pre_compress` hook injects the highest-salience memories before Hermes compresses, so constraints survive long sessions. Recency-aware ranking + `conflicts()` makes superseded claims visible instead of letting them silently outrank their replacements.
+
+> "Spent 200-400 hours building a memory kernel because standard vector approaches dropped important constraints; successful implementations used temporal context graphs with lifecycle management — promotion / demotion / supersession — rather than vector similarity alone." — Hermes developer who built their own memory layer after vector approaches failed ([user-stories](https://hermes-agent.nousresearch.com/docs/user-stories))
+
+This is the substrate yantrikdb already ships: temporal context graph via `relate()`, lifecycle via `consolidation_status` + `forget()` + the `think()` maintenance pass, recency ranking, first-class conflicts/canonicalization. Drop-in via `hermes plugins install`. The 200-400 hours are someone else's; you get the substrate.
+
+### And what other Hermes memory providers don't have
+
+| Capability | yantrikdb-hermes-plugin | Most others |
+|---|---|---|
+| Agent-authored skills with outcome ledger (`yantrikdb_skill_define` / `_search` / `_outcome`) | ✓ first-class, DB-native peer to Hermes' filesystem Markdown skills | filesystem-only (Hermes built-in) |
+| Contradiction tracking (`conflicts()` + `resolve_conflict()`) | ✓ first-class primitive | not in [mem0's 2026 taxonomy](https://docs.mem0.ai) |
+| Explainable recall (`why_retrieved` per result) | ✓ list of scoring reasons returned with every result | rarely surfaced |
+| Owner-scoping for multi-platform Hermes (Telegram + WhatsApp + Discord routed by canonical owner) | ✓ v0.4.10 identity-map + v0.4.11 shared group spaces | one shared namespace, manual scoping |
+| Embedded mode default (no server, no token, no GPU) | ✓ v0.2.0+ | varies |
+| HTTP backend for HA clusters | ✓ v0.5.0 (against yantrikdb-server) | varies |
+
 ## Install (default — embedded backend)
 
 The v0.2.0 default backend is **in-process**: no separate server, no token, no GPU, no network. Bundled `potion-base-2M` static embedder (~8 MB, dim=64) loads on first call (~80 ms one-time warmup) and stays in-process.
