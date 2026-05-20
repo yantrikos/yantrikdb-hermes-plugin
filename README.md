@@ -36,16 +36,15 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 | Embedded mode default (no server, no token, no GPU) | ✓ v0.2.0+ | varies |
 | HTTP backend for HA clusters | ✓ v0.5.0 (against yantrikdb-server) | varies |
 
-## End-to-end demo
+## End-to-end demo — LLM-driven skill lifecycle
 
-The skill-lifecycle loop, captured against an ephemeral substrate:
+![LLM-driven skill lifecycle](./assets/demos/skill-lifecycle/demo_llm.gif)
 
-[`assets/demos/skill-lifecycle/`](./assets/demos/skill-lifecycle/) ships two runnable demos against a fresh ephemeral substrate:
+`gpt-4o-mini` receives the plugin's 11 tool schemas via OpenAI's chat-completions API and chooses when to call each one. In session 1 it autonomously picks the `skill_id` (`release.yantrikos.clean`), `applies_to` tags, and body for a workflow it just learned. In session 2 — fresh provider instance, same substrate — it searches the substrate, finds the skill, follows it, and records an outcome. Two real rids land. The autonomy loop closes in ~10 seconds.
 
-- **`demo.py`** — scripted "agent" calls `skill_define` → session restart → `skill_search` → `skill_outcome`. Deterministic for reproducibility. [`transcript.txt`](./assets/demos/skill-lifecycle/transcript.txt) shows a captured run.
-- **`demo_llm.py`** — **LLM-driven**. `gpt-4o-mini` receives the plugin's 11 tool schemas via OpenAI's chat-completions API and chooses when to call each one. [`transcript-llm.txt`](./assets/demos/skill-lifecycle/transcript-llm.txt) shows a captured run: the model picked the skill_id (`release.yantrikos.clean`), applies_to tags, and body autonomously, then a fresh session of the same model found the skill via search and recorded an outcome.
+Sources: [`demo_llm.py`](./assets/demos/skill-lifecycle/demo_llm.py) + [`transcript-llm.txt`](./assets/demos/skill-lifecycle/transcript-llm.txt) + [`demo_llm.tape`](./assets/demos/skill-lifecycle/demo_llm.tape) for rendering. A scripted (no API key required) deterministic version is also included: [`demo.py`](./assets/demos/skill-lifecycle/demo.py) / [`demo.gif`](./assets/demos/skill-lifecycle/demo.gif).
 
-Both run in <30 s. The plugin's `handle_tool_call` dispatch path is the same entry point Hermes invokes internally. For larger-scale evidence: [`yantrikdb.com/guides/autonomous-skills/`](https://yantrikdb.com/guides/autonomous-skills/) documents 17 skills authored by Claude across many sessions on one production substrate, with 9 showing cross-session reuse via the outcome ledger.
+The plugin's `handle_tool_call` dispatch path you see in both demos is the same entry point Hermes invokes internally. For larger-scale evidence of LLM-driven autonomy: [`yantrikdb.com/guides/autonomous-skills/`](https://yantrikdb.com/guides/autonomous-skills/) documents 17 skills authored by Claude across many sessions on one production substrate, with 9 showing cross-session reuse via the outcome ledger.
 
 ## Install (default — embedded backend)
 

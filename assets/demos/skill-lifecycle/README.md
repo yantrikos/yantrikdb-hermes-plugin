@@ -2,6 +2,18 @@
 
 End-to-end demo showing the [`yantrikdb-hermes-plugin`](https://github.com/yantrikos/yantrikdb-hermes-plugin) skill substrate handling the **define → restart → search → outcome** loop — the autonomy loop described in [`yantrikdb/README.md`](../../../yantrikdb/README.md) and on [`yantrikdb.com/guides/autonomous-skills/`](https://yantrikdb.com/guides/autonomous-skills/).
 
+## LLM-driven recording (the real autonomy loop)
+
+![LLM-driven skill lifecycle](./demo_llm.gif)
+
+`gpt-4o-mini` receives the plugin's 11 tool schemas via OpenAI's chat-completions API and chooses when to call each one. The model picked the `skill_id` (`release.yantrikos.clean`), `applies_to` tags, body text, search query, and outcome note autonomously. Two real rids land in the substrate; the autonomy loop closes in ~10 seconds. Source: [`demo_llm.py`](./demo_llm.py) + [`transcript-llm.txt`](./transcript-llm.txt).
+
+## Scripted recording (deterministic plumbing demo)
+
+![Scripted skill lifecycle](./demo.gif)
+
+The same `handle_tool_call` path, with the agent's tool-call decisions hard-coded for reproducibility. Useful for verifying the plugin works without needing an API key. Source: [`demo.py`](./demo.py) + [`transcript.txt`](./transcript.txt).
+
 ## Two demos, two levels of evidence
 
 | Script | What's live | What's scripted | Captured run |
