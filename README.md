@@ -40,11 +40,12 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 
 The skill-lifecycle loop, captured against an ephemeral substrate:
 
-[`assets/demos/skill-lifecycle/`](./assets/demos/skill-lifecycle/) — `demo.py` (runnable end-to-end in ~25 s on a fresh install) + [`transcript.txt`](./assets/demos/skill-lifecycle/transcript.txt) (the captured stdout from a real run) + a [`demo.tape`](./assets/demos/skill-lifecycle/demo.tape) for [`vhs`](https://github.com/charmbracelet/vhs) GIF rendering.
+[`assets/demos/skill-lifecycle/`](./assets/demos/skill-lifecycle/) ships two runnable demos against a fresh ephemeral substrate:
 
-What it shows: a `yantrikdb_skill_define` call from session 1 → simulated restart → `yantrikdb_skill_search` from session 2 finding the skill → `yantrikdb_skill_outcome` recording success. The plugin's `handle_tool_call` dispatch path is the same one Hermes uses internally — only the LLM-driven part (the agent's *decision* to call the tools) is scripted, so the recording is deterministic.
+- **`demo.py`** — scripted "agent" calls `skill_define` → session restart → `skill_search` → `skill_outcome`. Deterministic for reproducibility. [`transcript.txt`](./assets/demos/skill-lifecycle/transcript.txt) shows a captured run.
+- **`demo_llm.py`** — **LLM-driven**. `gpt-4o-mini` receives the plugin's 11 tool schemas via OpenAI's chat-completions API and chooses when to call each one. [`transcript-llm.txt`](./assets/demos/skill-lifecycle/transcript-llm.txt) shows a captured run: the model picked the skill_id (`release.yantrikos.clean`), applies_to tags, and body autonomously, then a fresh session of the same model found the skill via search and recorded an outcome.
 
-For real LLM-driven autonomy: [`yantrikdb.com/guides/autonomous-skills/`](https://yantrikdb.com/guides/autonomous-skills/) documents 17 skills authored by Claude on one production substrate, with 9 showing cross-session reuse via the outcome ledger.
+Both run in <30 s. The plugin's `handle_tool_call` dispatch path is the same entry point Hermes invokes internally. For larger-scale evidence: [`yantrikdb.com/guides/autonomous-skills/`](https://yantrikdb.com/guides/autonomous-skills/) documents 17 skills authored by Claude across many sessions on one production substrate, with 9 showing cross-session reuse via the outcome ledger.
 
 ## Install (default — embedded backend)
 
