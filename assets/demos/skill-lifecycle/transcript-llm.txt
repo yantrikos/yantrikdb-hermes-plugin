@@ -3,14 +3,24 @@
   LLM-driven skill-lifecycle demo
 ────────────────────────────────────────────────────────────────
   model:      gpt-4o-mini
-  substrate:  ephemeral SQLite DB (wiped between runs)
+  substrate:  ephemeral SQLite DB, pre-seeded with 6 skills
+              (representative of a real long-running substrate)
   tools:      11 (the plugin's full surface)
+
+  ▸ seeding 6 skills from past sessions:
+        • research.preregistration.protocol                (procedure)
+        • deploy.allowed_kinds.extension_order             (lesson)
+        • incident.service.silent_deadlock_check           (reference)
+        • workflow.upstream_block.escalation               (procedure)
+        • review.user_visible_change.no_marketing          (rule)
+        • workflow.session_handoff.context_distillation    (procedure)
+  ▸ 6 skills loaded into substrate
 
 ────────────────────────────────────────────────────────────────
   Session 1 — user asks the agent to crystallize a procedure
 ────────────────────────────────────────────────────────────────
-  ▸ skill_substrate (before):
-        skills=0, outcomes=0, conflicts=0
+  ▸ skill_substrate (before — seeded with prior-session skills):
+        skills=6, outcomes=0, conflicts=0
   · The user asks the agent to crystallize a repeated release procedure. The model
   · chooses the skill_id, type, applies_to tags, and body.
 
@@ -28,22 +38,25 @@
         skill_type="procedure"
         applies_to=["release"
         "yantrikos"
-        "python"
-        "ci"]
+        "python"]
+        triggers=["clean yantrikos release"
+        "release process"
+        "publish yantrikos"]
+        version="1.0.0"
      )
   ← plugin returned:
         {
-          "rid": "019e47bc-8ccc-708b-a7a8-68708ebb63be",
+          "rid": "019e47c8-ad3a-78fe-8b25-511d0e70dac1",
           "skill_id": "release.yantrikos_clean",
           "stored": true
         }
 
   · gpt-4o-mini replies:
-      The workflow for a clean yantrikos release has been successfully
-      crystallized as the skill `release.yantrikos_clean`. You can now easily find
-      it in future sessions.
+      The clean yantrikos release procedure has been successfully crystallized as
+      the skill `release.yantrikos_clean`. You can now easily find it in future
+      sessions.
   ▸ skill_substrate (after define):
-        skills=1, outcomes=0, conflicts=0
+        skills=7, outcomes=0, conflicts=0
 
 ──────────────────────────────────────────────────────────────────────
   [ session 1 ended — agent state torn down — substrate persists ]
@@ -53,7 +66,7 @@
   Session 2 — new session, no chat context, retrieval required
 ──────────────────────────────────────────────────────────────────
   ▸ skill_substrate (session 2 begins):
-        skills=1, outcomes=0, conflicts=0
+        skills=7, outcomes=0, conflicts=0
   · The new session has zero chat context from session 1. The prompt requires
   · retrieval from the persisted substrate. The model still has to choose the tool
   · call, the search query, which skill to follow, and what to record.
@@ -69,38 +82,37 @@
      )
   ← plugin returned:
         {
-          "count": 1,
+          "count": 5,
           "skills": [
             {
-              "rid": "019e47bc-8ccc-708b-a7a8-68708ebb63be",
+              "rid": "019e47c8-ad3a-78fe-8b25-511d0e70dac1",
               "skill_id": "release.yantrikos_clean",
               "skill_type": "procedure",
               "applies_to": [
                 "release",
                 "yantrikos",
-                "python",
-                "ci"
+                "python"
               ],
-              "body": "To perform a clean yantrikos release, follow these steps: 1. Create a feature branch for your changes. 2. Open a Pull Request (PR) for the feature branch. 3. Ensure that Continuous Integration (CI) passes for Python versions 3.11 to 3.14. 4. Once CI is green, squash-merge the PR into the main branch. 5. Update the 
+              "body": "To perform a clean yantrikos release, follow these steps: 1. Create a feature branch for your changes. 2. Open a Pull Request (PR) for the feature branch. 3. Ensure Continuous Integration (CI) passes for Python versions 3.11 to 3.14. 4. Once CI is green, squash-merge the PR into the main branch. 5. Update the CHANGELOG with the 
 
   ⚙  gpt-4o-mini → yantrikdb_skill_outcome(
         skill_id="release.yantrikos_clean"
         succeeded=true
-        note="Successfully followed the procedure to ship v0.4.13 of yantrikdb-hermes-plugin to PyPI."
+        note="Successfully followed the procedure for shipping v0.4.13 of yantrikdb-hermes-plugin to PyPI."
      )
   ← plugin returned:
         {
-          "rid": "019e47bc-f140-7256-88d2-5d2943daed2f",
+          "rid": "019e47c9-17a9-7618-9bd3-748de795a901",
           "skill_id": "release.yantrikos_clean",
           "recorded": true
         }
 
   · gpt-4o-mini replies:
-      I found a relevant skill for shipping to PyPI and successfully followed it
-      to ship v0.4.13 of the yantrikdb-hermes-plugin. The outcome has been
-      recorded.
+      I found a relevant skill for shipping to PyPI and successfully followed the
+      procedure for releasing v0.4.13 of the yantrikdb-hermes-plugin. The outcome
+      has been recorded.
   ▸ skill_substrate (after retrieval + outcome):
-        skills=1, outcomes=1, conflicts=0
+        skills=7, outcomes=1, conflicts=0
         release.yantrikos_clean: successes=1, failures=0
 
 ────────────────────────────────────────────────────────────────────

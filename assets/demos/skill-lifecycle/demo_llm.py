@@ -185,14 +185,33 @@ def main() -> None:
         sys.exit(2)
 
     from yantrikdb_hermes_plugin import YantrikDBMemoryProvider
+    sys.path.insert(0, str(Path(__file__).parent))
+    from seed_skills import load_seed_skills, SEED_SKILLS  # noqa: E402
 
     banner("LLM-driven skill-lifecycle demo")
     print(f"  model:      {MODEL}")
-    print(f"  substrate:  ephemeral SQLite DB (wiped between runs)")
+    print(f"  substrate:  ephemeral SQLite DB, pre-seeded with {len(SEED_SKILLS)} skills")
+    print(f"              (representative of a real long-running substrate)")
     print(f"  tools:      {len(YantrikDBMemoryProvider().get_tool_schemas())} (the plugin's full surface)")
     pause(BEAT_LONG)
 
     client = OpenAI()
+
+    # ─────────────────────────────────────────────────────────────────
+    # Seed — load representative production-shaped skills first so the
+    # demo's "skills before -> skills after" reads as adding to a
+    # lived-in substrate, not populating an empty toy.
+    # ─────────────────────────────────────────────────────────────────
+    seed_provider = YantrikDBMemoryProvider()
+    seed_provider.initialize("demo-llm-seed", hermes_home=str(DEMO_HOME))
+    print()
+    print(f"  ▸ seeding {len(SEED_SKILLS)} skills from past sessions:")
+    for entry in SEED_SKILLS:
+        print(f"        • {entry['skill_id']:48s} ({entry['skill_type']})")
+    loaded = load_seed_skills(seed_provider)
+    print(f"  ▸ {loaded} skills loaded into substrate")
+    seed_provider.shutdown()
+    pause(BEAT_LONG)
 
     # ─────────────────────────────────────────────────────────────────
     # SESSION 1 — user asks the agent to crystallize a procedure
@@ -200,7 +219,7 @@ def main() -> None:
     banner("Session 1 — user asks the agent to crystallize a procedure")
     provider1 = YantrikDBMemoryProvider()
     provider1.initialize("demo-llm-s1", hermes_home=str(DEMO_HOME))
-    show_skill_substrate(provider1, "before")
+    show_skill_substrate(provider1, "before — seeded with prior-session skills")
     pause(BEAT_MED)
 
     narrate(
