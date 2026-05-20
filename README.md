@@ -36,6 +36,16 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 | Embedded mode default (no server, no token, no GPU) | ✓ v0.2.0+ | varies |
 | HTTP backend for HA clusters | ✓ v0.5.0 (against yantrikdb-server) | varies |
 
+## End-to-end demo
+
+The skill-lifecycle loop, captured against an ephemeral substrate:
+
+[`assets/demos/skill-lifecycle/`](./assets/demos/skill-lifecycle/) — `demo.py` (runnable end-to-end in ~25 s on a fresh install) + [`transcript.txt`](./assets/demos/skill-lifecycle/transcript.txt) (the captured stdout from a real run) + a [`demo.tape`](./assets/demos/skill-lifecycle/demo.tape) for [`vhs`](https://github.com/charmbracelet/vhs) GIF rendering.
+
+What it shows: a `yantrikdb_skill_define` call from session 1 → simulated restart → `yantrikdb_skill_search` from session 2 finding the skill → `yantrikdb_skill_outcome` recording success. The plugin's `handle_tool_call` dispatch path is the same one Hermes uses internally — only the LLM-driven part (the agent's *decision* to call the tools) is scripted, so the recording is deterministic.
+
+For real LLM-driven autonomy: [`yantrikdb.com/guides/autonomous-skills/`](https://yantrikdb.com/guides/autonomous-skills/) documents 17 skills authored by Claude on one production substrate, with 9 showing cross-session reuse via the outcome ledger.
+
 ## Install (default — embedded backend)
 
 The v0.2.0 default backend is **in-process**: no separate server, no token, no GPU, no network. Bundled `potion-base-2M` static embedder (~8 MB, dim=64) loads on first call (~80 ms one-time warmup) and stays in-process.

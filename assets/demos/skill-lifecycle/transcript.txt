@@ -1,0 +1,70 @@
+
+────────────────────────────────────────────────────────────
+  Step 1 — fresh substrate, 0 skills
+────────────────────────────────────────────────────────────
+  YANTRIKDB_DB_PATH = C:\Users\sync\AppData\Local\Temp\yantrikdb_hermes_demo_msmxkwkh\memory.db
+  YANTRIKDB_NAMESPACE = demo
+  YANTRIKDB_SKILLS_ENABLED = true
+
+  $ provider.handle_tool_call('yantrikdb_stats', {'namespace': 'demo'})
+   → {"active_memories": 0, "consolidated_memories": 0, "tombstoned_memories": 0, "edges": 0, "entities": 0, "operations": 0, "open_conflicts": 0 …
+
+─────────────────────────────────────────────────────────────────
+  Step 2 — Session 1: agent observes a pattern, defines a skill
+─────────────────────────────────────────────────────────────────
+
+  The agent has just shipped a clean release. It noticed the same
+  sequence worked three times: feature branch → CI → squash-merge
+  → tag → GH release → PyPI verify. It chooses to crystallize.
+
+  $ provider.handle_tool_call('yantrikdb_skill_define', { … })
+   → {"rid": "019e4783-7496-747a-a2e2-8710f727cf90", "skill_id": "workflow.release.yantrikos_repo", "stored": true}
+
+  $ provider.handle_tool_call('yantrikdb_stats', {'namespace': 'skill_substrate'})
+   → {"active_memories": 0, "consolidated_memories": 0, "tombstoned_memories": 0, "edges": 0, "entities": 0, "operations": 2, "open_conflicts": 0 …
+
+────────────────────────────────────────────────────────────
+  Step 3 — simulated session restart (fresh agent state)
+────────────────────────────────────────────────────────────
+
+  Tearing down the agent's in-memory state. The substrate persists.
+
+  $ provider = YantrikDBMemoryProvider()   # new instance
+   → provider ready, substrate has the skill from session 1
+
+────────────────────────────────────────────────────────────
+  Step 4 — Session 2: fresh agent searches before acting
+────────────────────────────────────────────────────────────
+
+  The agent gets a new request: 'ship v0.4.13 of the plugin.'
+  Before doing anything, it searches the skill substrate.
+
+  $ provider.handle_tool_call('yantrikdb_skill_search', {'query': 'how to ship a release', 'top_k': 3})
+   → {"count": 1, "skills": [{"rid": "019e4783-7496-747a-a2e2-8710f727cf90", "skill_id": "workflow.release.yantrikos_repo", "skill_type": "procedure", "applies_to": ["release", "workflow", "yantrikos"], "body": "For every release on a yantrikos repo with branch protection: (1) feature …
+
+────────────────────────────────────────────────────────────
+  Step 5 — agent follows the skill, reports outcome
+────────────────────────────────────────────────────────────
+
+  The agent reads the skill body, ships the release following the
+  6-step procedure, succeeds, and records the outcome.
+
+  $ provider.handle_tool_call('yantrikdb_skill_outcome', { … })
+   → {"rid": "019e4783-b436-7a18-9b8f-daa6ad818010", "skill_id": "workflow.release.yantrikos_repo", "recorded": true}
+
+────────────────────────────────────────────────────────────
+  Done — the autonomy loop closed
+────────────────────────────────────────────────────────────
+
+  • Substrate now holds 1 skill (workflow.release.yantrikos_repo)
+  • Outcome ledger has 1 success row, agent's access_count = 1
+  • Next session's agent will see this skill ranked higher
+
+  The plugin's code path you just saw is the same one Hermes invokes
+  when its agent's LLM emits a tool call. The LLM is omitted here for
+  determinism; everything else is the live plugin + live engine.
+
+  Plugin: yantrikdb-hermes-plugin v0.4.12
+  Substrate: C:\Users\sync\AppData\Local\Temp\yantrikdb_hermes_demo_msmxkwkh\memory.db
+
+  (Ephemeral demo home left at C:\Users\sync\AppData\Local\Temp\yantrikdb_hermes_demo_msmxkwkh for inspection)
