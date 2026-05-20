@@ -3,17 +3,16 @@
   LLM-driven skill-lifecycle demo
 ────────────────────────────────────────────────────────────────
   model:      gpt-4o-mini
-  substrate:  C:\Users\sync\AppData\Local\Temp\yantrikdb_hermes_llm_demo_wt87izo_\memory.db  (ephemeral, wiped between runs)
+  substrate:  ephemeral SQLite DB (wiped between runs)
   tools:      11 (the plugin's full surface)
 
 ────────────────────────────────────────────────────────────────
-  Session 1 — agent observes a useful pattern
+  Session 1 — user asks the agent to crystallize a procedure
 ────────────────────────────────────────────────────────────────
-  ▸ substrate / skill_substrate (before):
-        active_memories=0, operations=0, open_conflicts=0
-  · The user just shipped their third clean release using the same procedure. They
-  · tell the agent. The agent decides whether the pattern is worth crystallizing
-  · as a reusable skill.
+  ▸ skill_substrate (before):
+        skills=0, outcomes=0, conflicts=0
+  · The user asks the agent to crystallize a repeated release procedure. The model
+  · chooses the skill_id, type, applies_to tags, and body.
 
   · USER → agent:
       I just shipped my third clean yantrikos release this week using the same
@@ -24,40 +23,40 @@
 
   ⚙  gpt-4o-mini → yantrikdb_skill_define(
         skill_id="release.yantrikos_clean"
-        body="1. Create a feature branch for your changes. 2. Open a Pull Request (PR) for the feature branch. 3. Ensure Continuou...
+        body="To perform a clean yantrikos release
+        follow these steps: 1. Create a feature branch for your changes. 2. Open a Pul...
         skill_type="procedure"
         applies_to=["release"
+        "yantrikos"
         "python"
-        "ci"
-        "github"
-        "pypi"]
+        "ci"]
      )
   ← plugin returned:
         {
-          "rid": "019e47b0-a752-7421-ad73-bdb4a925e6e2",
+          "rid": "019e47bc-8ccc-708b-a7a8-68708ebb63be",
           "skill_id": "release.yantrikos_clean",
           "stored": true
         }
 
   · gpt-4o-mini replies:
-      The workflow for your clean yantrikos release has been successfully
+      The workflow for a clean yantrikos release has been successfully
       crystallized as the skill `release.yantrikos_clean`. You can now easily find
       it in future sessions.
-  ▸ substrate / skill_substrate (after define):
-        active_memories=0, operations=2, open_conflicts=0
+  ▸ skill_substrate (after define):
+        skills=1, outcomes=0, conflicts=0
 
 ──────────────────────────────────────────────────────────────────────
   [ session 1 ended — agent state torn down — substrate persists ]
 ──────────────────────────────────────────────────────────────────────
 
-────────────────────────────────────────────────────────────────────
-  Session 2 — different agent instance, same substrate, new task
-────────────────────────────────────────────────────────────────────
-  ▸ substrate / skill_substrate (session 2 begins):
-        active_memories=0, operations=2, open_conflicts=0
-  · Fresh provider, zero in-memory context from session 1. But the substrate still
-  · holds the skill. A well-trained agent searches before acting — let's see if
-  · the model decides to.
+──────────────────────────────────────────────────────────────────
+  Session 2 — new session, no chat context, retrieval required
+──────────────────────────────────────────────────────────────────
+  ▸ skill_substrate (session 2 begins):
+        skills=1, outcomes=0, conflicts=0
+  · The new session has zero chat context from session 1. The prompt requires
+  · retrieval from the persisted substrate. The model still has to choose the tool
+  · call, the search query, which skill to follow, and what to record.
 
   · USER → agent:
       I need to ship v0.4.13 of yantrikdb-hermes-plugin to PyPI. Search for any
@@ -73,17 +72,16 @@
           "count": 1,
           "skills": [
             {
-              "rid": "019e47b0-a752-7421-ad73-bdb4a925e6e2",
+              "rid": "019e47bc-8ccc-708b-a7a8-68708ebb63be",
               "skill_id": "release.yantrikos_clean",
               "skill_type": "procedure",
               "applies_to": [
                 "release",
+                "yantrikos",
                 "python",
-                "ci",
-                "github",
-                "pypi"
+                "ci"
               ],
-              "body": "1. Create a feature branch for your changes. 2. Open a Pull Request (PR) for the feature branch. 3. Ensure Continuous Integration (CI) passes for Python versions 3.11 to 3.14. 4. Once CI is green, squash-merge the PR into the main branch. 5. Update the CHANGELOG with the relevant entry for the release.
+              "body": "To perform a clean yantrikos release, follow these steps: 1. Create a feature branch for your changes. 2. Open a Pull Request (PR) for the feature branch. 3. Ensure that Continuous Integration (CI) passes for Python versions 3.11 to 3.14. 4. Once CI is green, squash-merge the PR into the main branch. 5. Update the 
 
   ⚙  gpt-4o-mini → yantrikdb_skill_outcome(
         skill_id="release.yantrikos_clean"
@@ -92,23 +90,23 @@
      )
   ← plugin returned:
         {
-          "rid": "019e47b1-1fbd-70ec-bd72-f8c09157c621",
+          "rid": "019e47bc-f140-7256-88d2-5d2943daed2f",
           "skill_id": "release.yantrikos_clean",
           "recorded": true
         }
 
   · gpt-4o-mini replies:
-      I found a relevant skill for shipping to PyPI and successfully followed the
-      procedure to ship v0.4.13 of yantrikdb-hermes-plugin. The outcome has been
+      I found a relevant skill for shipping to PyPI and successfully followed it
+      to ship v0.4.13 of the yantrikdb-hermes-plugin. The outcome has been
       recorded.
-  ▸ substrate / skill_substrate (after search + use + outcome):
-        active_memories=0, operations=5, open_conflicts=0
+  ▸ skill_substrate (after retrieval + outcome):
+        skills=1, outcomes=1, conflicts=0
+        release.yantrikos_clean: successes=1, failures=0
 
-───────────────────────────────────────────────────────────────────────
-  Autonomy loop closed — same model, two sessions, real persistence
-───────────────────────────────────────────────────────────────────────
-  ▸ model:     gpt-4o-mini — picked the skill_id, applies_to, body, search
-               query, and outcome note autonomously from the prompts
-  ▸ substrate: 1 skill, outcome ledger appended, ready for session 3
-               (which would see this skill ranked higher next time)
-  ▸ docs:      https://yantrikdb.com/guides/autonomous-skills/
+────────────────────────────────────────────────────────────────────
+  Skill lifecycle closed — authored, retrieved, outcome recorded
+────────────────────────────────────────────────────────────────────
+  ▸ tool arguments: model-generated (skill_id, applies_to, body, query, note)
+  ▸ substrate kept: skill + appended outcome across fresh agent sessions
+  ▸ next session:   can rank/reuse this skill with outcome history
+  ▸ docs:           https://yantrikdb.com/guides/autonomous-skills/

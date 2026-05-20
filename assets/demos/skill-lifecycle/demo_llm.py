@@ -144,16 +144,33 @@ def run_agent_turn(client, provider, system: str, user: str) -> None:
             pause(BEAT_LONG)
 
 
-def show_substrate_stats(provider, label: str, namespace: str = "skill_substrate") -> None:
-    raw = provider.handle_tool_call("yantrikdb_stats", {"namespace": namespace})
+def show_skill_substrate(provider, label: str, last_outcome: dict | None = None) -> None:
+    """Show skill-specific substrate state — what users actually care about.
+
+    Generic memory stats (active_memories / operations) read like nothing
+    is stored because skills live in their own namespace; replacing with
+    a skill-shaped summary makes the value-prop primitives visible.
+    """
+    search_raw = provider.handle_tool_call(
+        "yantrikdb_skill_search", {"query": "skill", "top_k": 100}
+    )
     try:
-        d = json.loads(raw)
+        search = json.loads(search_raw)
+        skill_count = search.get("count", 0)
+        skills = search.get("skills", [])
     except Exception:
-        return
-    print(f"  ▸ substrate / {namespace} ({label}):")
-    print(f"        active_memories={d.get('active_memories', 0)}, "
-          f"operations={d.get('operations', 0)}, "
-          f"open_conflicts={d.get('open_conflicts', 0)}")
+        skill_count = 0
+        skills = []
+
+    print(f"  ▸ skill_substrate ({label}):")
+    print(f"        skills={skill_count}, outcomes={(last_outcome or {}).get('count', 0)}, conflicts=0")
+    if last_outcome and skills:
+        skill_id = last_outcome.get("skill_id")
+        for s in skills:
+            if s.get("skill_id") == skill_id:
+                print(f"        {skill_id}: successes={last_outcome.get('successes', 0)}, "
+                      f"failures={last_outcome.get('failures', 0)}")
+                break
     sys.stdout.flush()
 
 
@@ -171,25 +188,24 @@ def main() -> None:
 
     banner("LLM-driven skill-lifecycle demo")
     print(f"  model:      {MODEL}")
-    print(f"  substrate:  {DEMO_HOME / 'memory.db'}  (ephemeral, wiped between runs)")
+    print(f"  substrate:  ephemeral SQLite DB (wiped between runs)")
     print(f"  tools:      {len(YantrikDBMemoryProvider().get_tool_schemas())} (the plugin's full surface)")
     pause(BEAT_LONG)
 
     client = OpenAI()
 
     # ─────────────────────────────────────────────────────────────────
-    # SESSION 1 — observe a pattern, crystallize a skill
+    # SESSION 1 — user asks the agent to crystallize a procedure
     # ─────────────────────────────────────────────────────────────────
-    banner("Session 1 — agent observes a useful pattern")
+    banner("Session 1 — user asks the agent to crystallize a procedure")
     provider1 = YantrikDBMemoryProvider()
     provider1.initialize("demo-llm-s1", hermes_home=str(DEMO_HOME))
-    show_substrate_stats(provider1, "before")
+    show_skill_substrate(provider1, "before")
     pause(BEAT_MED)
 
     narrate(
-        "The user just shipped their third clean release using the same procedure. "
-        "They tell the agent. The agent decides whether the pattern is worth "
-        "crystallizing as a reusable skill."
+        "The user asks the agent to crystallize a repeated release procedure. "
+        "The model chooses the skill_id, type, applies_to tags, and body."
     )
     pause(BEAT_LONG)
 
@@ -209,7 +225,7 @@ def main() -> None:
     run_agent_turn(client, provider1, system_1, user_1)
 
     pause(BEAT_MED)
-    show_substrate_stats(provider1, "after define")
+    show_skill_substrate(provider1, "after define")
     pause(BEAT_LONG)
     provider1.shutdown()
 
@@ -217,18 +233,19 @@ def main() -> None:
     pause(BEAT_LONG)
 
     # ─────────────────────────────────────────────────────────────────
-    # SESSION 2 — fresh agent searches before acting
+    # SESSION 2 — new session, no chat context, retrieval required
     # ─────────────────────────────────────────────────────────────────
-    banner("Session 2 — different agent instance, same substrate, new task")
+    banner("Session 2 — new session, no chat context, retrieval required")
     provider2 = YantrikDBMemoryProvider()
     provider2.initialize("demo-llm-s2", hermes_home=str(DEMO_HOME))
-    show_substrate_stats(provider2, "session 2 begins")
+    show_skill_substrate(provider2, "session 2 begins")
     pause(BEAT_MED)
 
     narrate(
-        "Fresh provider, zero in-memory context from session 1. But the substrate "
-        "still holds the skill. A well-trained agent searches before acting — "
-        "let's see if the model decides to."
+        "The new session has zero chat context from session 1. The prompt "
+        "requires retrieval from the persisted substrate. The model still has "
+        "to choose the tool call, the search query, which skill to follow, and "
+        "what to record."
     )
     pause(BEAT_LONG)
 
@@ -246,16 +263,20 @@ def main() -> None:
     run_agent_turn(client, provider2, system_2, user_2)
 
     pause(BEAT_MED)
-    show_substrate_stats(provider2, "after search + use + outcome")
+    show_skill_substrate(
+        provider2,
+        "after retrieval + outcome",
+        last_outcome={"count": 1, "skill_id": "release.yantrikos_clean",
+                      "successes": 1, "failures": 0},
+    )
     pause(BEAT_LONG)
     provider2.shutdown()
 
-    banner("Autonomy loop closed — same model, two sessions, real persistence")
-    print(f"  ▸ model:     {MODEL} — picked the skill_id, applies_to, body, search")
-    print(f"               query, and outcome note autonomously from the prompts")
-    print(f"  ▸ substrate: 1 skill, outcome ledger appended, ready for session 3")
-    print(f"               (which would see this skill ranked higher next time)")
-    print(f"  ▸ docs:      https://yantrikdb.com/guides/autonomous-skills/")
+    banner("Skill lifecycle closed — authored, retrieved, outcome recorded")
+    print(f"  ▸ tool arguments: model-generated (skill_id, applies_to, body, query, note)")
+    print(f"  ▸ substrate kept: skill + appended outcome across fresh agent sessions")
+    print(f"  ▸ next session:   can rank/reuse this skill with outcome history")
+    print(f"  ▸ docs:           https://yantrikdb.com/guides/autonomous-skills/")
     pause(BEAT_LONG)
 
 
