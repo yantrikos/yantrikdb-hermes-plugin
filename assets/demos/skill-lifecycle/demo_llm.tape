@@ -26,6 +26,7 @@ Type "python3 assets/demos/skill-lifecycle/demo_llm.py"
 Sleep 600ms
 Enter
 
-# demo_llm.py at readable pacing: ~65s end-to-end across two sessions
-# with explicit beats between each tool call.
-Sleep 70s
+# demo_llm.py: ~80s end-to-end — two sessions, multi-source diagnosis
+# composed from seed skills, outcomes recorded, new lesson crystallized
+# when the pattern recurs.
+Sleep 85s
