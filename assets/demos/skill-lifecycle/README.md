@@ -2,7 +2,13 @@
 
 End-to-end demo showing the [`yantrikdb-hermes-plugin`](https://github.com/yantrikos/yantrikdb-hermes-plugin) skill substrate handling the **define → restart → search → outcome** loop — the autonomy loop described in [`yantrikdb/README.md`](../../../yantrikdb/README.md) and on [`yantrikdb.com/guides/autonomous-skills/`](https://yantrikdb.com/guides/autonomous-skills/).
 
-## LLM-driven recording (the real autonomy loop)
+## Constellation animation (the fireworks)
+
+![Substrate growing](./demo_visual.gif)
+
+A visual time-lapse of the substrate growing. 6 seed skills appear as glowing nodes color-coded by skill_type (procedure, reference, lesson, rule). The agent adds a 7th. A search query in session 2 highlights the relevant node. The outcome recorded against it turns green with a ✓. Source: [`demo_visual.py`](./demo_visual.py) — renders with `matplotlib` + `networkx` + `imageio`, no external dependencies on the running engine. Renders in ~5s on any machine.
+
+## LLM-driven recording (what's actually running)
 
 ![LLM-driven skill lifecycle](./demo_llm.gif)
 

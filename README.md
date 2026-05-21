@@ -36,7 +36,13 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 | Embedded mode default (no server, no token, no GPU) | ✓ v0.2.0+ | varies |
 | HTTP backend for HA clusters | ✓ v0.5.0 (against yantrikdb-server) | varies |
 
-## End-to-end demo — LLM-driven skill lifecycle
+## End-to-end demo — substrate growing through the skill lifecycle
+
+![Constellation animation of the substrate growing](./assets/demos/skill-lifecycle/demo_visual.gif)
+
+Six skills from prior sessions, color-coded by type. Session 1: the agent adds a 7th (pink, just-created). Session 2 search highlights the relevant node, outcome recorded turns it green. Source: [`demo_visual.py`](./assets/demos/skill-lifecycle/demo_visual.py).
+
+### What's actually running underneath
 
 ![LLM-driven skill lifecycle](./assets/demos/skill-lifecycle/demo_llm.gif)
 
