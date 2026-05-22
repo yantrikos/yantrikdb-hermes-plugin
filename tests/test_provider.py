@@ -49,6 +49,13 @@ def mock_client(client_module) -> MagicMock:
     c.skill_search.return_value = {"skills": [], "total": 0}
     c.skill_define.return_value = {"rid": "r-skill-1", "skill_id": "git.commit_clean", "stored": True}
     c.skill_outcome.return_value = {"rid": "r-out-1", "skill_id": "git.commit_clean", "recorded": True}
+    c.pending_triggers.return_value = {"triggers": [
+        {"trigger_id": "t-1", "trigger_type": "conflict_detected", "priority": 0.8},
+        {"trigger_id": "t-2", "trigger_type": "stale_memory", "priority": 0.4},
+    ]}
+    c.acknowledge_trigger.return_value = {"trigger_id": "t-1", "acknowledged": True}
+    c.dismiss_trigger.return_value = {"trigger_id": "t-2", "dismissed": True}
+    c.act_on_trigger.return_value = {"trigger_id": "t-1", "acted": True}
     return c
 
 
@@ -226,6 +233,10 @@ EXPECTED_TOOL_NAMES = {
     "yantrikdb_resolve_conflict",
     "yantrikdb_relate",
     "yantrikdb_stats",
+    "yantrikdb_pending_triggers",
+    "yantrikdb_acknowledge_trigger",
+    "yantrikdb_dismiss_trigger",
+    "yantrikdb_act_on_trigger",
     "yantrikdb_skill_search",
     "yantrikdb_skill_define",
     "yantrikdb_skill_outcome",
@@ -233,7 +244,7 @@ EXPECTED_TOOL_NAMES = {
 
 
 class TestToolSchemas:
-    def test_eleven_tools_registered(self, provider):
+    def test_all_tools_registered(self, provider):
         names = {s["name"] for s in provider.get_tool_schemas()}
         assert names == EXPECTED_TOOL_NAMES
 
@@ -243,14 +254,14 @@ class TestToolSchemas:
         # Returning [] here (pre-init) would make tool calls resolve as
         # "Unknown tool" at runtime.
         # With v0.3.0's skill flag: pre-init reads env via Config.load();
-        # we don't set the flag here, so we expect the 8 base tools.
+        # we don't set the flag here, so we expect base tools only (no skills).
         p = provider_module.YantrikDBMemoryProvider()
         names = {s["name"] for s in p.get_tool_schemas()}
         base = EXPECTED_TOOL_NAMES - {
             "yantrikdb_skill_search", "yantrikdb_skill_define", "yantrikdb_skill_outcome",
         }
         assert names == base
-        assert len(names) == 8
+        assert len(names) == 12  # 8 originals + 4 trigger consumer tools (v0.4.13)
 
     def test_no_tools_in_cron_context(self, provider_module, monkeypatch):
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
@@ -599,6 +610,71 @@ class TestHandleToolCall:
         assert parsed["active_memories"] == 42
         assert parsed["open_conflicts"] == 1
         assert parsed["edges"] == 17
+
+    # ----- Trigger consumer tools (v0.4.13, closes #17) -------------
+
+    def test_pending_triggers_dispatches(self, provider, mock_client):
+        out = provider.handle_tool_call(
+            "yantrikdb_pending_triggers", {"limit": 5},
+        )
+        mock_client.pending_triggers.assert_called_once_with(limit=5)
+        parsed = json.loads(out)
+        assert parsed["count"] == 2
+        assert parsed["triggers"][0]["trigger_id"] == "t-1"
+
+    def test_pending_triggers_default_limit(self, provider, mock_client):
+        provider.handle_tool_call("yantrikdb_pending_triggers", {})
+        mock_client.pending_triggers.assert_called_once_with(limit=10)
+
+    def test_pending_triggers_caps_oversize_limit(self, provider, mock_client):
+        # Anything over 100 collapses to 100 — bounded to keep agents from
+        # accidentally enumerating an unbounded queue.
+        provider.handle_tool_call(
+            "yantrikdb_pending_triggers", {"limit": 9999},
+        )
+        assert mock_client.pending_triggers.call_args.kwargs["limit"] == 100
+
+    def test_acknowledge_trigger_dispatches(self, provider, mock_client):
+        out = provider.handle_tool_call(
+            "yantrikdb_acknowledge_trigger", {"trigger_id": "t-1"},
+        )
+        mock_client.acknowledge_trigger.assert_called_once_with("t-1")
+        parsed = json.loads(out)
+        assert parsed["trigger_id"] == "t-1"
+        assert parsed["acknowledged"] is True
+
+    def test_acknowledge_trigger_requires_id(self, provider, mock_client):
+        out = provider.handle_tool_call("yantrikdb_acknowledge_trigger", {})
+        mock_client.acknowledge_trigger.assert_not_called()
+        assert "Missing required" in json.loads(out)["error"]
+
+    def test_dismiss_trigger_dispatches(self, provider, mock_client):
+        out = provider.handle_tool_call(
+            "yantrikdb_dismiss_trigger", {"trigger_id": "t-2"},
+        )
+        mock_client.dismiss_trigger.assert_called_once_with("t-2")
+        parsed = json.loads(out)
+        assert parsed["trigger_id"] == "t-2"
+        assert parsed["dismissed"] is True
+
+    def test_dismiss_trigger_requires_id(self, provider, mock_client):
+        out = provider.handle_tool_call("yantrikdb_dismiss_trigger", {})
+        mock_client.dismiss_trigger.assert_not_called()
+        assert "Missing required" in json.loads(out)["error"]
+
+    def test_act_on_trigger_dispatches(self, provider, mock_client):
+        out = provider.handle_tool_call(
+            "yantrikdb_act_on_trigger", {"trigger_id": "t-1"},
+        )
+        mock_client.act_on_trigger.assert_called_once_with("t-1")
+        parsed = json.loads(out)
+        assert parsed["trigger_id"] == "t-1"
+        assert parsed["acted"] is True
+
+    def test_act_on_trigger_requires_id(self, provider, mock_client):
+        out = provider.handle_tool_call("yantrikdb_act_on_trigger", {})
+        mock_client.act_on_trigger.assert_not_called()
+        assert "Missing required" in json.loads(out)["error"]
 
     def test_resolve_conflict_keep_winner(self, provider, mock_client):
         out = provider.handle_tool_call(
@@ -1052,7 +1128,8 @@ class TestSkillsFeatureFlag:
         names = {s["name"] for s in p.get_tool_schemas()}
         skill_names = {n for n in names if n.startswith("yantrikdb_skill_")}
         assert skill_names == set(), f"skills should be hidden by default, got {skill_names}"
-        assert len(names) == 8
+        # 8 core tools + 4 trigger consumer tools (v0.4.13) = 12
+        assert len(names) == 12
 
     def test_enabled_includes_skill_tools(
         self, provider_module, mock_client, monkeypatch,
@@ -1062,7 +1139,8 @@ class TestSkillsFeatureFlag:
         assert "yantrikdb_skill_search" in names
         assert "yantrikdb_skill_define" in names
         assert "yantrikdb_skill_outcome" in names
-        assert len(names) == 11
+        # 12 core+trigger tools + 3 skill tools = 15
+        assert len(names) == 15
 
     def test_disabled_skill_call_short_circuits(
         self, provider_module, mock_client, monkeypatch,

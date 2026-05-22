@@ -448,6 +448,60 @@ class EmbeddedYantrikDBClient:
         items = list(out) if out else []
         return {"conflicts": items}
 
+    def pending_triggers(self, *, limit: int = 10) -> dict[str, Any]:
+        """Return triggers waiting for agent consumption.
+
+        ``think()`` produces these as a side effect; without a consumer
+        they accumulate. The agent decides whether to ``acknowledge``,
+        ``dismiss``, or ``act_on`` each one.
+        """
+        try:
+            out = self._db.get_pending_triggers(limit=int(limit))
+        except Exception as e:
+            raise _map_engine_error("pending_triggers", e) from e
+        return {"triggers": list(out) if out else []}
+
+    def acknowledge_trigger(self, trigger_id: str) -> dict[str, Any]:
+        """Mark a trigger as seen by the agent. No action recorded.
+
+        Auto-calls ``deliver_trigger`` first because the engine requires
+        delivery before acknowledge succeeds — the deliver step is
+        engine-internal bookkeeping the agent shouldn't have to know
+        about.
+        """
+        try:
+            self._db.deliver_trigger(trigger_id)
+            ok = self._db.acknowledge_trigger(trigger_id)
+        except Exception as e:
+            raise _map_engine_error("acknowledge_trigger", e) from e
+        if isinstance(ok, dict):
+            return ok
+        return {"trigger_id": trigger_id, "acknowledged": bool(ok)}
+
+    def dismiss_trigger(self, trigger_id: str) -> dict[str, Any]:
+        """Close a trigger without acting on it (agent declined)."""
+        try:
+            ok = self._db.dismiss_trigger(trigger_id)
+        except Exception as e:
+            raise _map_engine_error("dismiss_trigger", e) from e
+        if isinstance(ok, dict):
+            return ok
+        return {"trigger_id": trigger_id, "dismissed": bool(ok)}
+
+    def act_on_trigger(self, trigger_id: str) -> dict[str, Any]:
+        """Record that the agent took action in response to a trigger.
+
+        Auto-delivers first, matching the engine's lifecycle requirement.
+        """
+        try:
+            self._db.deliver_trigger(trigger_id)
+            ok = self._db.act_on_trigger(trigger_id)
+        except Exception as e:
+            raise _map_engine_error("act_on_trigger", e) from e
+        if isinstance(ok, dict):
+            return ok
+        return {"trigger_id": trigger_id, "acted": bool(ok)}
+
     def resolve_conflict(
         self,
         conflict_id: str,

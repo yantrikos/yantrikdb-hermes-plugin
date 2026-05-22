@@ -305,6 +305,49 @@ class TestRequestFormation:
         }
         assert result == {"active_memories": 42, "open_conflicts": 1}
 
+    # ----- Trigger consumer endpoints (v0.4.13+) ------------------
+    #
+    # yantrikdb-server doesn't ship /v1/triggers/* endpoints yet; the
+    # plugin issues the request anyway so it'll Just Work once the
+    # server lands them. These tests verify the wire shape.
+
+    def test_pending_triggers_url_and_params(self, client, mock_session):
+        mock_session.request.return_value = _make_response(
+            200, {"triggers": []},
+        )
+        client.pending_triggers(limit=5)
+        assert mock_session.request.call_args.args == (
+            "GET", "http://test:7438/v1/triggers/pending",
+        )
+        assert mock_session.request.call_args.kwargs["params"] == {"limit": 5}
+
+    def test_acknowledge_trigger_url(self, client, mock_session):
+        mock_session.request.return_value = _make_response(
+            200, {"trigger_id": "t-1", "acknowledged": True},
+        )
+        client.acknowledge_trigger("t-1")
+        assert mock_session.request.call_args.args == (
+            "POST", "http://test:7438/v1/triggers/t-1/acknowledge",
+        )
+
+    def test_dismiss_trigger_url(self, client, mock_session):
+        mock_session.request.return_value = _make_response(
+            200, {"trigger_id": "t-2", "dismissed": True},
+        )
+        client.dismiss_trigger("t-2")
+        assert mock_session.request.call_args.args == (
+            "POST", "http://test:7438/v1/triggers/t-2/dismiss",
+        )
+
+    def test_act_on_trigger_url(self, client, mock_session):
+        mock_session.request.return_value = _make_response(
+            200, {"trigger_id": "t-3", "acted": True},
+        )
+        client.act_on_trigger("t-3")
+        assert mock_session.request.call_args.args == (
+            "POST", "http://test:7438/v1/triggers/t-3/act",
+        )
+
     def test_resolve_conflict_keep_winner(self, client, mock_session):
         mock_session.request.return_value = _make_response(
             200, {"conflict_id": "c1", "strategy": "keep_winner"},

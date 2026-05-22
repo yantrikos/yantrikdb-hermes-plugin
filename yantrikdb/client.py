@@ -461,6 +461,34 @@ class YantrikDBClient:
         params = {"namespace": namespace} if namespace else None
         return self._request("GET", "/v1/conflicts", params=params)
 
+    # ----- Trigger lifecycle (v0.4.13+) ------------------------------
+    #
+    # Embedded backend wraps the engine's get_pending_triggers /
+    # acknowledge_trigger / dismiss_trigger / act_on_trigger methods
+    # directly. HTTP backend depends on yantrikdb-server exposing
+    # /v1/triggers/* endpoints; those aren't shipped yet (filed
+    # upstream), so HTTP-mode callers receive a clean 404 from the
+    # server until that lands.
+
+    def pending_triggers(self, *, limit: int = 10) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": int(limit)}
+        return self._request("GET", "/v1/triggers/pending", params=params)
+
+    def acknowledge_trigger(self, trigger_id: str) -> dict[str, Any]:
+        return self._request(
+            "POST", f"/v1/triggers/{trigger_id}/acknowledge", {},
+        )
+
+    def dismiss_trigger(self, trigger_id: str) -> dict[str, Any]:
+        return self._request(
+            "POST", f"/v1/triggers/{trigger_id}/dismiss", {},
+        )
+
+    def act_on_trigger(self, trigger_id: str) -> dict[str, Any]:
+        return self._request(
+            "POST", f"/v1/triggers/{trigger_id}/act", {},
+        )
+
     def resolve_conflict(
         self,
         conflict_id: str,
