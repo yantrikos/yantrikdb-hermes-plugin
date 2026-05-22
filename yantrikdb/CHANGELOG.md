@@ -3,6 +3,16 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.14] — 2026-05-22 — Manifest version sync
+
+Fixes [#19](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/19) from **@alienos**. v0.4.13 bumped `pyproject.toml` to 0.4.13 but missed `yantrikdb/plugin.yaml`, which Hermes reads to display the plugin version. The v0.4.13 wheel on PyPI shipped with `plugin.yaml: 0.4.12`; `hermes plugins list` would consequently show 0.4.12 even on a fresh `pip install yantrikdb-hermes-plugin==0.4.13`.
+
+v0.4.14 ships with both files synced. Functionally identical to v0.4.13 — no code changes, no API changes. Recommended upgrade path: `pip install -U yantrikdb-hermes-plugin` straight to 0.4.14.
+
+### Credit
+
+Thanks to **@alienos** for opening [PR #19](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/19) within hours of the v0.4.13 release. Their plugin.yaml fix is preserved verbatim as the first commit on this release; the version bump to 0.4.14 sits on top so the corrected manifest reaches PyPI. Fifth substantive contribution from this reporter (#4, #9, #15, #17, #19 — all closed cleanly).
+
 ## [0.4.13] — 2026-05-22 — Trigger consumer tools
 
 Closes [#17](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/17) from **@alienos**. v0.4.12 exposed the producer side of the trigger lifecycle (`yantrikdb_think` returns triggers, `yantrikdb_stats.pending_triggers` shows the count) but no consumer tools — so triggers accumulated indefinitely. This release closes that loop.
