@@ -299,6 +299,103 @@ STATS_SCHEMA = {
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
+# -- Trigger consumer tools (v0.4.13+) --------------------------------
+#
+# yantrikdb_think produces pending triggers as a side effect — flags
+# the engine raises when it spots a conflict, a stale-by-policy memory,
+# or a pattern that may warrant agent attention. Until they're closed
+# they stay on the pending queue; ``yantrikdb_stats.pending_triggers``
+# counts them. These four tools are the consumer side of that loop:
+# inspect the queue, then acknowledge / dismiss / act on each entry.
+#
+# Lifecycle: ``acknowledge`` records "agent saw this," ``dismiss`` is
+# "declined to act," ``act_on`` is "took action in response." All three
+# close the trigger; ``act_on`` adds it to ``get_trigger_history`` as
+# an audit-trail event the substrate can later mine.
+
+PENDING_TRIGGERS_SCHEMA = {
+    "name": "yantrikdb_pending_triggers",
+    "description": (
+        "List triggers waiting for agent consumption. Triggers are "
+        "produced by yantrikdb_think (conflict-detected, stale-memory, "
+        "pattern-noticed signals) and accumulate until the agent closes "
+        "them via acknowledge / dismiss / act_on. Check this when "
+        "yantrikdb_stats.pending_triggers is non-zero, or at session "
+        "start as a backlog scan."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "description": "Max triggers to return (default 10).",
+            },
+        },
+        "required": [],
+    },
+}
+
+ACKNOWLEDGE_TRIGGER_SCHEMA = {
+    "name": "yantrikdb_acknowledge_trigger",
+    "description": (
+        "Mark a trigger as seen by the agent — no follow-up action "
+        "recorded, but the trigger leaves the pending queue. Use when "
+        "you've read the signal and decided no further work is needed "
+        "(e.g., low-priority pattern, already-handled conflict)."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "trigger_id": {
+                "type": "string",
+                "description": "Id from yantrikdb_pending_triggers.",
+            },
+        },
+        "required": ["trigger_id"],
+    },
+}
+
+DISMISS_TRIGGER_SCHEMA = {
+    "name": "yantrikdb_dismiss_trigger",
+    "description": (
+        "Close a trigger as a non-issue (false positive or out-of-scope). "
+        "Distinct from acknowledge_trigger: dismiss signals the trigger "
+        "shouldn't have fired or doesn't merit attention; acknowledge "
+        "is closer to 'noted, moving on'."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "trigger_id": {
+                "type": "string",
+                "description": "Id from yantrikdb_pending_triggers.",
+            },
+        },
+        "required": ["trigger_id"],
+    },
+}
+
+ACT_ON_TRIGGER_SCHEMA = {
+    "name": "yantrikdb_act_on_trigger",
+    "description": (
+        "Record that the agent took action in response to a trigger. "
+        "Use after actually doing something — calling resolve_conflict, "
+        "running think() with new params, updating a stale memory. The "
+        "action itself happens via other tools; this records the "
+        "outcome so the substrate's trigger history reflects reality."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "trigger_id": {
+                "type": "string",
+                "description": "Id from yantrikdb_pending_triggers.",
+            },
+        },
+        "required": ["trigger_id"],
+    },
+}
+
 # -- Skills (v0.3.0+) -------------------------------------------------
 #
 # Skills are procedural memory: reusable patterns the agent distills
@@ -452,6 +549,10 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     RESOLVE_CONFLICT_SCHEMA,
     RELATE_SCHEMA,
     STATS_SCHEMA,
+    PENDING_TRIGGERS_SCHEMA,
+    ACKNOWLEDGE_TRIGGER_SCHEMA,
+    DISMISS_TRIGGER_SCHEMA,
+    ACT_ON_TRIGGER_SCHEMA,
     SKILL_SEARCH_SCHEMA,
     SKILL_DEFINE_SCHEMA,
     SKILL_OUTCOME_SCHEMA,
@@ -1318,6 +1419,14 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 return self._do_relate(args)
             if tool_name == "yantrikdb_stats":
                 return self._do_stats()
+            if tool_name == "yantrikdb_pending_triggers":
+                return self._do_pending_triggers(args)
+            if tool_name == "yantrikdb_acknowledge_trigger":
+                return self._do_acknowledge_trigger(args)
+            if tool_name == "yantrikdb_dismiss_trigger":
+                return self._do_dismiss_trigger(args)
+            if tool_name == "yantrikdb_act_on_trigger":
+                return self._do_act_on_trigger(args)
             if tool_name.startswith("yantrikdb_skill_"):
                 if not (self._config and self._config.skills_enabled):
                     return tool_error(
@@ -1471,6 +1580,52 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "operations": resp.get("operations", 0),
             "open_conflicts": resp.get("open_conflicts", 0),
             "pending_triggers": resp.get("pending_triggers", 0),
+        })
+
+    def _do_pending_triggers(self, args: dict[str, Any]) -> str:
+        limit = _coerce_int(args.get("limit"), 10)
+        # Defensive bound — large limits hit the engine pointlessly when
+        # the agent only needs to see what's there.
+        if limit < 1:
+            limit = 1
+        if limit > 100:
+            limit = 100
+        resp = self._require_client().pending_triggers(limit=limit)
+        self._record_success()
+        triggers = resp.get("triggers", []) or []
+        return json.dumps({"count": len(triggers), "triggers": triggers})
+
+    def _do_acknowledge_trigger(self, args: dict[str, Any]) -> str:
+        trigger_id = (args.get("trigger_id") or "").strip()
+        if not trigger_id:
+            return tool_error("Missing required parameter: trigger_id")
+        resp = self._require_client().acknowledge_trigger(trigger_id)
+        self._record_success()
+        return json.dumps({
+            "trigger_id": trigger_id,
+            "acknowledged": bool(resp.get("acknowledged", False)),
+        })
+
+    def _do_dismiss_trigger(self, args: dict[str, Any]) -> str:
+        trigger_id = (args.get("trigger_id") or "").strip()
+        if not trigger_id:
+            return tool_error("Missing required parameter: trigger_id")
+        resp = self._require_client().dismiss_trigger(trigger_id)
+        self._record_success()
+        return json.dumps({
+            "trigger_id": trigger_id,
+            "dismissed": bool(resp.get("dismissed", False)),
+        })
+
+    def _do_act_on_trigger(self, args: dict[str, Any]) -> str:
+        trigger_id = (args.get("trigger_id") or "").strip()
+        if not trigger_id:
+            return tool_error("Missing required parameter: trigger_id")
+        resp = self._require_client().act_on_trigger(trigger_id)
+        self._record_success()
+        return json.dumps({
+            "trigger_id": trigger_id,
+            "acted": bool(resp.get("acted", False)),
         })
 
     def _do_skill_search(self, args: dict[str, Any]) -> str:
@@ -1673,9 +1828,13 @@ def register(ctx: Any) -> None:
 
 
 __all__ = [
+    "ACKNOWLEDGE_TRIGGER_SCHEMA",
+    "ACT_ON_TRIGGER_SCHEMA",
     "ALL_TOOL_SCHEMAS",
     "CONFLICTS_SCHEMA",
+    "DISMISS_TRIGGER_SCHEMA",
     "FORGET_SCHEMA",
+    "PENDING_TRIGGERS_SCHEMA",
     "RECALL_SCHEMA",
     "RELATE_SCHEMA",
     "REMEMBER_SCHEMA",

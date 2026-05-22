@@ -3,6 +3,34 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.13] — 2026-05-22 — Trigger consumer tools
+
+Closes [#17](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/17) from **@alienos**. v0.4.12 exposed the producer side of the trigger lifecycle (`yantrikdb_think` returns triggers, `yantrikdb_stats.pending_triggers` shows the count) but no consumer tools — so triggers accumulated indefinitely. This release closes that loop.
+
+### Added
+
+- **`yantrikdb_pending_triggers`** — list triggers waiting for agent attention. Accepts `limit` (default 10, capped at 100).
+- **`yantrikdb_acknowledge_trigger`** — mark a trigger as seen by the agent, close it. Internally auto-calls the engine's `deliver_trigger` first to satisfy the lifecycle prerequisite.
+- **`yantrikdb_dismiss_trigger`** — close a trigger as a non-issue (false positive / out of scope).
+- **`yantrikdb_act_on_trigger`** — close a trigger with an action-taken audit-trail entry. Also auto-delivers first.
+
+The tool surface goes from 11 → 15 (or 12 → 12 base when skills are off, since the 4 trigger tools are base-tier).
+
+### Notes on lifecycle semantics (verified against engine v0.7.17)
+
+- A trigger lives at `status=pending` after `think()` produces it.
+- `dismiss_trigger` removes it from the pending queue immediately.
+- `acknowledge_trigger` and `act_on_trigger` require the trigger to be `delivered_at` first; the plugin transparently calls `deliver_trigger` so the agent doesn't need to know about this step.
+- `get_trigger_history` retains audit-trail entries after close — that primitive isn't exposed as a tool in v0.4.13 (it's a substrate-inspection surface, not an agent decision-making one).
+
+### HTTP-mode note
+
+yantrikdb-server doesn't ship `/v1/triggers/*` endpoints yet. In embedded mode (the default for Hermes plugin deployments) the tools work end-to-end via the bundled engine. HTTP-mode callers will receive a 404 from the server until those endpoints land — tracked upstream against yantrikos/yantrikdb-server.
+
+### Credit
+
+Thanks to **@alienos** for the careful diagnosis. The producer/consumer asymmetry was exactly the place to look; fourth substantive issue from this reporter (after #4, #9, #15 closed cleanly).
+
 ## [0.4.12] — 2026-05-18 — Quiet HuggingFace embedder
 
 Bugfix landing [#15](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/15) from **@alienos**. The `SentenceTransformerEmbedder` (selected by `YANTRIKDB_EMBEDDER_HF`) was leaking tqdm progress bars to stdout on every memory write. Under Hermes the plugin's stdout is the agent's own output stream, so per-write `Batches: 0%|...` bars polluted agent output and could interfere with log parsing or TTY rendering.
