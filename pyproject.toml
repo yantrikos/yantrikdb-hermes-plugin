@@ -130,3 +130,38 @@ disallow_untyped_defs = false
 explicit_package_bases = true
 namespace_packages = true
 exclude = ["reference/", "tests/", "^__init__\\.py$"]
+
+# ---------------------------------------------------------------------------
+# bump-my-version — atomic version bumps across all three surfaces
+# ---------------------------------------------------------------------------
+#
+# The plugin's version lives in three places that all have to agree or
+# Hermes-side display drifts (see CHANGELOG v0.4.14 for the post-mortem on
+# the v0.4.13 ship that missed plugin.yaml). bump-my-version edits all of
+# them in one command:
+#
+#   pipx run bump-my-version bump patch     # 0.4.14 -> 0.4.15
+#   pipx run bump-my-version bump minor     # 0.4.14 -> 0.5.0
+#   pipx run bump-my-version bump major     # 0.4.14 -> 1.0.0
+#
+# CHANGELOG.md still needs a hand-written entry for the new version — the
+# tool can't generate meaningful release notes. After bumping, add the
+# matching `## [X.Y.Z] — YYYY-MM-DD — Summary` header. The CI `version-sync`
+# job blocks merge if the three sources drift.
+[tool.bumpversion]
+current_version = "0.4.14"
+commit = false       # let the human author the commit message + body
+tag = false          # tag via `gh release create`, not on bump
+allow_dirty = true
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "yantrikdb/plugin.yaml"
+search = "version: {current_version}"
+replace = "version: {new_version}"
