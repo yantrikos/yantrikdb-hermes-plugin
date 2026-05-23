@@ -1724,6 +1724,97 @@ class YantrikDBMemoryProvider(MemoryProvider):
             )
         except YantrikDBError as e:
             logger.debug("YantrikDB session-end think failed: %s", e)
+            return
+
+        # v0.4.15+ — drain the pending-trigger queue when configured.
+        # Without this, triggers think() produces accumulate across
+        # sessions for users who don't implement a consumer loop
+        # (issue #22). Conservative: `acknowledge` not `act_on` /
+        # `dismiss`, since no action was actually taken. Fail-soft —
+        # one bad trigger doesn't block the rest.
+        if self._config.auto_acknowledge_triggers:
+            self._auto_acknowledge_pending_triggers()
+
+    def _auto_acknowledge_pending_triggers(self) -> None:
+        """Drain the pending-trigger queue by calling acknowledge on each.
+
+        Loops until the queue is empty (or the safety cap of 10 batches
+        fires). Each batch pulls 50 triggers; that gives 500-trigger
+        headroom per session — well above any realistic load — without
+        unbounded teardown time. Logs at debug on per-trigger errors so
+        one corrupted trigger doesn't stop the batch.
+
+        HTTP mode caveat: yantrikdb-server hasn't shipped the
+        ``/v1/triggers/*`` endpoints yet (tracked upstream). When the
+        first call 404s, we log a single WARNING and bail — silent
+        no-op would let users believe auto-ack is working when it
+        isn't.
+        """
+        if self._client is None:
+            return
+        BATCH = 50
+        MAX_BATCHES = 10  # 500-trigger ceiling per session
+        total_seen = 0
+        total_acked = 0
+        for _batch_idx in range(MAX_BATCHES):
+            try:
+                resp = self._client.pending_triggers(limit=BATCH)
+            except YantrikDBServerError as e:
+                # HTTP-mode 404: server doesn't ship the trigger
+                # endpoints yet. Loud once so the user knows
+                # auto-ack is effectively off in this mode.
+                if "501" in str(e) or "issues/39" in str(e) or "needs yantrikdb-server" in str(e):
+                    logger.warning(
+                        "YantrikDB auto-acknowledge unavailable in HTTP "
+                        "mode — yantrikdb-server has not yet shipped the "
+                        "/v1/triggers/* endpoints. Tracking upstream. "
+                        "Set YANTRIKDB_AUTO_ACKNOWLEDGE_TRIGGERS=false to "
+                        "silence this; the engine's 7-day TTL still bounds "
+                        "trigger accumulation."
+                    )
+                else:
+                    logger.debug(
+                        "YantrikDB auto-acknowledge list-pending failed: %s", e,
+                    )
+                return
+            except YantrikDBError as e:
+                logger.debug("YantrikDB auto-acknowledge list-pending failed: %s", e)
+                return
+            triggers = resp.get("triggers", []) or []
+            if not triggers:
+                break
+            total_seen += len(triggers)
+            for t in triggers:
+                tid = (t.get("trigger_id") or t.get("id") or "").strip()
+                if not tid:
+                    continue
+                try:
+                    self._client.acknowledge_trigger(tid)
+                    total_acked += 1
+                except YantrikDBError as e:
+                    logger.debug(
+                        "YantrikDB auto-acknowledge failed for trigger %s: %s",
+                        tid, e,
+                    )
+            # If this batch was short, the queue is drained — exit
+            # without the extra round-trip.
+            if len(triggers) < BATCH:
+                break
+        else:
+            # else on for: ran MAX_BATCHES rounds without a short batch.
+            # Surface this — sustained high trigger production may be
+            # a signal the user should investigate.
+            logger.warning(
+                "YantrikDB auto-acknowledge stopped at safety cap of "
+                "%d batches (%d triggers). More may remain pending; the "
+                "engine's 7-day TTL will eventually clean them up.",
+                MAX_BATCHES, total_seen,
+            )
+        if total_seen:
+            logger.info(
+                "YantrikDB auto-acknowledged %d/%d pending triggers at session end",
+                total_acked, total_seen,
+            )
 
     def on_pre_compress(self, messages: list[dict[str, Any]]) -> str:
         """Preserve high-salience memories across context compression.
