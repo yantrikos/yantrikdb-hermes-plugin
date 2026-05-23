@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yantrikdb-hermes-plugin"
-version = "0.4.14"
+version = "0.4.15"
 description = "Self-maintaining memory plugin for Hermes Agent — embedded YantrikDB engine, ~10 MB, no server, no token, no GPU. Canonicalizes duplicates, surfaces contradictions, ranks with recency awareness, and explains recall."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -149,16 +149,23 @@ exclude = ["reference/", "tests/", "^__init__\\.py$"]
 # matching `## [X.Y.Z] — YYYY-MM-DD — Summary` header. The CI `version-sync`
 # job blocks merge if the three sources drift.
 [tool.bumpversion]
-current_version = "0.4.14"
+current_version = "0.4.15"
 commit = false       # let the human author the commit message + body
 tag = false          # tag via `gh release create`, not on bump
 allow_dirty = true
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 
+# The pyproject.toml file rule uses a regex anchored to start-of-line
+# so it only matches `version = "X.Y.Z"` (the [project] field) and NOT
+# `current_version = "X.Y.Z"` (this same [tool.bumpversion] section
+# which bumpversion already auto-maintains). Without the anchor, a
+# bump matches both lines and shifts the project version twice — the
+# 0.4.14 → 0.4.16 quirk caught during the v0.4.15 ship.
 [[tool.bumpversion.files]]
 filename = "pyproject.toml"
-search = 'version = "{current_version}"'
+regex = true
+search = '^version = "{current_version}"'
 replace = 'version = "{new_version}"'
 
 [[tool.bumpversion.files]]

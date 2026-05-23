@@ -3,6 +3,34 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.15] — 2026-05-22 — Auto-acknowledge triggers (safe-by-default)
+
+Closes [#22](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/22) from **@alienos**. v0.4.13 shipped the trigger consumer tools, but they're tools — they only do anything if the agent (LLM) calls them. Under the default Hermes CLI flow, an LLM may never bother, so pending triggers accumulated up to the engine's 7-day TTL.
+
+### Added
+
+- **`YANTRIKDB_AUTO_ACKNOWLEDGE_TRIGGERS=true`** (default off). When set, the plugin's session-end hook auto-`acknowledge`s every pending trigger after `think()` runs. Conservative semantics chosen on purpose: `acknowledge` not `act_on` (no action was actually taken) and not `dismiss` (signal isn't discarded as a false positive).
+- Loops in 50-trigger batches until the queue is drained, with a safety cap of 10 batches (500 triggers/session) so teardown stays bounded. If the cap fires, a WARNING is logged — sustained high trigger production may be a signal the user should investigate.
+- HTTP-mode 404 is now a loud WARNING (not silent debug). yantrikdb-server hasn't shipped the `/v1/triggers/*` endpoints yet; if the user sets the flag in HTTP mode, they're told auto-ack is unavailable rather than left with the false impression it's working. Tracking upstream.
+
+### Trigger lifecycle docs
+
+- Engine triggers have a 7-day TTL (`expires_at = created_at + 604800s`) so accumulation is bounded even without the flag — but that's not a useful ceiling for production.
+- The four consumer tools (`pending_triggers`, `acknowledge_trigger`, `dismiss_trigger`, `act_on_trigger`) from v0.4.13 still work the same way; this release just adds an automatic fallback when the agent doesn't drive them.
+
+### Tooling
+
+- Fixed the `[tool.bumpversion]` regex that caused v0.4.14 → v0.4.16 double-bumps. The search pattern `version = "{current_version}"` was matching both `[project] version = "..."` and `[tool.bumpversion] current_version = "..."` (since the latter ends with `version`). Now anchored to start-of-line with `regex = true`.
+
+### Verified
+
+- 204 unit tests pass (10 in `TestOnSessionEnd` cover flag-off default, queue drain, batch looping, HTTP-mode 404 warning, fail-soft per-trigger, think-failure short-circuit, listing-failure swallow, empty-queue handling).
+- End-to-end against engine v0.7.17: planted memories produce triggers via `think()`, `on_session_end()` with flag-on drains the queue to 0; flag-off correctly leaves the queue alone.
+
+### Credit
+
+Thanks to **@alienos** for the safe-by-default framing — their 6th substantive contribution.
+
 ## [0.4.14] — 2026-05-22 — Manifest version sync
 
 Fixes [#19](https://github.com/yantrikos/yantrikdb-hermes-plugin/pull/19) from **@alienos**. v0.4.13 bumped `pyproject.toml` to 0.4.13 but missed `yantrikdb/plugin.yaml`, which Hermes reads to display the plugin version. The v0.4.13 wheel on PyPI shipped with `plugin.yaml: 0.4.12`; `hermes plugins list` would consequently show 0.4.12 even on a fresh `pip install yantrikdb-hermes-plugin==0.4.13`.

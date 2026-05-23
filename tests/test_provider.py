@@ -850,6 +850,117 @@ class TestOnSessionEnd:
         provider.on_session_end([])
         mock_client.think.assert_not_called()
 
+    # ----- Auto-acknowledge triggers (v0.4.15, closes #22) ---------
+
+    def test_auto_acknowledge_off_by_default(self, provider, mock_client):
+        # Default config has auto_acknowledge_triggers=False; session end
+        # runs think() but does NOT touch the trigger queue.
+        provider.on_session_end([])
+        mock_client.think.assert_called_once()
+        mock_client.pending_triggers.assert_not_called()
+        mock_client.acknowledge_trigger.assert_not_called()
+
+    def test_auto_acknowledge_drains_pending(self, provider, mock_client):
+        provider._config.auto_acknowledge_triggers = True
+        # mock_client.pending_triggers fixture returns 2 triggers (t-1, t-2).
+        # The drain loop pulls 50-trigger batches; a short batch (here, 2)
+        # tells it the queue is empty, so only one call.
+        provider.on_session_end([])
+        mock_client.think.assert_called_once()
+        mock_client.pending_triggers.assert_called_once_with(limit=50)
+        # Each pending trigger should be acknowledged exactly once.
+        assert mock_client.acknowledge_trigger.call_count == 2
+        ack_args = {c.args[0] for c in mock_client.acknowledge_trigger.call_args_list}
+        assert ack_args == {"t-1", "t-2"}
+
+    def test_auto_acknowledge_loops_until_empty(self, provider, mock_client):
+        """Engine returns a full batch -> drain continues to the next page."""
+        provider._config.auto_acknowledge_triggers = True
+        # Two full batches of 50, then an empty page → 3 calls total,
+        # 100 triggers acked.
+        batch_a = [{"trigger_id": f"a-{i}"} for i in range(50)]
+        batch_b = [{"trigger_id": f"b-{i}"} for i in range(50)]
+        mock_client.pending_triggers.side_effect = [
+            {"triggers": batch_a},
+            {"triggers": batch_b},
+            {"triggers": []},
+        ]
+        provider.on_session_end([])
+        assert mock_client.pending_triggers.call_count == 3
+        assert mock_client.acknowledge_trigger.call_count == 100
+
+    def test_auto_acknowledge_warns_loudly_on_http_mode_404(
+        self, provider, mock_client, client_module, caplog,
+    ):
+        """HTTP mode 404 should log a WARNING (not silent debug) so the
+        user knows auto-ack is effectively disabled."""
+        import logging
+        provider._config.auto_acknowledge_triggers = True
+        mock_client.pending_triggers.side_effect = client_module.YantrikDBServerError(
+            "server route /v1/triggers/pending not found "
+            "(needs yantrikdb-server v0.8.17+; see issues/39)"
+        )
+        with caplog.at_level(logging.WARNING, logger="yantrikdb_plugin_under_test"):
+            provider.on_session_end([])
+        # Exactly one warning, mentioning the upstream tracker.
+        warning_records = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warning_records) == 1
+        assert "/v1/triggers" in warning_records[0].getMessage()
+        mock_client.acknowledge_trigger.assert_not_called()
+
+    def test_auto_acknowledge_handles_empty_queue(self, provider, mock_client):
+        provider._config.auto_acknowledge_triggers = True
+        mock_client.pending_triggers.return_value = {"triggers": []}
+        provider.on_session_end([])
+        mock_client.pending_triggers.assert_called_once()
+        mock_client.acknowledge_trigger.assert_not_called()
+
+    def test_auto_acknowledge_fail_soft_on_one_bad_trigger(
+        self, provider, mock_client, client_module,
+    ):
+        # One trigger raises; the others should still ack. The user's
+        # session shouldn't crash because one trigger went weird.
+        provider._config.auto_acknowledge_triggers = True
+        mock_client.pending_triggers.return_value = {"triggers": [
+            {"trigger_id": "ok-1"},
+            {"trigger_id": "bad"},
+            {"trigger_id": "ok-2"},
+        ]}
+
+        def selective_fail(trigger_id):
+            if trigger_id == "bad":
+                raise client_module.YantrikDBServerError("transient blip")
+            return {"trigger_id": trigger_id, "acknowledged": True}
+
+        mock_client.acknowledge_trigger.side_effect = selective_fail
+        provider.on_session_end([])
+        # All three were attempted; the bad one didn't stop the iteration.
+        attempts = [c.args[0] for c in mock_client.acknowledge_trigger.call_args_list]
+        assert attempts == ["ok-1", "bad", "ok-2"]
+
+    def test_auto_acknowledge_skipped_when_think_fails(
+        self, provider, mock_client, client_module,
+    ):
+        # If think() raises, the early return prevents the ack pass —
+        # don't drain a queue we may not have refreshed.
+        provider._config.auto_acknowledge_triggers = True
+        mock_client.think.side_effect = client_module.YantrikDBServerError("nope")
+        provider.on_session_end([])
+        mock_client.pending_triggers.assert_not_called()
+        mock_client.acknowledge_trigger.assert_not_called()
+
+    def test_auto_acknowledge_swallows_listing_failure(
+        self, provider, mock_client, client_module,
+    ):
+        # If listing pending fails, we log + give up. Don't crash the
+        # session-end hook.
+        provider._config.auto_acknowledge_triggers = True
+        mock_client.pending_triggers.side_effect = client_module.YantrikDBServerError("503")
+        provider.on_session_end([])
+        mock_client.acknowledge_trigger.assert_not_called()
+        # think() still ran first, that's the contract.
+        mock_client.think.assert_called_once()
+
 
 class TestOnPreCompress:
     def test_returns_recall_block(self, provider, mock_client):

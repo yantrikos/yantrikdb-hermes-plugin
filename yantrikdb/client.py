@@ -77,6 +77,14 @@ class YantrikDBConfig:
     top_k: int = DEFAULT_TOP_K
     max_text_len: int = DEFAULT_MAX_TEXT_LEN
     auto_think_on_session_end: bool = True
+    # v0.4.15+ — after session-end think() emits triggers, automatically
+    # acknowledge each pending trigger so the queue doesn't accumulate
+    # across sessions for users who don't implement a consumer loop. Uses
+    # `acknowledge` not `act_on`/`dismiss` because no action was actually
+    # taken — `acknowledge` is the honest semantics for "agent saw it,
+    # moving on." Opt-in; default off so existing deployments are
+    # unchanged. Closes #22.
+    auto_acknowledge_triggers: bool = False
     sync_user_messages: bool = True
     # Hermes-specific owner scoping. When enabled, the provider appends a
     # stable owner shard to the effective namespace, so one Hermes gateway can
@@ -118,6 +126,9 @@ class YantrikDBConfig:
             ),
             auto_think_on_session_end=_parse_bool(
                 os.environ.get("YANTRIKDB_AUTO_THINK_ON_SESSION_END"), default=True,
+            ),
+            auto_acknowledge_triggers=_parse_bool(
+                os.environ.get("YANTRIKDB_AUTO_ACKNOWLEDGE_TRIGGERS"), default=False,
             ),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
@@ -174,6 +185,7 @@ class YantrikDBConfig:
         bool_fields = {
             "skills_enabled",
             "auto_think_on_session_end",
+            "auto_acknowledge_triggers",
             "sync_user_messages",
             "owner_scoping",
             "include_base_namespace_recall",
