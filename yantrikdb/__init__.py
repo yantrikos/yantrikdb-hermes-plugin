@@ -115,7 +115,7 @@ logger = logging.getLogger(__name__)
 # envelope, regardless of which `tools.registry` shipped with the host.
 
 
-def tool_error(message: str, *, tool: str = "") -> str:  # noqa: F811
+def tool_error(message: str, *, tool: str = "") -> str:  # type: ignore[no-redef]  # noqa: F811
     """Structured error envelope. Replaces the imported `tool_error`.
 
     The legacy `{"error": message}` shape is preserved (additive only) so any
