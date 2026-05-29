@@ -954,6 +954,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._breaker_open_until: float = 0.0
         self._breaker_lock = threading.Lock()
 
+        # v0.4.17+ — path to the cross-session "recently defined skills"
+        # record. Set in initialize() once hermes_home is resolved. None
+        # while uninitialized (e.g. cron-skipped) or in test contexts that
+        # don't pass hermes_home; the helpers no-op silently in that case.
+        self._recent_skills_path: Path | None = None
+        self._recent_skills_lock = threading.Lock()
+
     # -- Identity ---------------------------------------------------------
 
     @property
@@ -1135,6 +1142,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
         hermes_home_raw = kwargs.get("hermes_home")
         hermes_home = Path(hermes_home_raw) if hermes_home_raw else None
         self._config = YantrikDBConfig.load(hermes_home)
+        if hermes_home is not None:
+            self._recent_skills_path = hermes_home / "yantrikdb-recent-skills.json"
 
         # Embedded mode is self-contained (`pip install` and go); HTTP mode
         # requires a token. is_available() short-circuits at the provider
@@ -1342,7 +1351,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             if self._scope_metadata
             else ""
         )
-        return (
+        base = (
             "# YantrikDB Memory\n"
             f"Active. Namespace: `{self._namespace}`.\n"
             f"{scope_line}"
@@ -1356,6 +1365,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "contradictions — then `yantrikdb_conflicts` lists what needs "
             "resolving and `yantrikdb_resolve_conflict` closes each out."
         )
+        return base + self._format_recent_skills_block()
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         if self._cron_skipped or self._client is None:
@@ -1589,6 +1599,14 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "rid": r.get("rid"),
                 "text": r.get("text"),
                 "score": r.get("score"),
+                # v0.4.17+ — full score-component breakdown from the engine.
+                # Per-component values (similarity, decay, recency, importance,
+                # graph_proximity, valence_multiplier) AND the weighted
+                # `contributions` that sum to the final score. Makes the
+                # ranking math fully visible to the agent — no opaque scores,
+                # no second LLM call to "explain why." None other Hermes
+                # memory provider exposes this.
+                "scores": r.get("scores"),
                 "importance": r.get("importance"),
                 "domain": r.get("domain"),
                 "created_at": r.get("created_at"),
@@ -1777,11 +1795,123 @@ class YantrikDBMemoryProvider(MemoryProvider):
             supersedes_skill_id=args.get("supersedes_skill_id"),
         )
         self._record_success()
+        stored = bool(resp.get("stored", True))
+        # v0.4.17+ visible auto-skill crystallization. Only record on
+        # actual store; on-conflict rejects (stored=False) are NOT new
+        # learning and shouldn't trigger next-session notification.
+        if stored:
+            self._record_recent_skill(
+                skill_id=resp.get("skill_id", skill_id),
+                skill_type=skill_type,
+                applies_to=applies_to,
+            )
+            logger.info(
+                "YantrikDB skill defined: %s (%s) — will surface in next session prompt",
+                skill_id, skill_type,
+            )
         return json.dumps({
             "rid": resp.get("rid"),
             "skill_id": resp.get("skill_id", skill_id),
-            "stored": bool(resp.get("stored", True)),
+            "stored": stored,
         })
+
+    # -- v0.4.17 visible auto-skill crystallization ----------------------
+    #
+    # Skills the agent defines via `yantrikdb_skill_define` are full-fledged
+    # learning artifacts. Pre-v0.4.17 the model could write one, the session
+    # would end, and no future session ever knew it existed unless something
+    # happened to call `skill_search` with the right query. The wow is closing
+    # that loop: persist a small (skill_id, type, ts) trail across sessions,
+    # then surface "the agent learned these recently" in the next session's
+    # system prompt. The incoming model sees its own prior learning the
+    # moment it boots.
+    #
+    # Persistence is a JSON file under hermes_home (same dir as the config).
+    # Bounded at 10 entries; only entries ≤7d old surface; the current
+    # session's own entries are filtered out (the agent already knows about
+    # them — surfacing them would just be noise). Failures during read/write
+    # are swallowed: this is a UX nicety, not load-bearing.
+
+    _RECENT_SKILLS_MAX = 10
+    _RECENT_SKILLS_TTL_SECS = 7 * 24 * 3600
+
+    def _record_recent_skill(
+        self,
+        *,
+        skill_id: str,
+        skill_type: str,
+        applies_to: Any,
+    ) -> None:
+        if self._recent_skills_path is None:
+            return
+        entry = {
+            "skill_id": skill_id,
+            "skill_type": skill_type,
+            "applies_to": applies_to if isinstance(applies_to, list) else [],
+            "ts": time.time(),
+            "session_id": self._session_id,
+        }
+        with self._recent_skills_lock:
+            try:
+                entries = self._load_recent_skills()
+                # Drop any prior entry with the same skill_id — the latest
+                # write is the authoritative one (e.g. supersedes or replace
+                # via on_conflict=replace would otherwise show two).
+                entries = [e for e in entries if e.get("skill_id") != skill_id]
+                entries.append(entry)
+                entries = entries[-self._RECENT_SKILLS_MAX:]
+                self._recent_skills_path.parent.mkdir(parents=True, exist_ok=True)
+                self._recent_skills_path.write_text(
+                    json.dumps(entries, indent=2), encoding="utf-8",
+                )
+            except OSError as e:
+                logger.debug("recent-skills persist failed: %s", e)
+
+    def _load_recent_skills(self) -> list[dict[str, Any]]:
+        if self._recent_skills_path is None or not self._recent_skills_path.exists():
+            return []
+        try:
+            raw = json.loads(self._recent_skills_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            logger.debug("recent-skills read failed: %s", e)
+            return []
+        return raw if isinstance(raw, list) else []
+
+    def _format_recent_skills_block(self) -> str:
+        if self._config is None or not self._config.surface_recent_skills:
+            return ""
+        with self._recent_skills_lock:
+            entries = self._load_recent_skills()
+        if not entries:
+            return ""
+        now = time.time()
+        cutoff = now - self._RECENT_SKILLS_TTL_SECS
+        # Surface entries from PRIOR sessions only — current session
+        # already knows what it just defined.
+        fresh = [
+            e for e in entries
+            if e.get("ts", 0) >= cutoff
+            and e.get("session_id") != self._session_id
+        ]
+        if not fresh:
+            return ""
+        lines = ["", "## Recently learned skills"]
+        for e in fresh[-5:]:  # cap the prompt budget
+            age_h = int((now - e.get("ts", now)) / 3600)
+            age_str = f"{age_h}h ago" if age_h < 48 else f"{age_h // 24}d ago"
+            applies = e.get("applies_to") or []
+            scope = (
+                f" scope={','.join(map(str, applies[:3]))}"
+                if applies else ""
+            )
+            lines.append(
+                f"- `{e.get('skill_id', '?')}` ({e.get('skill_type', '?')}){scope} — {age_str}"
+            )
+        lines.append(
+            "The agent defined these in prior sessions. If your task "
+            "matches any, call `yantrikdb_skill_search` to retrieve the body."
+        )
+        return "\n".join(lines)
 
     def _do_skill_outcome(self, args: dict[str, Any]) -> str:
         skill_id = (args.get("skill_id") or "").strip()

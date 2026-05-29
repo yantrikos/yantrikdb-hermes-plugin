@@ -3,6 +3,81 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.17] — 2026-05-29 — Visible auto-skill crystallization + recall score breakdown
+
+Two wow features in one release. Both are about making invisible work visible — closing observability gaps that have existed since the skill surface (v0.3.0) and the recall surface (v0.1.0) shipped.
+
+### 1. Visible auto-skill crystallization
+
+When the agent defines a skill via `yantrikdb_skill_define`, the plugin now persists a small record `(skill_id, skill_type, applies_to, ts, session_id)` to `$HERMES_HOME/yantrikdb-recent-skills.json` and the **next** session's system prompt surfaces them:
+
+```
+## Recently learned skills
+- `git.commit_clean` (procedure) scope=git,workflow — 3h ago
+- `incident.deploy.allowed_kinds_race` (lesson) scope=incident — 1d ago
+The agent defined these in prior sessions. If your task matches any,
+call `yantrikdb_skill_search` to retrieve the body.
+```
+
+#### Why this exists
+
+Pre-v0.4.17, `skill_define` was a write-only operation from the perspective of future sessions. The model could crystallize a hard-won lesson (`"never resolve allowed_kinds before deploy event"`), the session would end, and **no future session would ever know that skill existed** unless it happened to call `skill_search` with the right query. The skill body was correctly stored — but the *fact* that the agent learned something was silent.
+
+The substrate is doing the work; v0.4.17 makes the work visible.
+
+#### Behaviour
+
+- Recorded only on successful store (`stored=true` from engine). `on_conflict=reject` paths do NOT trigger notification — they aren't new learning.
+- Persisted as a JSON list under `$HERMES_HOME/yantrikdb-recent-skills.json`, capped at 10 entries, deduped by `skill_id` so re-defining the same skill replaces the prior entry.
+- Surfaced only to **prior** sessions (filtered by `session_id != current`) — the session that just defined a skill already knows it exists; surfacing it would just be noise.
+- Time-to-live: 7 days. Skills older than that age out of the prompt; they remain in the substrate, just don't keep advertising themselves forever.
+- Up to 5 entries surface per prompt to bound prompt budget.
+- Logs `INFO` line on each define so the persisted record is debuggable: `YantrikDB skill defined: <id> (<type>) — will surface in next session prompt`.
+- Failures during persist/read are swallowed silently with a `DEBUG` log. This is a UX nicety, not load-bearing; never block the dispatch.
+
+#### Configuration
+
+New flag `YANTRIKDB_SURFACE_RECENT_SKILLS` (default `true`). Set to `false` to disable surfacing while still recording (so a future enable can backfill).
+
+### 2. Recall score breakdown
+
+The engine has long returned a per-result `scores` dict with full component breakdown (`similarity`, `decay`, `recency`, `importance`, `graph_proximity`, `valence_multiplier`) AND a `contributions` sub-dict whose values sum to the final `score`. Pre-v0.4.17 the plugin's `_do_recall` silently dropped this field during compaction. v0.4.17 plumbs it through.
+
+```json
+{
+  "rid": "019e7229-...",
+  "text": "Pranab prefers minimal commit messages",
+  "score": 1.17,
+  "scores": {
+    "similarity": 0.78,
+    "decay": 0.50,
+    "recency": 0.99,
+    "importance": 0.50,
+    "graph_proximity": 0.0,
+    "valence_multiplier": 1.0,
+    "contributions": {
+      "similarity": 0.39,
+      "decay": 0.10,
+      "recency": 0.30,
+      "importance": 0.39
+    }
+  },
+  "why_retrieved": ["high similarity", "recently created"]
+}
+```
+
+#### Why this matters
+
+`why_retrieved` is the qualitative explanation; `scores.contributions` is the quantitative breakdown those reasons sum to. Together they make ranking fully transparent — the agent (or a human debugging recall) can see exactly **why** a result ranked where it did. No opaque "trust me, this is relevant" scores. No second LLM call required to "explain why."
+
+No other Hermes memory provider exposes this. Combined with `why_retrieved`, recall results are now the most transparent in the ecosystem.
+
+### Backward compatibility
+
+- `scores` is purely additive on recall results. Existing parsers that key off `rid`/`text`/`score`/`why_retrieved` are unaffected.
+- `surface_recent_skills` defaults on; deployments that don't want it set the env var or config key to false.
+- Tests: 221 passing (+10 new) — `TestRecallScoreBreakdown` (2) and `TestRecentSkillsCrystallization` (8).
+
 ## [0.4.16] — 2026-05-28 — Structured tool envelope (silent-failure-confabulation fix)
 
 Closes a structural agent-protocol gap surfaced by a sibling workspace (yantrikdb-agi) after a real incident: when a tool call failed during a YDB cluster restart, the agent's narrative LLM described success that did not happen. Same pathology as LLM hallucination on absent retrieval — applied to action history rather than knowledge.
