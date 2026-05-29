@@ -70,6 +70,8 @@ except ImportError:
         """
 
     def tool_error(message: str) -> str:  # type: ignore[no-redef]
+        # Stub for non-Hermes import path. The provider class never runs
+        # here; the real tool_error below shadows it for Hermes execution.
         import json
         return json.dumps({"error": message})
 
@@ -86,6 +88,95 @@ from .client import (
 from .embedded import make_backend
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Structured tool envelope (v0.4.16+)
+# ---------------------------------------------------------------------------
+#
+# Every tool response from this plugin carries an unambiguous status signal so
+# an LLM later asked "what did I just do?" can't confabulate success on a
+# silent failure. Pattern documented by yantrikdb-agi (rid 019e6c27) after a
+# real incident: a tool call failed during a YDB cluster restart, the agent's
+# narrative LLM described success that did not happen.
+#
+# Envelope fields (always present on every tool response):
+#   status:  "ok" | "failed"       — primary LLM-readable signal
+#   ok:      true | false           — primary machine-readable signal
+#   tool:    "yantrikdb_<name>"    — tool that produced this result
+#   ts:      epoch seconds          — temporal grounding
+#
+# Failure responses additionally carry `error` (the message; legacy key kept
+# for back-compat) and `reason` (alias). Success responses preserve all
+# tool-specific keys verbatim (`rid`, `stored`, `results`, etc.) so existing
+# agent code that reads those keys continues to work unchanged.
+#
+# Shadow the imported `tool_error` so every error response carries the
+# envelope, regardless of which `tools.registry` shipped with the host.
+
+
+def tool_error(message: str, *, tool: str = "") -> str:  # noqa: F811
+    """Structured error envelope. Replaces the imported `tool_error`.
+
+    The legacy `{"error": message}` shape is preserved (additive only) so any
+    agent code that scans for the `error` key keeps working.
+    """
+    payload: dict[str, Any] = {
+        "status": "failed",
+        "ok": False,
+        "ts": time.time(),
+        "error": message,
+        "reason": message,
+    }
+    if tool:
+        payload["tool"] = tool
+    return json.dumps(payload)
+
+
+def _envelope_ok(tool: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Build a success envelope around tool-specific payload keys."""
+    return {
+        "status": "ok",
+        "ok": True,
+        "tool": tool,
+        "ts": time.time(),
+        **payload,
+    }
+
+
+def _wrap_dispatch(tool: str, raw_json: str) -> str:
+    """Wrap a `_do_*` method's JSON return in the structured envelope.
+
+    `_do_*` methods either return a success-shaped JSON (e.g. `{"rid":...}`)
+    or call `tool_error()` directly (already enveloped). This helper:
+
+    - Parses the JSON. On parse failure, returns a structured error envelope
+      so the LLM still gets unambiguous failure signal instead of broken JSON.
+    - If the dict already carries `status` / `ok` (already enveloped, e.g.
+      from a direct `tool_error()` call), passes through unchanged.
+    - Otherwise wraps as success — preserves all original keys, adds the
+      envelope fields.
+    """
+    try:
+        data = json.loads(raw_json)
+    except (TypeError, ValueError):
+        return tool_error(
+            f"plugin produced non-JSON tool response: {str(raw_json)[:200]}",
+            tool=tool,
+        )
+    if not isinstance(data, dict):
+        return tool_error(
+            f"plugin produced non-dict tool response: {type(data).__name__}",
+            tool=tool,
+        )
+    if "status" in data and "ok" in data:
+        # Already enveloped (e.g. _do_* called tool_error directly).
+        # If the tool field is missing, fill it in.
+        if "tool" not in data and tool:
+            data["tool"] = tool
+            return json.dumps(data)
+        return raw_json
+    return json.dumps(_envelope_ok(tool, data))
 
 # Circuit breaker — after N consecutive transient/server/auth failures, the
 # plugin short-circuits for _BREAKER_COOLDOWN seconds so a flapping server
@@ -1395,64 +1486,76 @@ class YantrikDBMemoryProvider(MemoryProvider):
         **kwargs: Any,
     ) -> str:
         if self._cron_skipped or self._client is None:
-            return tool_error("YantrikDB is not active for this session.")
+            return tool_error(
+                "YantrikDB is not active for this session.", tool=tool_name,
+            )
         if self._breaker_open():
             return tool_error(
                 "YantrikDB temporarily unavailable (circuit breaker open). "
-                "Will retry automatically."
+                "Will retry automatically.",
+                tool=tool_name,
             )
 
         try:
+            raw: str | None = None
             if tool_name == "yantrikdb_remember":
-                return self._do_remember(args)
-            if tool_name == "yantrikdb_recall":
-                return self._do_recall(args)
-            if tool_name == "yantrikdb_forget":
-                return self._do_forget(args)
-            if tool_name == "yantrikdb_think":
-                return self._do_think(args)
-            if tool_name == "yantrikdb_conflicts":
-                return self._do_conflicts()
-            if tool_name == "yantrikdb_resolve_conflict":
-                return self._do_resolve_conflict(args)
-            if tool_name == "yantrikdb_relate":
-                return self._do_relate(args)
-            if tool_name == "yantrikdb_stats":
-                return self._do_stats()
-            if tool_name == "yantrikdb_pending_triggers":
-                return self._do_pending_triggers(args)
-            if tool_name == "yantrikdb_acknowledge_trigger":
-                return self._do_acknowledge_trigger(args)
-            if tool_name == "yantrikdb_dismiss_trigger":
-                return self._do_dismiss_trigger(args)
-            if tool_name == "yantrikdb_act_on_trigger":
-                return self._do_act_on_trigger(args)
-            if tool_name.startswith("yantrikdb_skill_"):
+                raw = self._do_remember(args)
+            elif tool_name == "yantrikdb_recall":
+                raw = self._do_recall(args)
+            elif tool_name == "yantrikdb_forget":
+                raw = self._do_forget(args)
+            elif tool_name == "yantrikdb_think":
+                raw = self._do_think(args)
+            elif tool_name == "yantrikdb_conflicts":
+                raw = self._do_conflicts()
+            elif tool_name == "yantrikdb_resolve_conflict":
+                raw = self._do_resolve_conflict(args)
+            elif tool_name == "yantrikdb_relate":
+                raw = self._do_relate(args)
+            elif tool_name == "yantrikdb_stats":
+                raw = self._do_stats()
+            elif tool_name == "yantrikdb_pending_triggers":
+                raw = self._do_pending_triggers(args)
+            elif tool_name == "yantrikdb_acknowledge_trigger":
+                raw = self._do_acknowledge_trigger(args)
+            elif tool_name == "yantrikdb_dismiss_trigger":
+                raw = self._do_dismiss_trigger(args)
+            elif tool_name == "yantrikdb_act_on_trigger":
+                raw = self._do_act_on_trigger(args)
+            elif tool_name.startswith("yantrikdb_skill_"):
                 if not (self._config and self._config.skills_enabled):
                     return tool_error(
                         "Skills are disabled. Set YANTRIKDB_SKILLS_ENABLED=true "
-                        "to enable yantrikdb_skill_search / _define / _outcome."
+                        "to enable yantrikdb_skill_search / _define / _outcome.",
+                        tool=tool_name,
                     )
                 if tool_name == "yantrikdb_skill_search":
-                    return self._do_skill_search(args)
-                if tool_name == "yantrikdb_skill_define":
-                    return self._do_skill_define(args)
-                if tool_name == "yantrikdb_skill_outcome":
-                    return self._do_skill_outcome(args)
-            return tool_error(f"Unknown tool: {tool_name}")
+                    raw = self._do_skill_search(args)
+                elif tool_name == "yantrikdb_skill_define":
+                    raw = self._do_skill_define(args)
+                elif tool_name == "yantrikdb_skill_outcome":
+                    raw = self._do_skill_outcome(args)
+            if raw is None:
+                return tool_error(f"Unknown tool: {tool_name}", tool=tool_name)
+            return _wrap_dispatch(tool_name, raw)
         except YantrikDBAuthError as e:
             self._record_failure()
             return tool_error(
-                f"YantrikDB auth rejected: {e}. Check YANTRIKDB_TOKEN."
+                f"YantrikDB auth rejected: {e}. Check YANTRIKDB_TOKEN.",
+                tool=tool_name,
             )
         except YantrikDBClientError as e:
-            return tool_error(f"YantrikDB rejected the request: {e}")
+            return tool_error(
+                f"YantrikDB rejected the request: {e}", tool=tool_name,
+            )
         except (YantrikDBTransientError, YantrikDBServerError) as e:
             self._record_failure()
-            return tool_error(f"YantrikDB unavailable: {e}")
+            return tool_error(
+                f"YantrikDB unavailable: {e}", tool=tool_name,
+            )
         except YantrikDBError as e:
             self._record_failure()
-            return tool_error(f"YantrikDB error: {e}")
+            return tool_error(f"YantrikDB error: {e}", tool=tool_name)
 
     def _do_remember(self, args: dict[str, Any]) -> str:
         text = (args.get("text") or "").strip()
