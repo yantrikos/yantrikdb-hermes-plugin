@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yantrikdb-hermes-plugin"
-version = "0.4.16"
+version = "0.4.17"
 description = "Self-maintaining memory plugin for Hermes Agent — embedded YantrikDB engine, ~10 MB, no server, no token, no GPU. Canonicalizes duplicates, surfaces contradictions, ranks with recency awareness, and explains recall."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -149,7 +149,7 @@ exclude = ["reference/", "tests/", "^__init__\\.py$"]
 # matching `## [X.Y.Z] — YYYY-MM-DD — Summary` header. The CI `version-sync`
 # job blocks merge if the three sources drift.
 [tool.bumpversion]
-current_version = "0.4.16"
+current_version = "0.4.17"
 commit = false       # let the human author the commit message + body
 tag = false          # tag via `gh release create`, not on bump
 allow_dirty = true

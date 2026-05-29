@@ -108,6 +108,14 @@ class YantrikDBConfig:
     # skill schemas are hidden from get_tool_schemas() and any direct
     # call to a skill tool short-circuits with a clear error.
     skills_enabled: bool = False
+    # v0.4.17+ — when the agent defines a skill via `yantrikdb_skill_define`,
+    # persist the (skill_id, type, ts) tuple so the NEXT session's system
+    # prompt can surface "the agent learned these skills recently" to the
+    # incoming model. Closes the silent-crystallization gap: today the model
+    # writes a skill, the session ends, and no future session knows it exists
+    # unless it happens to call skill_search with the right query. Default
+    # on — it's the wow moment.
+    surface_recent_skills: bool = True
 
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
@@ -129,6 +137,9 @@ class YantrikDBConfig:
             ),
             auto_acknowledge_triggers=_parse_bool(
                 os.environ.get("YANTRIKDB_AUTO_ACKNOWLEDGE_TRIGGERS"), default=False,
+            ),
+            surface_recent_skills=_parse_bool(
+                os.environ.get("YANTRIKDB_SURFACE_RECENT_SKILLS"), default=True,
             ),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
@@ -186,6 +197,7 @@ class YantrikDBConfig:
             "skills_enabled",
             "auto_think_on_session_end",
             "auto_acknowledge_triggers",
+            "surface_recent_skills",
             "sync_user_messages",
             "owner_scoping",
             "include_base_namespace_recall",

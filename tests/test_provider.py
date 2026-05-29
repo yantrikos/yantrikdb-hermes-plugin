@@ -1641,3 +1641,256 @@ class TestSkillValidation:
 
     def test_applies_to_accepts_digits_after_first(self, validate):
         validate(**{**self._good_args(), "applies_to": ["python3", "k8s"]})
+
+
+# ---------------------------------------------------------------------------
+# v0.4.17 — recall score-component breakdown is passed through
+# ---------------------------------------------------------------------------
+
+
+class TestRecallScoreBreakdown:
+    """The engine returns a `scores` dict per result with similarity / decay
+    / recency / importance / graph_proximity / valence_multiplier components
+    AND a `contributions` sub-dict that sums to the final `score`. v0.4.17
+    plumbs this through unchanged so the agent can see why a result ranked
+    where it did. Pre-v0.4.17 the plugin silently dropped it.
+    """
+
+    def test_scores_passthrough(self, provider, mock_client):
+        mock_client.recall.return_value = {
+            "results": [{
+                "rid": "r1",
+                "text": "fact",
+                "score": 1.17,
+                "scores": {
+                    "similarity": 0.78,
+                    "decay": 0.50,
+                    "recency": 0.99,
+                    "importance": 0.50,
+                    "graph_proximity": 0.0,
+                    "valence_multiplier": 1.0,
+                    "contributions": {
+                        "similarity": 0.39,
+                        "decay": 0.10,
+                        "recency": 0.30,
+                        "importance": 0.39,
+                    },
+                },
+                "why_retrieved": ["high similarity"],
+            }],
+        }
+        out = provider.handle_tool_call("yantrikdb_recall", {"query": "x"})
+        result = json.loads(out)["results"][0]
+        assert "scores" in result, "scores must survive plugin compaction"
+        assert result["scores"]["similarity"] == 0.78
+        assert result["scores"]["recency"] == 0.99
+        assert "contributions" in result["scores"]
+        assert result["scores"]["contributions"]["similarity"] == 0.39
+
+    def test_scores_absent_when_engine_omits(self, provider, mock_client):
+        # Older engines / fallback paths may not include the scores dict.
+        # The field should still be present (as None) for a stable schema.
+        mock_client.recall.return_value = {
+            "results": [{"rid": "r1", "text": "fact", "score": 0.9}],
+        }
+        out = provider.handle_tool_call("yantrikdb_recall", {"query": "x"})
+        result = json.loads(out)["results"][0]
+        assert "scores" in result
+        assert result["scores"] is None
+
+
+# ---------------------------------------------------------------------------
+# v0.4.17 — visible auto-skill crystallization
+# ---------------------------------------------------------------------------
+
+
+class TestRecentSkillsCrystallization:
+    """When the agent defines a skill, persist a small (skill_id, type, ts)
+    record so the NEXT session's system_prompt_block can surface it. Without
+    this, skill_define is a write-only operation from the perspective of
+    future sessions.
+    """
+
+    @pytest.fixture
+    def provider_with_home(self, provider_module, mock_client, monkeypatch, tmp_path):
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_SKILLS_ENABLED", "true")
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess-1",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="cli",
+                hermes_home=str(tmp_path),
+            )
+        return p, tmp_path
+
+    def test_skill_define_persists_entry(self, provider_with_home, mock_client):
+        p, tmp = provider_with_home
+        p.handle_tool_call(
+            "yantrikdb_skill_define",
+            {
+                "skill_id": "git.commit_clean",
+                "body": "x" * 80,
+                "skill_type": "procedure",
+                "applies_to": ["git", "workflow"],
+            },
+        )
+        path = tmp / "yantrikdb-recent-skills.json"
+        assert path.exists()
+        entries = json.loads(path.read_text())
+        assert len(entries) == 1
+        assert entries[0]["skill_id"] == "git.commit_clean"
+        assert entries[0]["skill_type"] == "procedure"
+        assert entries[0]["applies_to"] == ["git", "workflow"]
+        assert entries[0]["session_id"] == "sess-1"
+
+    def test_skill_define_rejected_does_not_persist(
+        self, provider_with_home, mock_client,
+    ):
+        # on_conflict=reject path — engine returns stored=False.
+        p, tmp = provider_with_home
+        mock_client.skill_define.return_value = {
+            "rid": None, "skill_id": "git.commit_clean", "stored": False,
+        }
+        p.handle_tool_call(
+            "yantrikdb_skill_define",
+            {
+                "skill_id": "git.commit_clean",
+                "body": "x" * 80,
+                "skill_type": "procedure",
+                "applies_to": ["git"],
+            },
+        )
+        path = tmp / "yantrikdb-recent-skills.json"
+        # rejected definitions are NOT learning events, so nothing persisted.
+        assert not path.exists()
+
+    def test_recent_skills_dedupe_by_id(self, provider_with_home, mock_client):
+        # Re-defining the same skill_id replaces the prior entry rather
+        # than accumulating duplicates that all advertise the same id.
+        p, tmp = provider_with_home
+        for _ in range(3):
+            p.handle_tool_call(
+                "yantrikdb_skill_define",
+                {
+                    "skill_id": "git.commit_clean",
+                    "body": "x" * 80,
+                    "skill_type": "procedure",
+                    "applies_to": ["git"],
+                },
+            )
+        entries = json.loads((tmp / "yantrikdb-recent-skills.json").read_text())
+        assert len(entries) == 1
+        assert entries[0]["skill_id"] == "git.commit_clean"
+
+    def test_recent_skills_cap(self, provider_with_home, mock_client):
+        p, tmp = provider_with_home
+        for i in range(15):
+            mock_client.skill_define.return_value = {
+                "rid": f"r{i}", "skill_id": f"git.s{i}", "stored": True,
+            }
+            p.handle_tool_call(
+                "yantrikdb_skill_define",
+                {
+                    "skill_id": f"git.s{i}",
+                    "body": "x" * 80,
+                    "skill_type": "procedure",
+                    "applies_to": ["git"],
+                },
+            )
+        entries = json.loads((tmp / "yantrikdb-recent-skills.json").read_text())
+        assert len(entries) == 10  # _RECENT_SKILLS_MAX
+        # Oldest dropped — first kept should be s5.
+        assert entries[0]["skill_id"] == "git.s5"
+
+    def test_system_prompt_surfaces_prior_session_skills(
+        self, provider_with_home, mock_client,
+    ):
+        # Skill defined in session A is surfaced when session B reads the
+        # system prompt block.
+        p, tmp = provider_with_home
+        p.handle_tool_call(
+            "yantrikdb_skill_define",
+            {
+                "skill_id": "git.commit_clean",
+                "body": "x" * 80,
+                "skill_type": "procedure",
+                "applies_to": ["git"],
+            },
+        )
+        # Same session sees nothing — it already knows what it just wrote.
+        block_same = p.system_prompt_block()
+        assert "Recently learned skills" not in block_same
+
+        # Switch sessions; the prior skill should now surface.
+        p._session_id = "sess-2"
+        block_next = p.system_prompt_block()
+        assert "Recently learned skills" in block_next
+        assert "git.commit_clean" in block_next
+        assert "procedure" in block_next
+
+    def test_system_prompt_filters_stale_entries(
+        self, provider_with_home, mock_client,
+    ):
+        # Entries older than the TTL must not surface even if persisted.
+        p, tmp = provider_with_home
+        path = tmp / "yantrikdb-recent-skills.json"
+        old_ts = time.time() - (8 * 24 * 3600)  # 8 days
+        path.write_text(json.dumps([{
+            "skill_id": "git.ancient",
+            "skill_type": "procedure",
+            "applies_to": [],
+            "ts": old_ts,
+            "session_id": "sess-prior",
+        }]))
+        block = p.system_prompt_block()
+        assert "git.ancient" not in block
+
+    def test_surface_flag_disabled_suppresses_block(
+        self, provider_with_home, mock_client,
+    ):
+        p, tmp = provider_with_home
+        p._config.surface_recent_skills = False
+        path = tmp / "yantrikdb-recent-skills.json"
+        path.write_text(json.dumps([{
+            "skill_id": "git.commit_clean",
+            "skill_type": "procedure",
+            "applies_to": [],
+            "ts": time.time(),
+            "session_id": "sess-other",
+        }]))
+        block = p.system_prompt_block()
+        assert "Recently learned skills" not in block
+
+    def test_no_hermes_home_silently_skips(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        # Tests/cron paths that don't pass hermes_home shouldn't error;
+        # crystallization is a UX nicety, not load-bearing.
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.setenv("YANTRIKDB_SKILLS_ENABLED", "true")
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize(
+                "sess-1",
+                agent_workspace="workspace",
+                agent_identity="coder",
+                platform="cli",
+            )
+        out = p.handle_tool_call(
+            "yantrikdb_skill_define",
+            {
+                "skill_id": "git.commit_clean",
+                "body": "x" * 80,
+                "skill_type": "procedure",
+                "applies_to": ["git"],
+            },
+        )
+        # No exception, dispatch still succeeds.
+        assert json.loads(out)["stored"] is True
+        # And the block is empty/unmodified.
+        assert "Recently learned skills" not in p.system_prompt_block()
