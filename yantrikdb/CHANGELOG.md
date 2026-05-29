@@ -3,6 +3,67 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.4.16] — 2026-05-28 — Structured tool envelope (silent-failure-confabulation fix)
+
+Closes a structural agent-protocol gap surfaced by a sibling workspace (yantrikdb-agi) after a real incident: when a tool call failed during a YDB cluster restart, the agent's narrative LLM described success that did not happen. Same pathology as LLM hallucination on absent retrieval — applied to action history rather than knowledge.
+
+### Why this exists
+
+Pre-v0.4.16, tool responses carried the failure signal but not unambiguously:
+
+```json
+{"error": "engine unreachable"}
+```
+
+When the agent's LLM was later asked "what did you just do?", it reasoned over conversation history. The failure wasn't loudly present in machine-readable form, so the model confabulated plausible completion ("Pranab was updated via telegram_send" — but no telegram ever reached). Same pathology with `skill_define` calls described in narrative but never reaching substrate.
+
+### The envelope
+
+Every tool response now carries the same four envelope fields:
+
+```json
+{
+  "status": "ok" | "failed",
+  "ok": true | false,
+  "tool": "yantrikdb_<name>",
+  "ts": 1748394801.42,
+  ...tool-specific keys preserved verbatim
+}
+```
+
+Failure responses additionally carry `error` (legacy key, kept) and `reason` (alias). Both equal the same human-readable message; alias surfaces the term LLMs commonly scan for.
+
+### Why two signals (`status` + `ok`)
+
+- `status: "failed"` — primary LLM-readable signal. The word "failed" is loud during narrative summarization; "ok"/"failed" parses more clearly than `false` as a string.
+- `ok: false` — primary machine-readable signal. Boolean check for programmatic consumers.
+- Belt-and-suspenders, equivalent in current shape, gives flexibility if we later add partial-success semantics.
+
+### What did NOT change (back-compat)
+
+All existing tool-specific response keys preserved verbatim — `rid`, `stored`, `results`, `count`, `acknowledged`, `dismissed`, `acted`, etc. Existing agent code that reads those keys continues working unchanged. The envelope is purely additive.
+
+### What did change
+
+- Module-level `tool_error()` shadows the import from `tools.registry` to add the envelope on every error response
+- Dispatcher (`handle_tool_call`) wraps every `_do_*` return via `_wrap_dispatch()` which adds the envelope fields without touching tool-specific payload keys
+- Every `tool_error()` call from inside `_do_*` methods is also enveloped — dispatcher backfills the `tool` field when the inner caller omitted it
+
+### Tests
+
+- **211 unit tests pass** (up from 204; 7 new in `TestStructuredEnvelope`):
+  - Success envelope on remember (and back-compat keys preserved)
+  - Failure envelope on missing required param (direct `tool_error` from `_do_*`)
+  - **Failure envelope on backend unavailable** — simulates the exact YDB-cluster-restart scenario yantrikdb-agi flagged
+  - Envelope on unknown tool
+  - Envelope on cron-context skip (early-return path)
+  - Envelope on skills-disabled short-circuit
+  - Comprehensive sweep: every dispatch branch (14 tools) carries the envelope
+
+### Credit
+
+Cross-workspace heads-up from yantrikdb-agi, 2026-05-27. Captured to memory at rid `019e6c27` for any future agent built on YantrikDB.
+
 ## [0.4.15] — 2026-05-22 — Auto-acknowledge triggers (safe-by-default)
 
 Closes [#22](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/22) from **@alienos**. v0.4.13 shipped the trigger consumer tools, but they're tools — they only do anything if the agent (LLM) calls them. Under the default Hermes CLI flow, an LLM may never bother, so pending triggers accumulated up to the engine's 7-day TTL.

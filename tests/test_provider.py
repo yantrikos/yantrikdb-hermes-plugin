@@ -279,6 +279,146 @@ class TestToolSchemas:
 
 
 # ---------------------------------------------------------------------------
+# Structured tool envelope (v0.4.16, closes silent-failure-confabulation gap
+# from yantrikdb-agi cross-workspace heads-up rid 019e6c27)
+# ---------------------------------------------------------------------------
+
+ENVELOPE_KEYS = {"status", "ok", "tool", "ts"}
+
+
+def _assert_envelope(out: str, *, expected_tool: str, expected_ok: bool):
+    """Every tool response must carry the structured envelope so the LLM
+    can't confabulate success on a silent failure during narrative-summarization.
+    """
+    parsed = json.loads(out)
+    missing = ENVELOPE_KEYS - parsed.keys()
+    assert not missing, f"envelope keys missing: {missing}; got: {sorted(parsed.keys())}"
+    assert parsed["status"] == ("ok" if expected_ok else "failed")
+    assert parsed["ok"] is expected_ok
+    assert parsed["tool"] == expected_tool
+    assert isinstance(parsed["ts"], (int, float))
+    if not expected_ok:
+        # Failure envelopes carry both `error` (legacy) and `reason` (alias).
+        assert "error" in parsed
+        assert "reason" in parsed
+        assert parsed["error"] == parsed["reason"]
+
+
+class TestStructuredEnvelope:
+    """Contract: every tool call returns an envelope with status/ok/tool/ts.
+    Without these, an LLM later asked to summarize the session can confabulate
+    success on silent failures. See rid 019e6c27 (yantrikdb-agi heads-up)."""
+
+    def test_success_envelope_on_remember(self, provider, mock_client):
+        out = provider.handle_tool_call(
+            "yantrikdb_remember",
+            {"text": "anything", "importance": 0.5, "domain": "test"},
+        )
+        _assert_envelope(out, expected_tool="yantrikdb_remember", expected_ok=True)
+        # Existing payload keys preserved (back-compat).
+        parsed = json.loads(out)
+        assert parsed["stored"] is True
+        assert parsed["rid"] == "r-new"
+
+    def test_failure_envelope_on_missing_required_param(
+        self, provider, mock_client,
+    ):
+        # Empty args → "Missing required parameter" path inside _do_remember.
+        out = provider.handle_tool_call("yantrikdb_remember", {})
+        _assert_envelope(out, expected_tool="yantrikdb_remember", expected_ok=False)
+        parsed = json.loads(out)
+        assert "Missing required" in parsed["error"]
+        # Direct tool_error call from _do_* path: dispatcher backfilled `tool`.
+        assert parsed["tool"] == "yantrikdb_remember"
+
+    def test_failure_envelope_on_backend_unavailable(
+        self, provider, mock_client, client_module,
+    ):
+        """Transient backend failure (simulating YDB cluster restart, partition,
+        wedge) — exactly the scenario yantrikdb-agi flagged. Failure must be
+        unambiguous in the envelope so the agent's narrative LLM can't
+        confabulate success."""
+        mock_client.remember.side_effect = client_module.YantrikDBServerError(
+            "engine unreachable: connection refused at 192.168.4.13:7438"
+        )
+        out = provider.handle_tool_call(
+            "yantrikdb_remember",
+            {"text": "this write will never land", "importance": 0.9},
+        )
+        _assert_envelope(out, expected_tool="yantrikdb_remember", expected_ok=False)
+        parsed = json.loads(out)
+        assert "unreachable" in parsed["error"]
+        # Critical: explicit `status: "failed"` + `ok: false` so even a
+        # narrative-summarization LLM can't gloss past the failure.
+        assert parsed["status"] == "failed"
+        assert parsed["ok"] is False
+
+    def test_envelope_on_unknown_tool(self, provider, mock_client):
+        out = provider.handle_tool_call("yantrikdb_nonexistent", {})
+        _assert_envelope(out, expected_tool="yantrikdb_nonexistent", expected_ok=False)
+        assert "Unknown tool" in json.loads(out)["error"]
+
+    def test_envelope_on_cron_context_skip(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        """Cron-context provider has `_client = None` — early-return error
+        path. Must still carry the envelope."""
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        p = provider_module.YantrikDBMemoryProvider()
+        p.initialize("sess", agent_context="cron", platform="cron")
+        out = p.handle_tool_call("yantrikdb_remember", {"text": "x"})
+        _assert_envelope(out, expected_tool="yantrikdb_remember", expected_ok=False)
+
+    def test_envelope_on_skills_disabled(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        """Skills feature flag off: short-circuit error must still envelope."""
+        monkeypatch.setenv("YANTRIKDB_MODE", "http")
+        monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
+        monkeypatch.delenv("YANTRIKDB_SKILLS_ENABLED", raising=False)  # default off
+        p = provider_module.YantrikDBMemoryProvider()
+        with patch.object(provider_module, "make_backend", return_value=mock_client):
+            p.initialize("sess", agent_workspace="w", agent_identity="i")
+        out = p.handle_tool_call(
+            "yantrikdb_skill_search", {"query": "any"},
+        )
+        _assert_envelope(out, expected_tool="yantrikdb_skill_search", expected_ok=False)
+        assert "disabled" in json.loads(out)["error"].lower()
+
+    def test_envelope_present_on_all_dispatch_paths(self, provider, mock_client):
+        """Comprehensive sweep — every dispatch branch returns the envelope.
+        Catches regressions where someone adds a new tool but forgets to
+        route through the wrapper."""
+        scenarios = [
+            ("yantrikdb_remember", {"text": "x"}),
+            ("yantrikdb_recall", {"query": "x"}),
+            ("yantrikdb_forget", {"rid": "r1"}),
+            ("yantrikdb_think", {}),
+            ("yantrikdb_conflicts", {}),
+            ("yantrikdb_relate", {"entity": "A", "target": "B", "relationship": "rel"}),
+            ("yantrikdb_stats", {}),
+            ("yantrikdb_pending_triggers", {}),
+            ("yantrikdb_acknowledge_trigger", {"trigger_id": "t-1"}),
+            ("yantrikdb_dismiss_trigger", {"trigger_id": "t-1"}),
+            ("yantrikdb_act_on_trigger", {"trigger_id": "t-1"}),
+            ("yantrikdb_skill_search", {"query": "x"}),
+            ("yantrikdb_skill_define", {
+                "skill_id": "git.commit_clean",
+                "body": "Always rebase before merge so history stays linear.",
+                "skill_type": "procedure",
+                "applies_to": ["git"],
+            }),
+            ("yantrikdb_skill_outcome", {"skill_id": "git.commit_clean", "succeeded": True}),
+        ]
+        for tool_name, args in scenarios:
+            out = provider.handle_tool_call(tool_name, args)
+            parsed = json.loads(out)
+            missing = ENVELOPE_KEYS - parsed.keys()
+            assert not missing, f"{tool_name} missing envelope keys: {missing}"
+            assert parsed["tool"] == tool_name, f"{tool_name} wrong tool field: {parsed.get('tool')!r}"
+
+
+# ---------------------------------------------------------------------------
 # Tool dispatch
 # ---------------------------------------------------------------------------
 
