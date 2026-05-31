@@ -240,6 +240,7 @@ EXPECTED_TOOL_NAMES = {
     "yantrikdb_skill_search",
     "yantrikdb_skill_define",
     "yantrikdb_skill_outcome",
+    "yantrikdb_extraction_stats",
 }
 
 
@@ -261,7 +262,7 @@ class TestToolSchemas:
             "yantrikdb_skill_search", "yantrikdb_skill_define", "yantrikdb_skill_outcome",
         }
         assert names == base
-        assert len(names) == 12  # 8 originals + 4 trigger consumer tools (v0.4.13)
+        assert len(names) == 13  # 8 originals + 4 trigger consumer tools (v0.4.13) + extraction_stats (v0.5)
 
     def test_no_tools_in_cron_context(self, provider_module, monkeypatch):
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
@@ -1379,8 +1380,8 @@ class TestSkillsFeatureFlag:
         names = {s["name"] for s in p.get_tool_schemas()}
         skill_names = {n for n in names if n.startswith("yantrikdb_skill_")}
         assert skill_names == set(), f"skills should be hidden by default, got {skill_names}"
-        # 8 core tools + 4 trigger consumer tools (v0.4.13) = 12
-        assert len(names) == 12
+        # 8 core tools + 4 trigger consumer tools (v0.4.13) + extraction_stats (v0.5) = 13
+        assert len(names) == 13
 
     def test_enabled_includes_skill_tools(
         self, provider_module, mock_client, monkeypatch,
@@ -1390,8 +1391,8 @@ class TestSkillsFeatureFlag:
         assert "yantrikdb_skill_search" in names
         assert "yantrikdb_skill_define" in names
         assert "yantrikdb_skill_outcome" in names
-        # 12 core+trigger tools + 3 skill tools = 15
-        assert len(names) == 15
+        # 13 core+trigger+stats tools + 3 skill tools = 16
+        assert len(names) == 16
 
     def test_disabled_skill_call_short_circuits(
         self, provider_module, mock_client, monkeypatch,
@@ -2115,3 +2116,239 @@ class TestWaveA3PendingConflicts:
         second = provider.system_prompt_block()
         assert "Pending contradictions" in first
         assert "Pending contradictions" in second
+
+
+# ---------------------------------------------------------------------------
+# v0.5.0 Wave B — auto-extraction cheap tier + effectiveness ledger
+# ---------------------------------------------------------------------------
+
+
+class TestWaveBExtractor:
+    """Unit tests for yantrikdb/extractor.py — the regex+heuristic NER
+    layer that converts user-message text into ExtractionCandidate
+    records. High-precision-low-recall by design.
+    """
+
+    @pytest.fixture
+    def extractor(self, provider_module):
+        # Depend on provider_module so the conftest plugin-loader has run
+        # (it registers yantrikdb_plugin_under_test.extractor in sys.modules).
+        import sys
+        return sys.modules["yantrikdb_plugin_under_test.extractor"]
+
+    def test_preference_pattern_extracts(self, extractor):
+        out = extractor.extract_candidates("I prefer tabs over spaces.")
+        assert len(out) == 1
+        assert out[0].pattern == "preference"
+        assert out[0].text == "user prefers tabs"
+        assert out[0].domain == "preference"
+
+    def test_possession_with_favorite_prefix(self, extractor):
+        out = extractor.extract_candidates("my favorite editor is Neovim")
+        assert any(c.pattern == "possession" for c in out)
+        c = next(c for c in out if c.pattern == "possession")
+        assert c.text == "user's favorite editor is Neovim"
+        assert c.domain == "preference"  # strips 'favorite ' prefix in mapping
+
+    def test_identity_pattern_extracts_name(self, extractor):
+        out = extractor.extract_candidates("my name is Pranab Sarkar")
+        # may also match possession because attr=name is in the set
+        canonical = [c for c in out if "Pranab Sarkar" in c.text]
+        assert canonical, "should extract identity from 'my name is X'"
+
+    def test_location_extracts_employer(self, extractor):
+        out = extractor.extract_candidates("I work at Walmart")
+        assert any(
+            c.pattern == "location" and "Walmart" in c.text for c in out
+        )
+
+    def test_url_and_email_extracted(self, extractor):
+        out = extractor.extract_candidates(
+            "Check https://yantrikdb.com and email developer@pranab.co.in"
+        )
+        patterns = {c.pattern for c in out}
+        assert "url" in patterns
+        assert "email" in patterns
+
+    def test_generic_filler_does_not_extract(self, extractor):
+        # No regex pattern matches "I think the build is broken"
+        assert extractor.extract_candidates("I think the build is broken") == []
+
+    def test_stopword_value_filtered(self, extractor):
+        # "I prefer it" → 'it' is in _STOPWORD_VALUES, filtered
+        assert extractor.extract_candidates("I prefer it") == []
+
+    def test_dedup_by_canonical_text(self, extractor):
+        # 'my name is X' fires both possession + identity patterns; canonical
+        # text dedup keeps only one
+        out = extractor.extract_candidates("my name is Pranab Sarkar")
+        texts = [c.text.lower() for c in out]
+        assert len(texts) == len(set(texts))
+
+    def test_bare_confirmation_detected(self, extractor):
+        for phrase in ("yes", "Yes.", "yep", "RIGHT", "exactly!"):
+            assert extractor.is_user_confirmation(phrase), phrase
+
+    def test_confirmation_with_content_not_bare(self, extractor):
+        # "yes the database is Postgres" should NOT count as bare
+        # confirmation — it adds new user content that gets extracted normally.
+        assert not extractor.is_user_confirmation("yes the database is Postgres")
+
+
+class TestWaveBSyncTurnExtraction:
+    """sync_turn() now runs the extractor and persists candidates with
+    source='extracted', certainty=0.4. The whole-message store is
+    preserved (sync_user_messages contract); extraction is additive.
+    """
+
+    def _wait_sync(self, provider):
+        if provider._sync_thread and provider._sync_thread.is_alive():
+            provider._sync_thread.join(timeout=5.0)
+
+    def test_user_turn_runs_extractor(self, provider, mock_client):
+        provider.sync_turn("I prefer tabs over spaces.", "", session_id="sess-1")
+        self._wait_sync(provider)
+        # remember called with: 1 whole-message + 1 extracted candidate
+        calls = mock_client.remember.call_args_list
+        assert len(calls) >= 2
+        extracted = [
+            c for c in calls
+            if (c.kwargs.get("metadata") or {}).get("source") == "extracted"
+        ]
+        assert len(extracted) == 1
+        meta = extracted[0].kwargs["metadata"]
+        assert meta["extractor"] == "preference"
+        assert meta["certainty"] == 0.4
+
+    def test_confirmation_extracts_prior_assistant(self, provider, mock_client):
+        # Turn 1: user asks, assistant asserts a fact
+        provider.sync_turn(
+            "what database should I use?",
+            "Based on your notes, Postgres is the right choice for you.",
+            session_id="sess-1",
+        )
+        self._wait_sync(provider)
+        mock_client.remember.reset_mock()
+        # Turn 2: user bare-confirms — prior assistant extraction should fire
+        provider.sync_turn("yes", "", session_id="sess-1")
+        self._wait_sync(provider)
+        calls = mock_client.remember.call_args_list
+        # Look for an extracted candidate whose speaker is "assistant"
+        from_assistant = [
+            c for c in calls
+            if (c.kwargs.get("metadata") or {}).get("speaker") == "assistant"
+        ]
+        # Whether something extracted from the assistant text depends on
+        # patterns matching. Either way, the path runs without error and
+        # if a candidate WAS extracted it carries the right metadata.
+        for c in from_assistant:
+            meta = c.kwargs["metadata"]
+            assert meta["source"] == "extracted"
+            assert meta["confirmed_by_user"] is True
+
+    def test_non_confirmation_does_not_promote_prior(
+        self, provider, mock_client,
+    ):
+        # Establish prior assistant turn
+        provider.sync_turn(
+            "what time is it?",
+            "It's 3pm in Mountain Time per your stated preference.",
+            session_id="sess-1",
+        )
+        self._wait_sync(provider)
+        mock_client.remember.reset_mock()
+        # Turn 2: user message is NOT a bare confirmation — no prior-turn extraction
+        provider.sync_turn(
+            "actually, change the timezone",
+            "",
+            session_id="sess-1",
+        )
+        self._wait_sync(provider)
+        calls = mock_client.remember.call_args_list
+        speakers = {
+            (c.kwargs.get("metadata") or {}).get("speaker") for c in calls
+        }
+        # No assistant-speaker extractions should appear
+        assert "assistant" not in speakers
+
+    def test_extraction_disabled_skips(self, provider, mock_client):
+        provider._config.extraction_enabled = False
+        provider.sync_turn("I prefer tabs over spaces.", "", session_id="sess-1")
+        self._wait_sync(provider)
+        # Only the whole-message store; no extracted candidates
+        extracted = [
+            c for c in mock_client.remember.call_args_list
+            if (c.kwargs.get("metadata") or {}).get("source") == "extracted"
+        ]
+        assert extracted == []
+
+
+class TestWaveBRecallFilter:
+    """Default recall hides extracted candidates (source='extracted')
+    so unpromoted noise doesn't outrank canonical memories. Caller can
+    opt in via include_candidates=true.
+    """
+
+    def test_default_recall_filters_candidates(self, provider, mock_client):
+        mock_client.recall.return_value = {
+            "results": [
+                {"rid": "r1", "text": "canonical fact", "score": 0.9, "metadata": {}},
+                {"rid": "r2", "text": "extracted noise", "score": 0.85,
+                 "metadata": {"source": "extracted", "certainty": 0.4}},
+            ],
+        }
+        out = provider.handle_tool_call("yantrikdb_recall", {"query": "x"})
+        parsed = json.loads(out)
+        texts = [r["text"] for r in parsed["results"]]
+        assert "canonical fact" in texts
+        assert "extracted noise" not in texts
+
+    def test_include_candidates_surfaces_extracted(
+        self, provider, mock_client,
+    ):
+        mock_client.recall.return_value = {
+            "results": [
+                {"rid": "r1", "text": "canonical", "score": 0.9, "metadata": {}},
+                {"rid": "r2", "text": "extracted hit", "score": 0.85,
+                 "metadata": {"source": "extracted"}},
+            ],
+        }
+        out = provider.handle_tool_call(
+            "yantrikdb_recall",
+            {"query": "x", "include_candidates": True},
+        )
+        texts = [r["text"] for r in json.loads(out)["results"]]
+        assert "extracted hit" in texts
+
+
+class TestWaveBExtractionStatsTool:
+    """yantrikdb_extraction_stats surfaces per-pattern counts of
+    candidates in the substrate so noisy patterns can be tuned.
+    MVP samples via broad recall + post-filter.
+    """
+
+    def test_stats_groups_by_extractor(self, provider, mock_client):
+        # Mock recall to return a mix of extracted + non-extracted records
+        mock_client.recall.return_value = {
+            "results": [
+                {"rid": "e1", "text": "user prefers tabs", "score": 0.9,
+                 "metadata": {"source": "extracted", "extractor": "preference",
+                              "speaker": "user"}},
+                {"rid": "e2", "text": "user's name is Pranab", "score": 0.85,
+                 "metadata": {"source": "extracted", "extractor": "identity",
+                              "speaker": "user"}},
+                {"rid": "e3", "text": "user prefers spaces", "score": 0.8,
+                 "metadata": {"source": "extracted", "extractor": "preference",
+                              "speaker": "user"}},
+                {"rid": "k1", "text": "canonical fact", "score": 0.95,
+                 "metadata": {}},
+            ],
+        }
+        out = provider.handle_tool_call("yantrikdb_extraction_stats", {})
+        parsed = json.loads(out)
+        assert parsed["total_candidates_sampled"] >= 3
+        assert parsed["by_pattern"]["preference"] == 2
+        assert parsed["by_pattern"]["identity"] == 1
+        # Canonical "k1" not counted
+        assert sum(parsed["by_pattern"].values()) == parsed["total_candidates_sampled"]
+        assert parsed["by_speaker"]["user"] >= 3

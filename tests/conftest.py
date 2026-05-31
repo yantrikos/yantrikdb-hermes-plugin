@@ -119,6 +119,18 @@ def _load_plugin() -> tuple[types.ModuleType, types.ModuleType]:
     sys.modules[f"{_PKG}.client"] = client_mod
     client_spec.loader.exec_module(client_mod)
 
+    # v0.5 Wave B — load the extractor submodule so `from . import extractor`
+    # resolves when the provider __init__ runs sync_turn.
+    extractor_path = _ROOT / "extractor.py"
+    if extractor_path.exists():
+        ext_spec = importlib.util.spec_from_file_location(
+            f"{_PKG}.extractor", str(extractor_path),
+        )
+        assert ext_spec and ext_spec.loader
+        ext_mod = importlib.util.module_from_spec(ext_spec)
+        sys.modules[f"{_PKG}.extractor"] = ext_mod
+        ext_spec.loader.exec_module(ext_mod)
+
     init_spec = importlib.util.spec_from_file_location(
         _PKG, str(_ROOT / "__init__.py"),
         submodule_search_locations=[str(_ROOT)],

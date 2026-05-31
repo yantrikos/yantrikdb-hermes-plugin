@@ -631,6 +631,30 @@ SKILL_OUTCOME_SCHEMA = {
     },
 }
 
+EXTRACTION_STATS_SCHEMA = {
+    "name": "yantrikdb_extraction_stats",
+    "description": (
+        "v0.5 Wave B — per-extractor counts of candidate facts auto-extracted "
+        "from conversation turns. Use to tune or disable noisy patterns: "
+        "low precision (many candidates, few promoted) means the pattern "
+        "is over-eager and should have stricter regex or be turned off via "
+        "config. Returns counts grouped by extractor pattern, with a "
+        "lightweight 'promoted' indicator (candidates whose canonical text "
+        "is also stored as a non-candidate inference record)."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "namespace": {
+                "type": "string",
+                "description": "Optional namespace to scope the count to. "
+                              "Defaults to the provider's active namespace.",
+            },
+        },
+        "required": [],
+    },
+}
+
 ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
@@ -647,6 +671,7 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     SKILL_SEARCH_SCHEMA,
     SKILL_DEFINE_SCHEMA,
     SKILL_OUTCOME_SCHEMA,
+    EXTRACTION_STATS_SCHEMA,
 ]
 
 
@@ -970,6 +995,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._pending_conflicts: list[dict[str, Any]] = []
         self._pending_conflicts_last_poll: float = 0.0
 
+        # v0.5.0+ Wave B — the prior assistant message kept on a
+        # per-session basis so that when the next user turn is a bare
+        # confirmation phrase ("yes", "right", etc.), we can extract
+        # from that prior assistant assertion under the HANDOFF §10.1
+        # carve-out. Cleared on session switch.
+        self._prior_assistant_by_session: dict[str, str] = {}
+
     # -- Identity ---------------------------------------------------------
 
     @property
@@ -1222,6 +1254,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             self._prefetch_skills.clear()
         self._pending_conflicts = []
         self._pending_conflicts_last_poll = 0.0
+        self._prior_assistant_by_session.clear()
         with self._client_lock:
             if self._client is not None:
                 self._client.close()
@@ -1257,6 +1290,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
             if parent_session_id:
                 self._prefetch_results.pop(parent_session_id, None)
                 self._prefetch_skills.pop(parent_session_id, None)
+        # Wave B prior-assistant buffer is session-scoped; clear by key.
+        if reset:
+            self._prior_assistant_by_session.clear()
+        elif old_session_id:
+            self._prior_assistant_by_session.pop(old_session_id, None)
+            if parent_session_id:
+                self._prior_assistant_by_session.pop(parent_session_id, None)
         # Conflict cache is namespace-scoped (not session-scoped), so it
         # survives session switches within the same namespace. Reset only
         # clears the timestamp so the next prefetch refreshes it.
@@ -1496,15 +1536,22 @@ class YantrikDBMemoryProvider(MemoryProvider):
         *,
         session_id: str = "",
     ) -> None:
-        """Persist the user message after a completed turn.
+        """Persist the user message + run v0.5 Wave B extraction.
 
-        Assistant-message extraction is intentionally out of v1 scope
-        (HANDOFF §10.1) — storing LLM output as fact amplifies
-        hallucination. think() cleans up ambient noise at session end.
+        v1 behaviour preserved: when ``sync_user_messages`` is on, the
+        whole user message is remembered verbatim. v0.5 Wave B adds a
+        cheap-tier extraction pass over the same text that produces
+        small fact candidates with ``source="extracted"`` +
+        ``certainty<=0.4`` so they don't outrank canonical memories on
+        default recall (filtered by ``_do_recall`` unless the caller
+        opts in).
+
+        §10.1 carve-out: when the user's message is a bare confirmation
+        phrase ("yes", "right", etc.), the PRIOR assistant turn becomes
+        eligible for extraction too — but ONLY then. We never extract
+        from raw LLM output without explicit user assent.
         """
         if self._cron_skipped or self._client is None or self._config is None:
-            return
-        if not self._config.sync_user_messages:
             return
         if self._breaker_open():
             return
@@ -1512,24 +1559,52 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if not text:
             return
 
+        cfg = self._config
         client = self._client
         snapshot_sid = self._session_id or session_id
         namespace = self._namespace
 
+        # Determine §10.1 carve-out before clearing the prior buffer.
+        from . import extractor as _ext
+        prior_assistant = ""
+        if cfg.extraction_enabled and _ext.is_user_confirmation(text):
+            prior_assistant = self._prior_assistant_by_session.get(
+                snapshot_sid, ""
+            )
+
         def _run() -> None:
-            try:
-                client.remember(
-                    text,
-                    namespace=namespace,
-                    importance=_estimate_importance(text),
-                    metadata={"session_id": snapshot_sid, "role": "user", **self._write_scope_metadata()},
+            # 1. Existing whole-message store of the user turn.
+            if cfg.sync_user_messages:
+                try:
+                    client.remember(
+                        text,
+                        namespace=namespace,
+                        importance=_estimate_importance(text),
+                        metadata={
+                            "session_id": snapshot_sid,
+                            "role": "user",
+                            **self._write_scope_metadata(),
+                        },
+                    )
+                    self._record_success()
+                except YantrikDBClientError as e:
+                    logger.debug("YantrikDB sync_turn rejected: %s", e)
+                except YantrikDBError as e:
+                    self._record_failure()
+                    logger.debug("YantrikDB sync_turn failed: %s", e)
+
+            # 2. v0.5 Wave B — cheap-tier extraction.
+            if cfg.extraction_enabled and cfg.extraction_tier == "cheap":
+                self._extract_and_record(
+                    text, speaker="user", namespace=namespace,
+                    snapshot_sid=snapshot_sid,
                 )
-                self._record_success()
-            except YantrikDBClientError as e:
-                logger.debug("YantrikDB sync_turn rejected: %s", e)
-            except YantrikDBError as e:
-                self._record_failure()
-                logger.debug("YantrikDB sync_turn failed: %s", e)
+                if prior_assistant:
+                    self._extract_and_record(
+                        prior_assistant, speaker="assistant",
+                        namespace=namespace, snapshot_sid=snapshot_sid,
+                        confirmed_by_user=True,
+                    )
 
         if self._sync_thread and self._sync_thread.is_alive():
             self._sync_thread.join(timeout=_SYNC_JOIN_SECS)
@@ -1537,6 +1612,64 @@ class YantrikDBMemoryProvider(MemoryProvider):
             target=_run, daemon=True, name="yantrikdb-sync",
         )
         self._sync_thread.start()
+
+        # Track this assistant turn for the next-user-confirmation carve-out.
+        ac = (assistant_content or "").strip()
+        if ac:
+            self._prior_assistant_by_session[snapshot_sid] = ac
+        else:
+            self._prior_assistant_by_session.pop(snapshot_sid, None)
+
+    def _extract_and_record(
+        self,
+        text: str,
+        *,
+        speaker: str,
+        namespace: str,
+        snapshot_sid: str,
+        confirmed_by_user: bool = False,
+    ) -> None:
+        """Run the extractor over ``text`` and write candidates."""
+        if self._client is None or self._config is None:
+            return
+        from . import extractor as _ext
+        try:
+            candidates = _ext.extract_candidates(text, speaker=speaker)
+        except Exception as e:
+            logger.debug("YantrikDB extraction failed: %s", e)
+            return
+        if not candidates:
+            return
+        cfg = self._config
+        for c in candidates:
+            try:
+                meta = {
+                    "session_id": snapshot_sid,
+                    "role": speaker,
+                    "source": "extracted",
+                    "extractor": c.pattern,
+                    "certainty": cfg.extraction_certainty,
+                    "confirmed_by_user": confirmed_by_user,
+                    **c.metadata,
+                    **self._write_scope_metadata(),
+                }
+                self._client.remember(
+                    c.text,
+                    namespace=namespace,
+                    importance=cfg.extraction_certainty,
+                    metadata=meta,
+                )
+            except YantrikDBClientError as e:
+                logger.debug(
+                    "YantrikDB extraction candidate rejected (%s): %s",
+                    c.pattern, e,
+                )
+            except YantrikDBError as e:
+                self._record_failure()
+                logger.debug(
+                    "YantrikDB extraction candidate write failed (%s): %s",
+                    c.pattern, e,
+                )
 
     # -- Tool dispatch ----------------------------------------------------
 
@@ -1606,6 +1739,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_dismiss_trigger(args)
             elif tool_name == "yantrikdb_act_on_trigger":
                 raw = self._do_act_on_trigger(args)
+            elif tool_name == "yantrikdb_extraction_stats":
+                raw = self._do_extraction_stats(args)
             elif tool_name.startswith("yantrikdb_skill_"):
                 if not (self._config and self._config.skills_enabled):
                     return tool_error(
@@ -1662,11 +1797,26 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return tool_error("Missing required parameter: query")
         default_top_k = self._config.top_k if self._config else 10
         top_k = min(_coerce_int(args.get("top_k"), default_top_k), 50)
+        # v0.5 Wave B: candidates land with source="extracted" and
+        # low certainty. Default recall hides them so they don't outrank
+        # canonical memories. Caller can opt in per-call with
+        # include_candidates=true OR via the config default.
+        include_candidates = args.get("include_candidates")
+        if include_candidates is None and self._config is not None:
+            include_candidates = self._config.recall_includes_candidates
+        # Pull more than top_k since we may filter some out.
+        engine_top_k = top_k * 2 if not include_candidates else top_k
         results = self._recall_with_base_fallback(
             query,
-            top_k=top_k,
+            top_k=min(engine_top_k, 50),
             domain=args.get("domain"),
         )
+        if not include_candidates:
+            results = [
+                r for r in results
+                if (r.get("metadata") or {}).get("source") != "extracted"
+            ]
+            results = results[:top_k]
         self._record_success()
         compact = [
             {
@@ -1986,6 +2136,62 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "matches any, call `yantrikdb_skill_search` to retrieve the body."
         )
         return "\n".join(lines)
+
+    # -- v0.5.0 Wave B: extraction stats handler --------------------------
+
+    def _do_extraction_stats(self, args: dict[str, Any]) -> str:
+        """Surface per-extractor counts of candidate facts.
+
+        MVP: probe the substrate via recall on broad queries, post-filter
+        to ``source="extracted"``, group by ``metadata.extractor``. Not
+        a perfect count (recall is similarity-bounded), but gives a
+        useful tuning signal. A future engine-side ``list_by_metadata``
+        API would let us return exact counts.
+        """
+        client = self._require_client()
+        namespace = (args.get("namespace") or self._namespace or "").strip()
+        # Probe with several broad queries to widen coverage; dedupe by rid.
+        probes = ["user", "agent", "is", "prefers", "name"]
+        seen: set[str] = set()
+        candidates: list[dict[str, Any]] = []
+        for q in probes:
+            try:
+                resp = client.recall(query=q, top_k=50, namespace=namespace)
+            except (YantrikDBClientError, YantrikDBError):
+                continue
+            for r in (resp.get("results") or []):
+                rid = r.get("rid") or r.get("id")
+                if not rid or rid in seen:
+                    continue
+                meta = r.get("metadata") or {}
+                if meta.get("source") != "extracted":
+                    continue
+                seen.add(rid)
+                candidates.append(r)
+
+        by_pattern: dict[str, int] = {}
+        by_speaker: dict[str, int] = {}
+        for c in candidates:
+            meta = c.get("metadata") or {}
+            pattern = meta.get("extractor") or "unknown"
+            by_pattern[pattern] = by_pattern.get(pattern, 0) + 1
+            speaker = meta.get("speaker") or meta.get("role") or "unknown"
+            by_speaker[speaker] = by_speaker.get(speaker, 0) + 1
+
+        out = {
+            "namespace": namespace,
+            "total_candidates_sampled": len(candidates),
+            "by_pattern": dict(sorted(by_pattern.items(), key=lambda kv: -kv[1])),
+            "by_speaker": by_speaker,
+            "sampling_method": "probe_recall",
+            "note": (
+                "Counts are recall-bounded estimates, not exact. "
+                "Use to identify noisy patterns (high count + you rarely "
+                "see them confirmed in your own usage) and disable them "
+                "via stricter regex or YANTRIKDB_EXTRACTION_ENABLED=0."
+            ),
+        }
+        return json.dumps(out)
 
     # -- v0.5.0 Wave A2: skill auto-attach surface ------------------------
 
