@@ -258,6 +258,31 @@ RECALL_SCHEMA = {
                 "type": "string",
                 "description": "Optional domain filter (e.g. 'work').",
             },
+            "since": {
+                "type": "string",
+                "description": (
+                    "v0.5+: time-aware filter — only return memories created "
+                    "at-or-after this point. Accepts ISO timestamps "
+                    "(2026-05-29T00:00:00Z, 2026-05-29) or relative shorthand "
+                    "(today, yesterday, last week, 7d, 24h). Combine with "
+                    "`until` for a window."
+                ),
+            },
+            "until": {
+                "type": "string",
+                "description": (
+                    "v0.5+: time-aware filter — only return memories created "
+                    "before this point. Same formats as `since`."
+                ),
+            },
+            "include_candidates": {
+                "type": "boolean",
+                "description": (
+                    "v0.5+: include source=extracted candidate facts "
+                    "(certainty<=0.4) in results. Default false — "
+                    "candidates are hidden until think() promotes them."
+                ),
+            },
         },
         "required": ["query"],
     },
@@ -960,6 +985,55 @@ def _coerce_float(raw: Any, *, default: float) -> float:
         return float(raw) if raw is not None else default
     except (TypeError, ValueError):
         return default
+
+
+def _parse_time_filter(value: Any) -> float | None:
+    """v0.5 Wave D2 — parse a `since`/`until` value into a UNIX timestamp.
+
+    Accepts:
+      - None / empty → None (no filter)
+      - ISO timestamp ("2026-05-29T00:00:00Z", "2026-05-29")
+      - Relative shorthand: "today", "yesterday", "now", "last week"
+      - Duration ago: "7d", "24h", "30m", "2w"
+    Returns None when the value can't be parsed (caller should treat
+    as "no filter applied" rather than erroring out).
+    """
+    if value is None:
+        return None
+    s = str(value).strip().lower()
+    if not s:
+        return None
+    import datetime as _dt
+    now = time.time()
+    today_midnight = _dt.datetime.now().replace(
+        hour=0, minute=0, second=0, microsecond=0,
+    ).timestamp()
+    if s in ("now", "today"):
+        return today_midnight
+    if s == "yesterday":
+        return today_midnight - 86400
+    if s in ("last week", "lastweek", "past week", "1w"):
+        return now - 7 * 86400
+    if s in ("last month", "lastmonth"):
+        return now - 30 * 86400
+    # Duration shorthand: e.g. "7d", "24h", "30m", "2w"
+    import re as _re
+    m = _re.fullmatch(r"(\d+)\s*([mhdw])", s)
+    if m:
+        n, unit = int(m.group(1)), m.group(2)
+        mult = {"m": 60, "h": 3600, "d": 86400, "w": 7 * 86400}[unit]
+        return now - n * mult
+    # ISO date or datetime
+    iso_candidates = [s, s + "T00:00:00", s.replace("z", "+00:00")]
+    for iso in iso_candidates:
+        try:
+            dt = _dt.datetime.fromisoformat(iso)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_dt.UTC)
+            return dt.timestamp()
+        except ValueError:
+            continue
+    return None
 
 
 def _coerce_int(raw: Any, default: int) -> int:
@@ -1842,7 +1916,24 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 r for r in results
                 if (r.get("metadata") or {}).get("source") != "extracted"
             ]
-            results = results[:top_k]
+        # v0.5 Wave D2 — time-aware since/until filter applied client-side.
+        # Engine-side filter would be more efficient; this is the no-deps
+        # MVP using the created_at field already returned per result.
+        since_ts = _parse_time_filter(args.get("since"))
+        until_ts = _parse_time_filter(args.get("until"))
+        if since_ts is not None or until_ts is not None:
+            kept = []
+            for r in results:
+                ts = r.get("created_at")
+                if not isinstance(ts, (int, float)):
+                    continue  # records without timestamps can't satisfy the filter
+                if since_ts is not None and ts < since_ts:
+                    continue
+                if until_ts is not None and ts >= until_ts:
+                    continue
+                kept.append(r)
+            results = kept
+        results = results[:top_k]
         self._record_success()
         compact = [
             {
@@ -2528,19 +2619,62 @@ class YantrikDBMemoryProvider(MemoryProvider):
             )
 
     def on_pre_compress(self, messages: list[dict[str, Any]]) -> str:
-        """Preserve high-salience memories across context compression.
+        """Preserve high-salience context across Hermes compression.
 
-        Seeds recall with the tail of the about-to-be-compressed messages
-        and returns a markdown block. Hermes' compressor includes this
-        in the summary prompt so insights don't get dropped.
+        Pre-v0.5 behaviour preserved: seeds recall with the tail of the
+        about-to-be-compressed messages and returns a markdown block that
+        Hermes' compressor includes in the summary prompt.
+
+        v0.5 Wave D1 additions: also snapshots a one-line gist of the
+        being-dropped middle (skipping the tail Hermes preserves
+        verbatim) into the substrate as a high-importance memory tagged
+        `pre_compression=true`. Post-compression recall can resurface
+        it via `yantrikdb_recall` like any other memory; the
+        `pre_compression` tag lets the agent or stats tool distinguish
+        compression-summary memories from ordinary records.
         """
         if self._cron_skipped or self._client is None:
             return ""
         if self._breaker_open():
             return ""
+        if not messages:
+            return ""
+
         tail = " ".join(
             (m.get("content") or "") for m in messages[-6:] if isinstance(m, dict)
         ).strip()
+
+        # v0.5 D1: snapshot the gist of the dropped middle.
+        # `messages` is what Hermes is ABOUT TO compress; we don't know
+        # which segment survives Hermes' tail-keep heuristic, but anything
+        # we record here will survive compression because it's in the
+        # substrate, not the conversation buffer.
+        middle = [
+            m for m in messages[:-6]
+            if isinstance(m, dict) and m.get("role") in {"user", "assistant"}
+        ]
+        if middle:
+            gist = self._compose_compression_gist(middle)
+            if gist:
+                try:
+                    self._client.remember(
+                        gist,
+                        namespace=self._namespace,
+                        importance=0.75,  # higher than baseline; this is a deliberate save
+                        metadata={
+                            "session_id": self._session_id,
+                            "source": "compression_summary",
+                            "pre_compression": True,
+                            "turns_summarized": len(middle),
+                            **self._write_scope_metadata(),
+                        },
+                    )
+                    self._record_success()
+                except (YantrikDBClientError, YantrikDBError) as e:
+                    logger.debug(
+                        "YantrikDB on_pre_compress gist write failed: %s", e,
+                    )
+
         if not tail:
             return ""
         try:
@@ -2554,6 +2688,36 @@ class YantrikDBMemoryProvider(MemoryProvider):
         except YantrikDBError as e:
             logger.debug("YantrikDB on_pre_compress failed: %s", e)
             return ""
+
+    def _compose_compression_gist(self, middle: list[dict[str, Any]]) -> str:
+        """Distill the middle of a conversation into a single-line gist.
+
+        v0.5 D1 MVP: take the first user turn (intent) + the count of
+        message exchanges + the last assistant turn (outcome) as a
+        machine-readable summary. Engine-side LLM summarization would
+        be more semantic; this preserves the discoverable shape with
+        zero new dependencies.
+        """
+        first_user = next(
+            (m.get("content", "") for m in middle if m.get("role") == "user"),
+            "",
+        )
+        last_assistant = next(
+            (m.get("content", "") for m in reversed(middle)
+             if m.get("role") == "assistant"),
+            "",
+        )
+        if not first_user:
+            return ""
+        intent = (first_user or "").strip().replace("\n", " ")[:200]
+        outcome = (last_assistant or "").strip().replace("\n", " ")[:200]
+        n = len(middle)
+        if outcome:
+            return (
+                f"[compression-summary, {n} turns] "
+                f"intent: {intent} | outcome: {outcome}"
+            )
+        return f"[compression-summary, {n} turns] intent: {intent}"
 
     def on_memory_write(self, action: str, target: str, content: str) -> None:
         """Mirror built-in MEMORY.md / USER.md additions into YantrikDB."""

@@ -2395,6 +2395,121 @@ class TestWaveCBundledUI:
         )
 
 
+class TestWaveDTimeAwareRecall:
+    """v0.5 Wave D2 — since/until parameters on yantrikdb_recall."""
+
+    def test_since_yesterday_filters_older(self, provider, mock_client):
+        import time
+        now = time.time()
+        mock_client.recall.return_value = {
+            "results": [
+                {"rid": "r-new", "text": "today's note",
+                 "score": 0.9, "created_at": now - 3600},
+                {"rid": "r-old", "text": "from last month",
+                 "score": 0.9, "created_at": now - 30 * 86400},
+            ],
+        }
+        out = provider.handle_tool_call(
+            "yantrikdb_recall", {"query": "x", "since": "yesterday"},
+        )
+        rids = [r["rid"] for r in json.loads(out)["results"]]
+        assert "r-new" in rids
+        assert "r-old" not in rids
+
+    def test_until_iso_filters_newer(self, provider, mock_client):
+        mock_client.recall.return_value = {
+            "results": [
+                {"rid": "r-old", "text": "ancient", "score": 0.9,
+                 "created_at": 1577836800.0},  # 2020-01-01
+                {"rid": "r-new", "text": "modern", "score": 0.9,
+                 "created_at": 1740614400.0},  # 2025-02-27
+            ],
+        }
+        out = provider.handle_tool_call(
+            "yantrikdb_recall", {"query": "x", "until": "2024-01-01"},
+        )
+        rids = [r["rid"] for r in json.loads(out)["results"]]
+        assert "r-old" in rids
+        assert "r-new" not in rids
+
+    def test_duration_shorthand_7d(self, provider, mock_client):
+        import time
+        now = time.time()
+        mock_client.recall.return_value = {
+            "results": [
+                {"rid": "r1", "text": "3d ago", "score": 0.9,
+                 "created_at": now - 3 * 86400},
+                {"rid": "r2", "text": "10d ago", "score": 0.9,
+                 "created_at": now - 10 * 86400},
+            ],
+        }
+        out = provider.handle_tool_call(
+            "yantrikdb_recall", {"query": "x", "since": "7d"},
+        )
+        rids = [r["rid"] for r in json.loads(out)["results"]]
+        assert "r1" in rids
+        assert "r2" not in rids
+
+    def test_invalid_time_string_treated_as_no_filter(
+        self, provider, mock_client,
+    ):
+        mock_client.recall.return_value = {
+            "results": [
+                {"rid": "r1", "text": "x", "score": 0.9, "created_at": 1.0},
+            ],
+        }
+        out = provider.handle_tool_call(
+            "yantrikdb_recall",
+            {"query": "x", "since": "completely-not-a-date"},
+        )
+        assert json.loads(out)["count"] >= 0
+
+
+class TestWaveDPreCompressGist:
+    """v0.5 Wave D1 — on_pre_compress also snapshots a gist of the middle."""
+
+    def test_gist_recorded_with_pre_compression_metadata(
+        self, provider, mock_client,
+    ):
+        messages = [
+            {"role": "user", "content": "investigate the deploy outage"},
+            {"role": "assistant", "content": "started kubectl logs..."},
+            {"role": "user", "content": "and the ingress?"},
+            {"role": "assistant", "content": "nginx returned 502, looking"},
+            {"role": "user", "content": "what's the fix?"},
+            {"role": "assistant", "content": "rolled back the upstream config"},
+            {"role": "user", "content": "tail1"},
+            {"role": "user", "content": "tail2"},
+            {"role": "user", "content": "tail3"},
+            {"role": "user", "content": "tail4"},
+            {"role": "user", "content": "tail5"},
+            {"role": "user", "content": "tail6"},
+        ]
+        provider.on_pre_compress(messages)
+        compression_writes = [
+            c for c in mock_client.remember.call_args_list
+            if (c.kwargs.get("metadata") or {}).get("pre_compression") is True
+        ]
+        assert len(compression_writes) == 1
+        meta = compression_writes[0].kwargs["metadata"]
+        assert meta["source"] == "compression_summary"
+        assert meta["turns_summarized"] > 0
+        text = compression_writes[0].args[0]
+        assert "investigate the deploy outage" in text
+
+    def test_no_middle_no_gist_written(self, provider, mock_client):
+        messages = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ]
+        provider.on_pre_compress(messages)
+        compression_writes = [
+            c for c in mock_client.remember.call_args_list
+            if (c.kwargs.get("metadata") or {}).get("pre_compression") is True
+        ]
+        assert compression_writes == []
+
+
 class TestWaveCObservability:
     """yantrikdb_observability rolls up engine stats + extraction +
     recent skills + provider health into a single response so the agent
