@@ -1894,3 +1894,224 @@ class TestRecentSkillsCrystallization:
         assert json.loads(out)["stored"] is True
         # And the block is empty/unmodified.
         assert "Recently learned skills" not in p.system_prompt_block()
+
+
+# ---------------------------------------------------------------------------
+# v0.5.0 Wave A — active memory: substrate auto-injects into every turn
+# ---------------------------------------------------------------------------
+
+
+class TestWaveA1AutoRecallFiltering:
+    """A1 polish — recall results below min_score are filtered out before
+    they reach the prompt; oversize blocks are truncated to the token budget.
+    The existing prefetch() plumbing already auto-injects; v0.5 just makes
+    that injection respect quality and budget thresholds.
+    """
+
+    def test_low_score_recall_hits_filtered(self, provider, mock_client):
+        mock_client.recall.return_value = {
+            "results": [
+                {"text": "high-confidence memory", "score": 0.85},
+                {"text": "noisy low-score memory", "score": 0.10},
+            ],
+        }
+        provider._config.auto_recall_min_score = 0.5
+        provider.queue_prefetch("query", session_id="s")
+        _wait_for_thread(provider._prefetch_thread)
+        block = provider.prefetch("query", session_id="s")
+        assert "high-confidence memory" in block
+        assert "noisy low-score memory" not in block
+
+    def test_oversize_block_truncated_to_budget(self, provider, mock_client):
+        mock_client.recall.return_value = {
+            "results": [
+                {"text": "x" * 400, "score": 0.9},
+                {"text": "y" * 400, "score": 0.9},
+                {"text": "z" * 400, "score": 0.9},
+            ],
+        }
+        provider._config.auto_recall_token_budget = 100  # ~400 chars
+        provider.queue_prefetch("query", session_id="s")
+        _wait_for_thread(provider._prefetch_thread)
+        block = provider.prefetch("query", session_id="s")
+        # Char cap ~= 400; with the prefix "## YantrikDB Recall\n" the
+        # whole block stays well under 2x the budget.
+        assert len(block) < 600
+        assert "…" in block  # truncation marker present
+
+
+class TestWaveA2SkillAutoAttach:
+    """A2 — queue_prefetch also runs skill_search and the matching skill
+    body surfaces in system_prompt_block() automatically. The agent never
+    has to call skill_search; the right procedure just appears.
+    """
+
+    def test_skill_auto_attaches_when_score_meets_threshold(
+        self, provider, mock_client,
+    ):
+        mock_client.skill_search.return_value = {
+            "skills": [{
+                "skill_id": "deploy.rolling",
+                "skill_type": "procedure",
+                "body": "Roll out 10% at a time, verify, then continue.",
+                "score": 0.72,
+            }],
+            "total": 1,
+        }
+        provider._config.auto_skill_min_score = 0.6
+        provider.queue_prefetch("how do I deploy", session_id="sess-1")
+        _wait_for_thread(provider._prefetch_thread)
+        block = provider.system_prompt_block()
+        assert "Active skill" in block
+        assert "deploy.rolling" in block
+        assert "Roll out 10%" in block
+
+    def test_skill_below_threshold_suppressed(self, provider, mock_client):
+        mock_client.skill_search.return_value = {
+            "skills": [{
+                "skill_id": "unrelated.skill",
+                "skill_type": "procedure",
+                "body": "Body text",
+                "score": 0.30,
+            }],
+            "total": 1,
+        }
+        provider._config.auto_skill_min_score = 0.6
+        provider.queue_prefetch("query", session_id="s")
+        _wait_for_thread(provider._prefetch_thread)
+        assert "Active skill" not in provider.system_prompt_block()
+
+    def test_skill_attach_drains_after_surface(self, provider, mock_client):
+        # A surfaced skill should not echo across consecutive turns.
+        mock_client.skill_search.return_value = {
+            "skills": [{
+                "skill_id": "x.y", "skill_type": "procedure",
+                "body": "b", "score": 0.9,
+            }],
+            "total": 1,
+        }
+        provider.queue_prefetch("q1", session_id="sess-1")
+        _wait_for_thread(provider._prefetch_thread)
+        first = provider.system_prompt_block()
+        second = provider.system_prompt_block()
+        assert "Active skill" in first
+        assert "Active skill" not in second
+
+    def test_skill_attach_disabled_suppresses(self, provider, mock_client):
+        provider._config.auto_skill_attach = False
+        mock_client.skill_search.return_value = {
+            "skills": [{"skill_id": "x.y", "skill_type": "procedure",
+                        "body": "b", "score": 0.99}],
+            "total": 1,
+        }
+        provider.queue_prefetch("q", session_id="s")
+        _wait_for_thread(provider._prefetch_thread)
+        mock_client.skill_search.assert_not_called()
+        assert "Active skill" not in provider.system_prompt_block()
+
+    def test_skill_attach_requires_skills_enabled(
+        self, provider, mock_client,
+    ):
+        # If the user hasn't opted into skills, A2 should not fire either.
+        provider._config.skills_enabled = False
+        mock_client.skill_search.return_value = {"skills": [], "total": 0}
+        provider.queue_prefetch("q", session_id="s")
+        _wait_for_thread(provider._prefetch_thread)
+        mock_client.skill_search.assert_not_called()
+
+    def test_skill_attach_renders_embedded_backend_shape(
+        self, provider, mock_client,
+    ):
+        # Regression test (caught by hermes-test harness against the real
+        # embedded engine, 2026-05-30): embedded skill_search returns
+        # the skill body as `text` and skill_id/skill_type nested under
+        # `metadata.*` (it reuses recall_text), unlike the HTTP backend
+        # which returns flat keys. A2 must normalize across both shapes.
+        mock_client.skill_search.return_value = {
+            "skills": [{
+                "rid": "019e7229-0819-7536-905c-c38219d5e5bb",
+                "text": "Roll out 10% at a time, verify, then continue.",
+                "score": 0.78,
+                "metadata": {
+                    "record_type": "skill",
+                    "skill_id": "deploy.rolling",
+                    "skill_type": "procedure",
+                    "applies_to": ["deploy"],
+                },
+            }],
+            "total": 1,
+        }
+        provider.queue_prefetch("how do I deploy", session_id="sess-1")
+        _wait_for_thread(provider._prefetch_thread)
+        block = provider.system_prompt_block()
+        assert "Active skill" in block
+        assert "deploy.rolling" in block, (
+            "skill_id should be resolved from metadata for embedded shape"
+        )
+        assert "procedure" in block
+        assert "Roll out 10%" in block, (
+            "skill body should be resolved from `text` for embedded shape"
+        )
+        assert "`?`" not in block, (
+            "should not render '?' fallback when metadata is present"
+        )
+
+
+class TestWaveA3PendingConflicts:
+    """A3 — unresolved conflicts() entries auto-surface in
+    system_prompt_block() so the agent sees contradictions without being
+    asked to look. Polled in the background thread, cached to amortize.
+    """
+
+    def test_conflict_polled_on_prefetch_and_surfaces(
+        self, provider, mock_client,
+    ):
+        mock_client.conflicts.return_value = {
+            "conflicts": [{
+                "conflict_id": "c1",
+                "text_a": "Pranab prefers tabs",
+                "text_b": "Pranab prefers spaces",
+            }],
+        }
+        # Force fresh poll.
+        provider._pending_conflicts_last_poll = 0.0
+        provider.queue_prefetch("q", session_id="s")
+        _wait_for_thread(provider._prefetch_thread)
+        block = provider.system_prompt_block()
+        assert "Pending contradictions" in block
+        assert "Pranab prefers tabs" in block
+        assert "Pranab prefers spaces" in block
+
+    def test_conflict_poll_cached_within_interval(
+        self, provider, mock_client,
+    ):
+        # Two consecutive prefetches within the poll interval should hit
+        # the cache, not re-call conflicts() twice.
+        mock_client.conflicts.return_value = {"conflicts": []}
+        provider._config.pending_conflicts_poll_seconds = 60.0
+        provider._pending_conflicts_last_poll = 0.0
+        provider.queue_prefetch("q1", session_id="s")
+        _wait_for_thread(provider._prefetch_thread)
+        provider.queue_prefetch("q2", session_id="s")
+        _wait_for_thread(provider._prefetch_thread)
+        assert mock_client.conflicts.call_count == 1
+
+    def test_conflict_surface_disabled(self, provider, mock_client):
+        provider._config.surface_pending_conflicts = False
+        provider._pending_conflicts = [{
+            "conflict_id": "c1", "text_a": "A", "text_b": "B",
+        }]
+        assert "Pending contradictions" not in provider.system_prompt_block()
+
+    def test_conflict_surface_repeats_until_resolved(
+        self, provider, mock_client,
+    ):
+        # Unlike skills (drain on read), conflicts surface every turn
+        # until resolve_conflict() lands.
+        provider._pending_conflicts = [{
+            "conflict_id": "c1", "text_a": "A", "text_b": "B",
+        }]
+        first = provider.system_prompt_block()
+        second = provider.system_prompt_block()
+        assert "Pending contradictions" in first
+        assert "Pending contradictions" in second
