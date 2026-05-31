@@ -1451,6 +1451,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 namespaces.append(namespace)
         if self._should_recall_base_namespace() and self._base_namespace not in namespaces:
             namespaces.append(self._base_namespace)
+        # v0.5 Wave E: union the cross-agent shared brain when opted in.
+        # Sibling agents' writes appear in this agent's recall results,
+        # tagged source=agent:<name> for traceability.
+        shared = self._shared_brain_namespace()
+        if shared and shared != self._namespace and shared not in namespaces:
+            namespaces.append(shared)
         return namespaces
 
     def _recall_with_base_fallback(
@@ -1881,15 +1887,63 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if not text:
             return tool_error("Missing required parameter: text")
         importance = _coerce_float(args.get("importance"), default=0.6)
-        resp = self._require_client().remember(
+        client = self._require_client()
+        resp = client.remember(
             text,
             namespace=self._namespace,
             importance=importance,
             domain=args.get("domain"),
             metadata={"session_id": self._session_id, **self._write_scope_metadata()},
         )
+        # v0.5 Wave E: mirror to the cross-agent shared brain when opted in.
+        # Tag with source=agent:<name> so each contributor is traceable; a
+        # failed mirror write doesn't break the primary remember path.
+        shared_ns = self._shared_brain_namespace()
+        if shared_ns and shared_ns != self._namespace:
+            try:
+                client.remember(
+                    text,
+                    namespace=shared_ns,
+                    importance=importance,
+                    domain=args.get("domain"),
+                    metadata={
+                        "session_id": self._session_id,
+                        "source": f"agent:{self._agent_name()}",
+                        "shared_brain_origin_namespace": self._namespace,
+                        **self._write_scope_metadata(),
+                    },
+                )
+            except (YantrikDBClientError, YantrikDBError) as e:
+                logger.debug(
+                    "YantrikDB shared-brain mirror write failed (%s): %s",
+                    shared_ns, e,
+                )
         self._record_success()
         return json.dumps({"rid": resp.get("rid"), "stored": True})
+
+    def _shared_brain_namespace(self) -> str:
+        """Resolved shared-brain namespace; empty string when opted out."""
+        if self._config is None:
+            return ""
+        ns = (self._config.shared_brain_namespace or "").strip()
+        return ns
+
+    def _agent_name(self) -> str:
+        """Human-readable agent name for shared-brain attribution."""
+        if self._config is None:
+            return "unknown"
+        explicit = (self._config.agent_name or "").strip()
+        if explicit:
+            return explicit
+        # Auto-derive: prefer the second segment of agent's namespace
+        # (typically agent_workspace), fall back to base_namespace, then
+        # a hostname-shaped placeholder.
+        parts = (self._namespace or "").split(":")
+        if len(parts) >= 2 and parts[1]:
+            return parts[1]
+        if self._base_namespace:
+            return self._base_namespace
+        return "agent"
 
     def _do_recall(self, args: dict[str, Any]) -> str:
         query = (args.get("query") or "").strip()

@@ -2510,6 +2510,102 @@ class TestWaveDPreCompressGist:
         assert compression_writes == []
 
 
+class TestWaveECrossAgentSharedBrain:
+    """v0.5 Wave E — opt-in cross-agent shared brain. When
+    shared_brain_namespace is set, explicit yantrikdb_remember writes
+    mirror to that namespace AND recall unions both namespaces.
+    Single-agent default: zero behaviour change.
+    """
+
+    def test_default_off_writes_only_to_local(self, provider, mock_client):
+        provider.handle_tool_call(
+            "yantrikdb_remember", {"text": "Pranab prefers tabs"},
+        )
+        calls = mock_client.remember.call_args_list
+        assert len(calls) == 1
+        assert calls[0].kwargs["namespace"] == provider._namespace
+        meta = calls[0].kwargs.get("metadata") or {}
+        assert not str(meta.get("source", "")).startswith("agent:")
+
+    def test_opt_in_mirrors_write_to_shared_brain(self, provider, mock_client):
+        provider._config.shared_brain_namespace = "yantrikdb:shared:household"
+        provider._config.agent_name = "coding-agent"
+        provider.handle_tool_call(
+            "yantrikdb_remember", {"text": "Pranab prefers tabs"},
+        )
+        calls = mock_client.remember.call_args_list
+        assert len(calls) == 2
+        nss = [c.kwargs["namespace"] for c in calls]
+        assert provider._namespace in nss
+        assert "yantrikdb:shared:household" in nss
+        shared_call = next(
+            c for c in calls
+            if c.kwargs["namespace"] == "yantrikdb:shared:household"
+        )
+        meta = shared_call.kwargs["metadata"]
+        assert meta["source"] == "agent:coding-agent"
+        assert meta["shared_brain_origin_namespace"] == provider._namespace
+
+    def test_recall_unions_shared_brain_namespace(self, provider, mock_client):
+        provider._config.shared_brain_namespace = "yantrikdb:shared:household"
+        responses = {
+            provider._namespace: {"results": [
+                {"rid": "local-1", "text": "from local", "score": 0.9,
+                 "metadata": {}},
+            ]},
+            "yantrikdb:shared:household": {"results": [
+                {"rid": "shared-1", "text": "from shared brain", "score": 0.85,
+                 "metadata": {"source": "agent:whatsapp-bot"}},
+            ]},
+        }
+
+        def _recall_router(query, *, namespace=None, **_kw):
+            return responses.get(namespace, {"results": []})
+
+        mock_client.recall.side_effect = _recall_router
+        out = provider.handle_tool_call(
+            "yantrikdb_recall", {"query": "x", "top_k": 10},
+        )
+        texts = [r["text"] for r in json.loads(out)["results"]]
+        assert "from local" in texts
+        assert "from shared brain" in texts, (
+            "Wave E should union the shared-brain namespace into recall"
+        )
+
+    def test_agent_name_auto_derived_from_namespace_when_blank(
+        self, provider, mock_client,
+    ):
+        provider._config.shared_brain_namespace = "shared:ns"
+        provider._config.agent_name = ""
+        provider.handle_tool_call("yantrikdb_remember", {"text": "x"})
+        shared_call = next(
+            c for c in mock_client.remember.call_args_list
+            if c.kwargs["namespace"] == "shared:ns"
+        )
+        # Provider fixture sets agent_workspace="workspace" → namespace
+        # second segment is "workspace"
+        assert shared_call.kwargs["metadata"]["source"] == "agent:workspace"
+
+    def test_failed_mirror_does_not_break_primary_write(
+        self, provider, mock_client,
+    ):
+        from yantrikdb_plugin_under_test.client import YantrikDBError
+        provider._config.shared_brain_namespace = "shared:ns"
+        provider._config.agent_name = "test"
+
+        def _remember_router(text, *, namespace=None, **kw):
+            if namespace == "shared:ns":
+                raise YantrikDBError("shared brain unreachable")
+            return {"rid": "primary-ok"}
+
+        mock_client.remember.side_effect = _remember_router
+        out = provider.handle_tool_call(
+            "yantrikdb_remember", {"text": "x"},
+        )
+        assert json.loads(out)["stored"] is True
+        assert json.loads(out)["rid"] == "primary-ok"
+
+
 class TestWaveCObservability:
     """yantrikdb_observability rolls up engine stats + extraction +
     recent skills + provider health into a single response so the agent
