@@ -172,3 +172,16 @@ replace = 'version = "{new_version}"'
 filename = "yantrikdb/plugin.yaml"
 search = "version: {current_version}"
 replace = "version: {new_version}"
+
+# The repo root also has a plugin.yaml — read by Hermes when a user runs
+# `hermes plugins install yantrikos/yantrikdb-hermes-plugin` directly
+# against the GitHub repo (the package-internal copy is what the bundled-
+# discovery path uses after `yantrikdb-hermes install <hermes>`). Both
+# must declare the same version or `hermes plugins list` shows stale info
+# for one install path. The root copy drifted from 0.4.12 → 0.4.17 across
+# five releases before community member [@wysie] caught it via dashboard
+# mismatch warning in PR #26; CI version-sync now checks both manifests.
+[[tool.bumpversion.files]]
+filename = "plugin.yaml"
+search = "version: {current_version}"
+replace = "version: {new_version}"
