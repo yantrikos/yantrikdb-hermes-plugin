@@ -14,3 +14,5 @@ build/
 htmlcov/
 .DS_Store
 *.log
+.env
+hermes-test/data/
