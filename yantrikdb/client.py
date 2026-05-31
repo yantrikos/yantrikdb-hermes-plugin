@@ -117,6 +117,29 @@ class YantrikDBConfig:
     # on — it's the wow moment.
     surface_recent_skills: bool = True
 
+    # v0.5.0+ Wave A — active memory. The substrate stops waiting for the
+    # agent to call tools and starts shaping every turn automatically.
+    #
+    # A1 (recall auto-injection): Hermes already calls prefetch() per turn
+    # and joins the result into context. v0.5 adds a min-score filter and a
+    # token-budget cap so noisy/long results don't blow the prompt.
+    auto_recall_min_score: float = 0.4
+    auto_recall_token_budget: int = 600
+    # A2 (skill auto-attach): queue_prefetch also runs skill_search; if any
+    # skill matches the user message with similarity >= threshold, its body
+    # surfaces in system_prompt_block(). The right procedure appears when
+    # relevant — the agent doesn't need to remember skill_search exists.
+    auto_skill_attach: bool = True
+    auto_skill_min_score: float = 0.55
+    auto_skill_max_bodies: int = 2
+    # A3 (pending-conflict surface): conflicts() unresolved entries appear
+    # in system_prompt_block() so the agent sees contradictions without
+    # being asked to look. Polled in the prefetch background thread, cached
+    # to avoid hammering on every turn.
+    surface_pending_conflicts: bool = True
+    pending_conflicts_poll_seconds: float = 60.0
+    pending_conflicts_max_surfaced: int = 3
+
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
@@ -140,6 +163,30 @@ class YantrikDBConfig:
             ),
             surface_recent_skills=_parse_bool(
                 os.environ.get("YANTRIKDB_SURFACE_RECENT_SKILLS"), default=True,
+            ),
+            auto_recall_min_score=_parse_float(
+                os.environ.get("YANTRIKDB_AUTO_RECALL_MIN_SCORE"), 0.4,
+            ),
+            auto_recall_token_budget=_parse_int(
+                os.environ.get("YANTRIKDB_AUTO_RECALL_TOKEN_BUDGET"), 600,
+            ),
+            auto_skill_attach=_parse_bool(
+                os.environ.get("YANTRIKDB_AUTO_SKILL_ATTACH"), default=True,
+            ),
+            auto_skill_min_score=_parse_float(
+                os.environ.get("YANTRIKDB_AUTO_SKILL_MIN_SCORE"), 0.55,
+            ),
+            auto_skill_max_bodies=_parse_int(
+                os.environ.get("YANTRIKDB_AUTO_SKILL_MAX_BODIES"), 2,
+            ),
+            surface_pending_conflicts=_parse_bool(
+                os.environ.get("YANTRIKDB_SURFACE_PENDING_CONFLICTS"), default=True,
+            ),
+            pending_conflicts_poll_seconds=_parse_float(
+                os.environ.get("YANTRIKDB_PENDING_CONFLICTS_POLL_SECONDS"), 60.0,
+            ),
+            pending_conflicts_max_surfaced=_parse_int(
+                os.environ.get("YANTRIKDB_PENDING_CONFLICTS_MAX_SURFACED"), 3,
             ),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
@@ -191,13 +238,23 @@ class YantrikDBConfig:
             return cfg
         if not isinstance(overrides, dict):
             return cfg
-        int_fields = {"top_k", "retry_total", "max_text_len", "embedding_dim"}
-        float_fields = {"connect_timeout", "read_timeout"}
+        int_fields = {
+            "top_k", "retry_total", "max_text_len", "embedding_dim",
+            "auto_recall_token_budget", "auto_skill_max_bodies",
+            "pending_conflicts_max_surfaced",
+        }
+        float_fields = {
+            "connect_timeout", "read_timeout",
+            "auto_recall_min_score", "auto_skill_min_score",
+            "pending_conflicts_poll_seconds",
+        }
         bool_fields = {
             "skills_enabled",
             "auto_think_on_session_end",
             "auto_acknowledge_triggers",
             "surface_recent_skills",
+            "auto_skill_attach",
+            "surface_pending_conflicts",
             "sync_user_messages",
             "owner_scoping",
             "include_base_namespace_recall",

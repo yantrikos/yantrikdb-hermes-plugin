@@ -961,6 +961,15 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._recent_skills_path: Path | None = None
         self._recent_skills_lock = threading.Lock()
 
+        # v0.5.0+ Wave A — active-memory caches populated by the prefetch
+        # background thread, drained by system_prompt_block().
+        # A2: skill_search hits per session_id key.
+        self._prefetch_skills: dict[str, list[dict[str, Any]]] = {}
+        # A3: unresolved conflicts polled at most every
+        # pending_conflicts_poll_seconds.
+        self._pending_conflicts: list[dict[str, Any]] = []
+        self._pending_conflicts_last_poll: float = 0.0
+
     # -- Identity ---------------------------------------------------------
 
     @property
@@ -1210,6 +1219,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 t.join(timeout=_SYNC_JOIN_SECS)
         with self._prefetch_lock:
             self._prefetch_results.clear()
+            self._prefetch_skills.clear()
+        self._pending_conflicts = []
+        self._pending_conflicts_last_poll = 0.0
         with self._client_lock:
             if self._client is not None:
                 self._client.close()
@@ -1238,10 +1250,19 @@ class YantrikDBMemoryProvider(MemoryProvider):
         with self._prefetch_lock:
             if reset:
                 self._prefetch_results.clear()
+                self._prefetch_skills.clear()
             elif old_session_id:
                 self._prefetch_results.pop(old_session_id, None)
+                self._prefetch_skills.pop(old_session_id, None)
             if parent_session_id:
                 self._prefetch_results.pop(parent_session_id, None)
+                self._prefetch_skills.pop(parent_session_id, None)
+        # Conflict cache is namespace-scoped (not session-scoped), so it
+        # survives session switches within the same namespace. Reset only
+        # clears the timestamp so the next prefetch refreshes it.
+        if reset:
+            self._pending_conflicts = []
+            self._pending_conflicts_last_poll = 0.0
 
         logger.debug(
             "YantrikDB session switched: %s -> %s (reset=%s)",
@@ -1365,7 +1386,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "contradictions — then `yantrikdb_conflicts` lists what needs "
             "resolving and `yantrikdb_resolve_conflict` closes each out."
         )
-        return base + self._format_recent_skills_block()
+        return (
+            base
+            + self._format_recent_skills_block()
+            + self._format_auto_skill_block()
+            + self._format_pending_conflicts_block()
+        )
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         if self._cron_skipped or self._client is None:
@@ -1393,11 +1419,26 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # Hermes ever shares one provider across multiple owner identities,
         # this key would need to include the owner shard.
         key = session_id or self._session_id or "__default__"
+        cfg = self._config
+        client = self._client
 
         def _run() -> None:
+            # A1: recall with min-score filter + token budget cap. Existing
+            # Hermes plumbing calls prefetch() which pops this cache —
+            # filtering here means low-quality hits never enter the prompt.
             try:
                 results = self._recall_with_base_fallback(query, top_k=5)
+                if cfg is not None:
+                    results = [
+                        r for r in results
+                        if (r.get("score") or 0.0) >= cfg.auto_recall_min_score
+                    ]
                 block = _format_recall_block(results, limit=5)
+                if block and cfg is not None:
+                    # Rough token cap: ~4 chars per token.
+                    char_cap = cfg.auto_recall_token_budget * 4
+                    if len(block) > char_cap:
+                        block = block[:char_cap].rsplit("\n", 1)[0] + "\n- …"
                 if block:
                     with self._prefetch_lock:
                         self._prefetch_results[key] = block
@@ -1407,6 +1448,39 @@ class YantrikDBMemoryProvider(MemoryProvider):
             except YantrikDBError as e:
                 self._record_failure()
                 logger.debug("YantrikDB prefetch failed: %s", e)
+
+            # A2: skill auto-attach. Same background thread piggybacks on
+            # the recall round-trip — one user turn → one bg pass that
+            # primes BOTH surfaces. Only stores hits at or above the
+            # configured skill-match threshold.
+            if cfg is not None and cfg.auto_skill_attach and cfg.skills_enabled:
+                try:
+                    resp = client.skill_search(
+                        query, top_k=cfg.auto_skill_max_bodies * 2,
+                    )
+                    skills = [
+                        s for s in (resp.get("skills") or [])
+                        if (s.get("score") or 0.0) >= cfg.auto_skill_min_score
+                    ][: cfg.auto_skill_max_bodies]
+                    with self._prefetch_lock:
+                        self._prefetch_skills[key] = skills
+                except (YantrikDBClientError, YantrikDBError) as e:
+                    logger.debug("YantrikDB skill auto-attach failed: %s", e)
+
+            # A3: pending conflicts. Cheap call — poll at most once per
+            # configured interval so per-turn cost is amortized.
+            if cfg is not None and cfg.surface_pending_conflicts:
+                now = time.time()
+                if now - self._pending_conflicts_last_poll >= cfg.pending_conflicts_poll_seconds:
+                    try:
+                        resp = client.conflicts(namespace=self._namespace)
+                        conflicts = resp.get("conflicts") or []
+                        self._pending_conflicts = conflicts[
+                            : cfg.pending_conflicts_max_surfaced
+                        ]
+                        self._pending_conflicts_last_poll = now
+                    except (YantrikDBClientError, YantrikDBError) as e:
+                        logger.debug("YantrikDB conflicts poll failed: %s", e)
 
         self._prefetch_thread = threading.Thread(
             target=_run, daemon=True, name="yantrikdb-prefetch",
@@ -1910,6 +1984,74 @@ class YantrikDBMemoryProvider(MemoryProvider):
         lines.append(
             "The agent defined these in prior sessions. If your task "
             "matches any, call `yantrikdb_skill_search` to retrieve the body."
+        )
+        return "\n".join(lines)
+
+    # -- v0.5.0 Wave A2: skill auto-attach surface ------------------------
+
+    def _format_auto_skill_block(self) -> str:
+        """Surface skill_search hits the prefetch thread cached for this turn.
+
+        Drain-on-read (pop) so the same hit doesn't echo across consecutive
+        turns. Per Wave A semantics: a skill auto-surfaces on the turn its
+        relevance was detected; subsequent turns get fresh hits or none.
+        """
+        if self._config is None or not self._config.auto_skill_attach:
+            return ""
+        key = self._session_id or "__default__"
+        with self._prefetch_lock:
+            skills = self._prefetch_skills.pop(key, [])
+            if not skills and key != "__default__":
+                skills = self._prefetch_skills.pop("__default__", [])
+        if not skills:
+            return ""
+        lines = ["", "## Active skill — auto-surfaced for this turn"]
+        for s in skills:
+            sid = s.get("skill_id") or "?"
+            stype = s.get("skill_type") or "?"
+            score = s.get("score")
+            score_tag = f" _(match {score:.2f})_" if isinstance(score, (int, float)) else ""
+            body = (s.get("body") or "").strip()
+            lines.append(f"- `{sid}` ({stype}){score_tag}")
+            if body:
+                # One-line body fold so dense skills don't blow the prompt.
+                if len(body) > 280:
+                    body = body[:278] + "…"
+                lines.append(f"    {body}")
+        lines.append(
+            "Surfaced because your message matched this skill semantically. "
+            "Apply if relevant; otherwise ignore and proceed."
+        )
+        return "\n".join(lines)
+
+    # -- v0.5.0 Wave A3: pending-conflict surface -------------------------
+
+    def _format_pending_conflicts_block(self) -> str:
+        """Show open conflicts() entries the agent should know about.
+
+        Read-only peek of the cached poll — does NOT clear, because a
+        conflict remains live until resolve_conflict() lands. Repeat
+        surfacing across turns is intentional: an unresolved contradiction
+        is a standing piece of context.
+        """
+        if self._config is None or not self._config.surface_pending_conflicts:
+            return ""
+        conflicts = self._pending_conflicts
+        if not conflicts:
+            return ""
+        lines = ["", "## Pending contradictions in your memory"]
+        for c in conflicts[: self._config.pending_conflicts_max_surfaced]:
+            cid = c.get("conflict_id") or c.get("rid") or "?"
+            a = (c.get("text_a") or c.get("a") or "").strip()
+            b = (c.get("text_b") or c.get("b") or "").strip()
+            lines.append(f"- `{cid}`")
+            if a:
+                lines.append(f"    A: {a[:160]}{'…' if len(a) > 160 else ''}")
+            if b:
+                lines.append(f"    B: {b[:160]}{'…' if len(b) > 160 else ''}")
+        lines.append(
+            "Unresolved. Call `yantrikdb_resolve_conflict` when a decision "
+            "is made, or surface to the user if you need their input."
         )
         return "\n".join(lines)
 
