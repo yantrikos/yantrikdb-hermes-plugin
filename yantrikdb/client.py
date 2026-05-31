@@ -140,6 +140,29 @@ class YantrikDBConfig:
     pending_conflicts_poll_seconds: float = 60.0
     pending_conflicts_max_surfaced: int = 3
 
+    # v0.5.0+ Wave B — auto-extraction of facts from conversation.
+    #
+    # sync_turn() v1 deliberately stored only user messages whole because
+    # "storing LLM output as fact amplifies hallucination" (HANDOFF §10.1).
+    # Wave B extracts FACTS from those user messages (and user-confirmed
+    # assistant assertions) into candidate records — certainty<=0.4,
+    # source=extracted, hidden from default recall until think()
+    # canonicalizes them. Substrate gains candidates fast; user-visible
+    # recall stays high-confidence.
+    #
+    # tier=cheap: regex + light NER, zero new deps, runs <1ms per turn.
+    # tier=embedding (deferred to v0.5.1): cluster turn vs prior recall
+    #   hits to strengthen / contradict closest match.
+    # tier=llm (deferred to v0.5.1): call user's configured Hermes model
+    #   for free-form fact extraction.
+    extraction_enabled: bool = True
+    extraction_tier: str = "cheap"
+    extraction_certainty: float = 0.4
+    # Default recall hides certainty<0.5 candidates so unpromoted noise
+    # doesn't outrank canonical memories. Users who want to see candidates
+    # opt in (per-call recall arg also overrides this).
+    recall_includes_candidates: bool = False
+
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
@@ -187,6 +210,19 @@ class YantrikDBConfig:
             ),
             pending_conflicts_max_surfaced=_parse_int(
                 os.environ.get("YANTRIKDB_PENDING_CONFLICTS_MAX_SURFACED"), 3,
+            ),
+            extraction_enabled=_parse_bool(
+                os.environ.get("YANTRIKDB_EXTRACTION_ENABLED"), default=True,
+            ),
+            extraction_tier=os.environ.get(
+                "YANTRIKDB_EXTRACTION_TIER", "cheap",
+            ).strip().lower(),
+            extraction_certainty=_parse_float(
+                os.environ.get("YANTRIKDB_EXTRACTION_CERTAINTY"), 0.4,
+            ),
+            recall_includes_candidates=_parse_bool(
+                os.environ.get("YANTRIKDB_RECALL_INCLUDES_CANDIDATES"),
+                default=False,
             ),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
@@ -247,6 +283,7 @@ class YantrikDBConfig:
             "connect_timeout", "read_timeout",
             "auto_recall_min_score", "auto_skill_min_score",
             "pending_conflicts_poll_seconds",
+            "extraction_certainty",
         }
         bool_fields = {
             "skills_enabled",
@@ -255,6 +292,8 @@ class YantrikDBConfig:
             "surface_recent_skills",
             "auto_skill_attach",
             "surface_pending_conflicts",
+            "extraction_enabled",
+            "recall_includes_candidates",
             "sync_user_messages",
             "owner_scoping",
             "include_base_namespace_recall",
