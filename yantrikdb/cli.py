@@ -197,6 +197,24 @@ def cmd_path(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ui(args: argparse.Namespace) -> int:
+    """v0.5 Wave C — open the bundled read-only substrate inspector.
+
+    Loads the substrate via the same config the provider uses (env vars
+    + $HERMES_HOME/yantrikdb.json), starts a localhost HTTP server, and
+    optionally opens it in the user's browser.
+    """
+    from . import ui as _ui
+    if args.hermes_home:
+        os.environ.setdefault("HERMES_HOME", str(Path(args.hermes_home).expanduser()))
+    try:
+        _ui.serve(host=args.host, port=args.port, open_browser=args.open)
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 4
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="yantrikdb-hermes",
@@ -256,6 +274,20 @@ def main(argv: list[str] | None = None) -> int:
         help="print the on-disk path of the installed provider source",
     )
     p_path.set_defaults(func=cmd_path)
+
+    p_ui = sub.add_parser(
+        "ui",
+        help="open the bundled read-only substrate inspector (v0.5+)",
+    )
+    p_ui.add_argument("--host", default="127.0.0.1",
+                      help="host to bind (default: 127.0.0.1)")
+    p_ui.add_argument("--port", type=int, default=8767,
+                      help="port to listen on (default: 8767)")
+    p_ui.add_argument("--open", action="store_true",
+                      help="open the page in the default browser on startup")
+    p_ui.add_argument("--hermes-home", type=str, default=None,
+                      help="HERMES_HOME override (default: $HERMES_HOME or ~/.hermes)")
+    p_ui.set_defaults(func=cmd_ui)
 
     args = parser.parse_args(argv)
     return args.func(args)

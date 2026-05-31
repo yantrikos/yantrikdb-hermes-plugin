@@ -631,6 +631,29 @@ SKILL_OUTCOME_SCHEMA = {
     },
 }
 
+OBSERVABILITY_SCHEMA = {
+    "name": "yantrikdb_observability",
+    "description": (
+        "v0.5 Wave C — one-call substrate health snapshot. Aggregates "
+        "stats, recent extraction activity, conflict counts, breaker "
+        "state, recent skill activity. Use to answer 'how is my memory "
+        "doing' without 6 separate tool calls. Returns engine counters, "
+        "extractor pattern breakdown, recent-skill list, plus a "
+        "human-readable summary line at top."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "namespace": {
+                "type": "string",
+                "description": "Optional namespace to scope to. "
+                              "Defaults to the provider's active namespace.",
+            },
+        },
+        "required": [],
+    },
+}
+
 EXTRACTION_STATS_SCHEMA = {
     "name": "yantrikdb_extraction_stats",
     "description": (
@@ -672,6 +695,7 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     SKILL_DEFINE_SCHEMA,
     SKILL_OUTCOME_SCHEMA,
     EXTRACTION_STATS_SCHEMA,
+    OBSERVABILITY_SCHEMA,
 ]
 
 
@@ -1741,6 +1765,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_act_on_trigger(args)
             elif tool_name == "yantrikdb_extraction_stats":
                 raw = self._do_extraction_stats(args)
+            elif tool_name == "yantrikdb_observability":
+                raw = self._do_observability(args)
             elif tool_name.startswith("yantrikdb_skill_"):
                 if not (self._config and self._config.skills_enabled):
                     return tool_error(
@@ -1926,6 +1952,103 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "open_conflicts": resp.get("open_conflicts", 0),
             "pending_triggers": resp.get("pending_triggers", 0),
         })
+
+    def _do_observability(self, args: dict[str, Any]) -> str:
+        """v0.5 Wave C2 — one-call substrate health snapshot.
+
+        Aggregates the four most-useful substrate signals into a single
+        response so the agent (or a curious user) can answer "how is my
+        memory doing" without 6 separate tool calls. Each component
+        degrades gracefully — if one upstream call fails, the others
+        still surface.
+        """
+        client = self._require_client()
+        namespace = (args.get("namespace") or self._namespace or "").strip()
+
+        snapshot: dict[str, Any] = {"namespace": namespace}
+
+        # Engine counters
+        try:
+            engine_stats = client.stats(namespace=namespace)
+            snapshot["engine"] = {
+                "active_memories": engine_stats.get("active_memories", 0),
+                "consolidated_memories": engine_stats.get(
+                    "consolidated_memories", 0,
+                ),
+                "tombstoned_memories": engine_stats.get(
+                    "tombstoned_memories", 0,
+                ),
+                "edges": engine_stats.get("edges", 0),
+                "entities": engine_stats.get("entities", 0),
+                "operations": engine_stats.get("operations", 0),
+                "open_conflicts": engine_stats.get("open_conflicts", 0),
+                "pending_triggers": engine_stats.get("pending_triggers", 0),
+            }
+        except (YantrikDBClientError, YantrikDBError) as e:
+            snapshot["engine"] = {"error": str(e)}
+
+        # Recent extraction activity (reuses extraction_stats logic)
+        try:
+            extraction = json.loads(
+                self._do_extraction_stats({"namespace": namespace})
+            )
+            snapshot["extraction"] = {
+                "total_sampled": extraction.get(
+                    "total_candidates_sampled", 0,
+                ),
+                "by_pattern": extraction.get("by_pattern", {}),
+                "by_speaker": extraction.get("by_speaker", {}),
+            }
+        except Exception as e:
+            snapshot["extraction"] = {"error": str(e)}
+
+        # Recently-defined skills (cross-session, from v0.4.17 record)
+        try:
+            recent = self._load_recent_skills() if hasattr(
+                self, "_load_recent_skills",
+            ) else []
+            snapshot["recent_skills"] = [
+                {
+                    "skill_id": e.get("skill_id"),
+                    "skill_type": e.get("skill_type"),
+                    "age_seconds": int(time.time() - (e.get("ts") or time.time())),
+                }
+                for e in recent[-5:]
+            ]
+        except Exception as e:
+            snapshot["recent_skills"] = {"error": str(e)}
+
+        # Provider health: breaker + queues
+        snapshot["provider"] = {
+            "circuit_breaker_open": self._breaker_open(),
+            "failure_count": self._failure_count,
+            "prefetch_thread_alive": bool(
+                self._prefetch_thread and self._prefetch_thread.is_alive()
+            ),
+            "sync_thread_alive": bool(
+                self._sync_thread and self._sync_thread.is_alive()
+            ),
+        }
+
+        # One-line human summary at the top — what an LLM should read first
+        eng = snapshot["engine"] if isinstance(snapshot["engine"], dict) and "error" not in snapshot["engine"] else {}
+        ext_count = (
+            snapshot["extraction"].get("total_sampled", 0)
+            if isinstance(snapshot["extraction"], dict)
+            and "error" not in snapshot["extraction"] else 0
+        )
+        snapshot["summary"] = (
+            f"namespace={namespace} | "
+            f"memories={eng.get('active_memories', '?')} "
+            f"entities={eng.get('entities', '?')} "
+            f"edges={eng.get('edges', '?')} | "
+            f"open_conflicts={eng.get('open_conflicts', '?')} | "
+            f"extracted_candidates={ext_count} | "
+            f"breaker={'OPEN' if snapshot['provider']['circuit_breaker_open'] else 'closed'}"
+        )
+
+        self._record_success()
+        return json.dumps(snapshot)
 
     def _do_pending_triggers(self, args: dict[str, Any]) -> str:
         limit = _coerce_int(args.get("limit"), 10)
