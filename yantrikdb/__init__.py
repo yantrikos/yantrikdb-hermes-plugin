@@ -2007,11 +2007,18 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return ""
         lines = ["", "## Active skill — auto-surfaced for this turn"]
         for s in skills:
-            sid = s.get("skill_id") or "?"
-            stype = s.get("skill_type") or "?"
+            # HTTP backend returns flat keys; embedded returns the skill
+            # body as `text` with metadata nested under `metadata.*`.
+            # Normalize to support either shape transparently.
+            meta = s.get("metadata") or {}
+            sid = s.get("skill_id") or meta.get("skill_id") or "?"
+            stype = s.get("skill_type") or meta.get("skill_type") or "?"
+            body = (s.get("body") or s.get("text") or "").strip()
             score = s.get("score")
-            score_tag = f" _(match {score:.2f})_" if isinstance(score, (int, float)) else ""
-            body = (s.get("body") or "").strip()
+            score_tag = (
+                f" _(match {score:.2f})_"
+                if isinstance(score, (int, float)) else ""
+            )
             lines.append(f"- `{sid}` ({stype}){score_tag}")
             if body:
                 # One-line body fold so dense skills don't blow the prompt.

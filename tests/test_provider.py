@@ -2019,6 +2019,43 @@ class TestWaveA2SkillAutoAttach:
         _wait_for_thread(provider._prefetch_thread)
         mock_client.skill_search.assert_not_called()
 
+    def test_skill_attach_renders_embedded_backend_shape(
+        self, provider, mock_client,
+    ):
+        # Regression test (caught by hermes-test harness against the real
+        # embedded engine, 2026-05-30): embedded skill_search returns
+        # the skill body as `text` and skill_id/skill_type nested under
+        # `metadata.*` (it reuses recall_text), unlike the HTTP backend
+        # which returns flat keys. A2 must normalize across both shapes.
+        mock_client.skill_search.return_value = {
+            "skills": [{
+                "rid": "019e7229-0819-7536-905c-c38219d5e5bb",
+                "text": "Roll out 10% at a time, verify, then continue.",
+                "score": 0.78,
+                "metadata": {
+                    "record_type": "skill",
+                    "skill_id": "deploy.rolling",
+                    "skill_type": "procedure",
+                    "applies_to": ["deploy"],
+                },
+            }],
+            "total": 1,
+        }
+        provider.queue_prefetch("how do I deploy", session_id="sess-1")
+        _wait_for_thread(provider._prefetch_thread)
+        block = provider.system_prompt_block()
+        assert "Active skill" in block
+        assert "deploy.rolling" in block, (
+            "skill_id should be resolved from metadata for embedded shape"
+        )
+        assert "procedure" in block
+        assert "Roll out 10%" in block, (
+            "skill body should be resolved from `text` for embedded shape"
+        )
+        assert "`?`" not in block, (
+            "should not render '?' fallback when metadata is present"
+        )
+
 
 class TestWaveA3PendingConflicts:
     """A3 — unresolved conflicts() entries auto-surface in
