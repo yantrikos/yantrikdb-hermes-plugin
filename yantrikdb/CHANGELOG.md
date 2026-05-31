@@ -3,6 +3,97 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.5.0] — 2026-05-31 — Active memory: substrate stops waiting
+
+v0.5 is a thesis release. v0.4.x made the substrate richer; v0.5 makes it **active**. The agent doesn't have to remember memory exists to benefit — every turn, the plugin's `system_prompt_block()` injects relevant memories and skills automatically, surfaces unresolved contradictions, captures the gist before compression, time-filters by natural-language ranges, extracts facts from conversation, and (opt-in) shares discoveries across the user's sibling agents.
+
+Five waves shipped, full design in [docs/v0.5-design.md](docs/v0.5-design.md). End-to-end verified against real Hermes Agent v0.15.1 + qwen3.6:27b-64k via ollama on a Portainer-managed Linux host (docs/v0.5-wave-a-e2e-results.md).
+
+### Wave A — Active memory (PR #28)
+
+- **A1 auto-recall polish** — the existing `queue_prefetch → prefetch` path that already auto-injects per-turn recall now respects two new bounds: `auto_recall_min_score` (default `0.4`) filters low-score noise, and `auto_recall_token_budget` (default `600`) truncates oversized blocks. *E2E proven*: qwen3.6 quoted the recalled memory verbatim, attributed to "my notes."
+- **A2 skill auto-attach (NEW)** — `queue_prefetch` also runs `skill_search` on the user message. Matching skills surface in `system_prompt_block` under `## Active skill`. The agent never has to call `skill_search` — the right procedure just appears. Single-turn drain so the same skill doesn't echo across turns. Gated on `skills_enabled`. **First Hermes memory provider to surface a skill body into the prompt without an explicit tool call**. *E2E proven*: qwen3.6 reproduced the skill body verbatim, *"Your own notes already say 'always rebase before merge so history stays linear and reviewable.'"*
+- **A3 pending-conflict surface (NEW)** — `conflicts()` unresolved entries auto-surface under `## Pending contradictions in your memory`, polled at most once per 60s. Repeats every turn until `resolve_conflict()` lands.
+
+### Wave B — Auto-extraction + recall filter + stats tool (PR #29)
+
+- **B1 cheap-tier extractor** — new `yantrikdb/extractor.py` with seven high-precision regex patterns (preference, possession, identity, location, url, email, plus `is_user_confirmation`). Pure stdlib, zero new deps, <1ms per turn. `sync_turn` now records candidates with `source="extracted"`, `certainty=0.4`, `metadata.extractor` naming the pattern. **HANDOFF §10.1 carve-out**: when the user's message is a bare confirmation ("yes", "right"), the PRIOR assistant turn becomes eligible for extraction too, tagged `confirmed_by_user=True`. Bare LLM output never extracted otherwise.
+- **B2 recall filter + stats tool** — `yantrikdb_recall` now hides `source="extracted"` candidates by default; opt in via `include_candidates=true` per-call or `recall_includes_candidates` config. New `yantrikdb_extraction_stats` tool surfaces per-pattern counts so noisy patterns can be tuned.
+
+### Wave C — Bundled UI + observability tool (PR #30)
+
+- **C1 bundled UI** — `yantrikdb-hermes ui [--port 8767] [--open]` starts a localhost web inspector. Pure-stdlib HTTP server, inline HTML/SVG/JS, no new deps. One page, three sections: constellation (memories as glowing nodes, color-coded by domain), recently-learned skills, unresolved contradictions. Read-only. **NOT** a replacement for [wysie's full dashboard](https://github.com/wysie/yantrikdb-hermes-dashboard) — this is the *first-10-minutes-after-install* tool that ships in the wheel. `/api/snapshot` also serves the raw JSON for tooling.
+- **C2 `yantrikdb_observability` tool** — one call returns engine counters + recent extraction activity + recent skills + provider health + a human-readable summary line. Each section degrades gracefully on upstream failure.
+
+### Wave D — Smarter `on_pre_compress` + time-aware recall (PR #31)
+
+- **D1 compression gist** — `on_pre_compress` now distills the middle of the about-to-be-compressed conversation (everything except the last 6 turns Hermes preserves verbatim) into a single-line gist and writes it to substrate with `importance=0.75`, `source="compression_summary"`, `pre_compression=true`. Post-compression recall surfaces the gist like any other memory; the tag lets observability tools distinguish summaries from ordinary records.
+- **D2 time-aware recall** — `yantrikdb_recall` now accepts `since` / `until` parameters. ISO timestamps (`"2026-05-29"`), relative phrases (`"today"`, `"yesterday"`, `"last week"`), and duration shorthand (`"7d"`, `"24h"`, `"30m"`, `"2w"`) all work. Pure stdlib datetime parsing. Unparseable input treated as "no filter" rather than erroring out.
+
+### Wave E — Cross-agent shared brain (PR #32) — opt-in, default off
+
+- **E1 shared substrate namespace** — when `YANTRIKDB_SHARED_BRAIN_NAMESPACE` is set, explicit `yantrikdb_remember` writes mirror to that namespace tagged `source="agent:<name>"` (auto-derived from `agent_workspace` when blank). Recall unions local + shared so sibling agents inherit each other's discoveries. The user's coding agent learns "Pranab prefers tabs"; their WhatsApp agent automatically knows. Scope intentionally narrow in v1: only explicit `remember` writes mirror; skills, extracted candidates, compression summaries stay agent-local. Mirror failures swallowed silently — never break the primary write. Single-agent users see zero behaviour change.
+
+### Capability table after v0.5
+
+| | yantrikdb-hermes-plugin v0.5 | mem0 | Letta | Mnemosyne |
+|---|---|---|---|---|
+| Auto-recall injection per turn | ✓ | ✓ | ✓ | ✗ |
+| Skill auto-attach per turn | **✓** | ✗ | ✗ | ✗ |
+| Pre/post-emit contradiction warning | **✓** | ✗ | ✗ | ✗ |
+| Auto-extraction from user turns | ✓ | ✓ | ✓ | partial |
+| Effectiveness ledger (per-pattern stats) | **✓** | ✗ | ✗ | ✗ |
+| Bundled visualizer | **✓** | hosted only | hosted only | ✗ |
+| Compression-aware snapshotting | **✓** | ✗ | partial | ✗ |
+| Time-aware recall | **✓** | partial | partial | ✗ |
+| Cross-agent shared brain (opt-in) | **✓** | ✗ | ✗ | ✗ |
+| Owner-scoping (per-user isolation) | ✓ | partial | ✗ | ✗ |
+| Contradiction tracking + conflicts API | ✓ | ✗ | ✗ | ✗ |
+| Agent-authored skills with outcome ledger | ✓ | ✗ | ✗ | ✗ |
+| Explainable recall (`why_retrieved` + scores) | ✓ | ✗ | ✗ | ✗ |
+
+### Configuration summary (new env vars / config keys)
+
+```
+# Wave A
+YANTRIKDB_AUTO_RECALL_MIN_SCORE=0.4
+YANTRIKDB_AUTO_RECALL_TOKEN_BUDGET=600
+YANTRIKDB_AUTO_SKILL_ATTACH=true
+YANTRIKDB_AUTO_SKILL_MIN_SCORE=0.55
+YANTRIKDB_AUTO_SKILL_MAX_BODIES=2
+YANTRIKDB_SURFACE_PENDING_CONFLICTS=true
+YANTRIKDB_PENDING_CONFLICTS_POLL_SECONDS=60.0
+YANTRIKDB_PENDING_CONFLICTS_MAX_SURFACED=3
+
+# Wave B
+YANTRIKDB_EXTRACTION_ENABLED=true
+YANTRIKDB_EXTRACTION_TIER=cheap
+YANTRIKDB_EXTRACTION_CERTAINTY=0.4
+YANTRIKDB_RECALL_INCLUDES_CANDIDATES=false
+
+# Wave E (opt-in)
+YANTRIKDB_SHARED_BRAIN_NAMESPACE=
+YANTRIKDB_AGENT_NAME=
+```
+
+All defaults preserve pre-v0.5 behaviour for users who don't opt in.
+
+### Tests + quality
+
+- 267 tests pass (+33 across v0.5: 11 Wave A · 17 Wave B · 5 Wave C · 6 Wave D · 5 Wave E)
+- ruff + mypy clean
+- CI matrix: Python 3.11, 3.12, 3.13, 3.14
+- Full Hermes-in-Docker e2e on Portainer + qwen3.6:27b-64k verified Wave A (auto-recall + skill auto-attach) and Wave B (extraction landing with correct metadata, recall filter, stats tool)
+- Real-engine harness `hermes-test/scripts/harness_wave_a.py` caught one real bug (A2 schema mismatch) the mocked tests missed — pinned by a regression test
+
+### Backward compatibility
+
+- Every new behaviour is either default-on with conservative thresholds (Wave A) or opt-in via env var (Wave E + tier=llm/embedding).
+- `yantrikdb_recall` keeps its previous result shape and adds optional new parameters (`since`, `until`, `include_candidates`).
+- Existing tools (`remember`, `forget`, `think`, `conflicts`, `relate`, `stats`, trigger consumers, skills) unchanged.
+- New tools: `yantrikdb_extraction_stats`, `yantrikdb_observability`.
+- New CLI: `yantrikdb-hermes ui`.
+
 ## [0.4.17] — 2026-05-29 — Visible auto-skill crystallization + recall score breakdown
 
 Two wow features in one release. Both are about making invisible work visible — closing observability gaps that have existed since the skill surface (v0.3.0) and the recall surface (v0.1.0) shipped.
