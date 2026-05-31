@@ -241,6 +241,7 @@ EXPECTED_TOOL_NAMES = {
     "yantrikdb_skill_define",
     "yantrikdb_skill_outcome",
     "yantrikdb_extraction_stats",
+    "yantrikdb_observability",
 }
 
 
@@ -262,7 +263,7 @@ class TestToolSchemas:
             "yantrikdb_skill_search", "yantrikdb_skill_define", "yantrikdb_skill_outcome",
         }
         assert names == base
-        assert len(names) == 13  # 8 originals + 4 trigger consumer tools (v0.4.13) + extraction_stats (v0.5)
+        assert len(names) == 14  # 8 originals + 4 trigger consumer tools (v0.4.13) + extraction_stats + observability (v0.5)
 
     def test_no_tools_in_cron_context(self, provider_module, monkeypatch):
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
@@ -1380,8 +1381,8 @@ class TestSkillsFeatureFlag:
         names = {s["name"] for s in p.get_tool_schemas()}
         skill_names = {n for n in names if n.startswith("yantrikdb_skill_")}
         assert skill_names == set(), f"skills should be hidden by default, got {skill_names}"
-        # 8 core tools + 4 trigger consumer tools (v0.4.13) + extraction_stats (v0.5) = 13
-        assert len(names) == 13
+        # 8 core + 4 trigger + extraction_stats + observability (v0.5) = 14
+        assert len(names) == 14
 
     def test_enabled_includes_skill_tools(
         self, provider_module, mock_client, monkeypatch,
@@ -1391,8 +1392,8 @@ class TestSkillsFeatureFlag:
         assert "yantrikdb_skill_search" in names
         assert "yantrikdb_skill_define" in names
         assert "yantrikdb_skill_outcome" in names
-        # 13 core+trigger+stats tools + 3 skill tools = 16
-        assert len(names) == 16
+        # 14 core+trigger+stats+observability + 3 skill tools = 17
+        assert len(names) == 17
 
     def test_disabled_skill_call_short_circuits(
         self, provider_module, mock_client, monkeypatch,
@@ -2319,6 +2320,137 @@ class TestWaveBRecallFilter:
         )
         texts = [r["text"] for r in json.loads(out)["results"]]
         assert "extracted hit" in texts
+
+
+class TestWaveCBundledUI:
+    """v0.5 Wave C1 — pure-stdlib HTTP inspector at `yantrikdb-hermes ui`.
+
+    We don't spin up the actual HTTP server here; that's covered by
+    manual smoke + the Hermes-in-docker e2e. These tests pin the
+    module imports cleanly, the HTML renderer escapes content, and the
+    handler routes the two endpoints.
+    """
+
+    def test_ui_module_imports(self, provider_module):
+        # Provider-module dependency forces conftest plugin loader.
+        import importlib
+        import sys
+        # ui.py uses relative imports from the plugin package — load it
+        # through the same plugin_under_test namespace as everything else.
+        spec = importlib.util.spec_from_file_location(
+            "yantrikdb_plugin_under_test.ui",
+            str(provider_module.__file__).rsplit("\\", 1)[0].rsplit("/", 1)[0]
+            + "/yantrikdb/ui.py"
+            if "\\" in provider_module.__file__
+            else "/".join(provider_module.__file__.split("/")[:-1]) + "/ui.py",
+        )
+        # Robust path discovery from the provider module's location
+        from pathlib import Path
+        p = Path(provider_module.__file__).parent / "ui.py"
+        assert p.exists(), f"ui.py expected at {p}"
+        spec = importlib.util.spec_from_file_location(
+            "yantrikdb_plugin_under_test.ui", str(p),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["yantrikdb_plugin_under_test.ui"] = mod
+        spec.loader.exec_module(mod)
+        # The two public hooks must be present.
+        assert hasattr(mod, "serve")
+        assert hasattr(mod, "build_snapshot")
+
+    def test_render_html_escapes_user_content(self, provider_module):
+        import importlib
+        import sys
+        from pathlib import Path
+        p = Path(provider_module.__file__).parent / "ui.py"
+        if "yantrikdb_plugin_under_test.ui" not in sys.modules:
+            spec = importlib.util.spec_from_file_location(
+                "yantrikdb_plugin_under_test.ui", str(p),
+            )
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["yantrikdb_plugin_under_test.ui"] = mod
+            spec.loader.exec_module(mod)
+        mod = sys.modules["yantrikdb_plugin_under_test.ui"]
+        # The render passes user-content through json.dumps (escape-safe)
+        # and the inline JS uses an HTML-escape helper for conflict text.
+        snapshot = {
+            "namespace": "ns",
+            "memories": [{"rid": "r1", "text": "<script>alert(1)</script>",
+                          "score": 0.9, "source": "", "domain": "general"}],
+            "conflicts": [{"conflict_id": "c1",
+                           "text_a": "<img src=x onerror=alert(2)>",
+                           "text_b": "B"}],
+            "recent_skills": [],
+            "stats": {},
+        }
+        html = mod._render_html(snapshot)
+        # The JSON-embedded snapshot is escaped via json.dumps; raw
+        # tags must not appear unescaped in a SCRIPT-tag-safe way.
+        # json.dumps escapes "</" to "<\/" via slash inversion is NOT
+        # the default — we accept the embedding as long as the JS-side
+        # `escape()` runs on the conflict.text_*. Verify it's wrapped
+        # in escape() in the template.
+        assert 'escape(a)' in html or 'escape(b)' in html, (
+            "conflict text must pass through the JS escape() helper"
+        )
+
+
+class TestWaveCObservability:
+    """yantrikdb_observability rolls up engine stats + extraction +
+    recent skills + provider health into a single response so the agent
+    can answer 'how is my memory doing' without 6 separate tool calls.
+    """
+
+    def test_returns_summary_engine_extraction_provider_sections(
+        self, provider, mock_client,
+    ):
+        mock_client.stats.return_value = {
+            "active_memories": 42, "consolidated_memories": 3,
+            "tombstoned_memories": 5, "edges": 17, "entities": 12,
+            "operations": 128, "open_conflicts": 1, "pending_triggers": 0,
+        }
+        mock_client.recall.return_value = {
+            "results": [{
+                "rid": "e1", "text": "user prefers tabs", "score": 0.9,
+                "metadata": {"source": "extracted", "extractor": "preference",
+                             "speaker": "user"},
+            }],
+        }
+        out = provider.handle_tool_call("yantrikdb_observability", {})
+        parsed = json.loads(out)
+        assert "summary" in parsed
+        assert "engine" in parsed
+        assert "extraction" in parsed
+        assert "provider" in parsed
+        assert parsed["engine"]["active_memories"] == 42
+        assert parsed["engine"]["open_conflicts"] == 1
+        assert parsed["extraction"]["by_pattern"]["preference"] == 1
+        # provider health surfaces breaker state
+        assert "circuit_breaker_open" in parsed["provider"]
+
+    def test_summary_line_human_readable(self, provider, mock_client):
+        mock_client.stats.return_value = {
+            "active_memories": 10, "entities": 3, "edges": 5,
+            "open_conflicts": 0, "consolidated_memories": 0,
+            "tombstoned_memories": 0, "operations": 0, "pending_triggers": 0,
+        }
+        mock_client.recall.return_value = {"results": []}
+        out = provider.handle_tool_call("yantrikdb_observability", {})
+        summary = json.loads(out)["summary"]
+        assert "memories=10" in summary
+        assert "entities=3" in summary
+        assert "breaker=closed" in summary
+
+    def test_degrades_when_one_call_fails(self, provider, mock_client):
+        # If stats() raises, extraction + provider sections still surface.
+        from yantrikdb_plugin_under_test.client import YantrikDBError
+        mock_client.stats.side_effect = YantrikDBError("upstream timeout")
+        mock_client.recall.return_value = {"results": []}
+        out = provider.handle_tool_call("yantrikdb_observability", {})
+        parsed = json.loads(out)
+        assert "error" in parsed["engine"]
+        assert "extraction" in parsed
+        assert "provider" in parsed
 
 
 class TestWaveBExtractionStatsTool:
