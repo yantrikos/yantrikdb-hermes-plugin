@@ -163,6 +163,29 @@ class YantrikDBConfig:
     # opt in (per-call recall arg also overrides this).
     recall_includes_candidates: bool = False
 
+    # v0.5.0+ Wave E — cross-agent shared brain (OPT-IN, default off).
+    #
+    # A user's coding agent learns "Pranab prefers tabs"; their WhatsApp
+    # agent automatically knows. When shared_brain_namespace is set,
+    # explicit yantrikdb_remember writes are MIRRORED to that namespace
+    # in addition to the agent's local namespace, tagged with
+    # metadata.source=f"agent:{agent_name}" so each contributing agent
+    # is traceable. Recalls union the local + shared namespaces;
+    # think() canonicalization runs over both as usual.
+    #
+    # Scope intentionally narrow in v1: only explicit remember writes
+    # are mirrored. Skills, extracted candidates, compression summaries
+    # stay agent-local — the user explicitly chooses what gets shared.
+    # This sidesteps coordination headaches around agent-specific
+    # skill outcomes leaking across agent boundaries.
+    #
+    # Single-agent users see ZERO behaviour change with default empty.
+    shared_brain_namespace: str = ""
+    # Human-readable agent name used to tag shared-brain writes. Defaults
+    # blank — provider auto-derives from agent_workspace when blank, so
+    # this is mostly a manual override for explicit branding.
+    agent_name: str = ""
+
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
@@ -224,6 +247,10 @@ class YantrikDBConfig:
                 os.environ.get("YANTRIKDB_RECALL_INCLUDES_CANDIDATES"),
                 default=False,
             ),
+            shared_brain_namespace=os.environ.get(
+                "YANTRIKDB_SHARED_BRAIN_NAMESPACE", "",
+            ).strip(),
+            agent_name=os.environ.get("YANTRIKDB_AGENT_NAME", "").strip(),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
             ),
