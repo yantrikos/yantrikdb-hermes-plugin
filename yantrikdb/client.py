@@ -186,6 +186,27 @@ class YantrikDBConfig:
     # this is mostly a manual override for explicit branding.
     agent_name: str = ""
 
+    # v0.6.0+ Wave F — self-tuning recall (OPT-IN, default off).
+    #
+    # The engine ranks recall; the plugin keeps a local per-rid feedback
+    # ledger ($HERMES_HOME/yantrikdb-recall-feedback.json) recording how
+    # often each memory was surfaced and how often it was explicitly
+    # reinforced (agent passed its rid back via recall(reinforce=[...])
+    # after the memory proved useful). When enabled, _do_recall applies a
+    # small, capped boost to reinforced memories and re-sorts BEFORE the
+    # top_k cut, so memories that keep proving useful climb over time.
+    #
+    # Surfaced-only frequency is deliberately NOT a positive boost — that
+    # would entrench whatever already ranks high. Only explicit
+    # reinforcement moves ranking. Surfaced counts feed the hygiene
+    # "low-usefulness" signal (surfaced often, reinforced never).
+    #
+    # Default OFF → single recall callers see ZERO behaviour change.
+    self_tuning_recall: bool = False
+    # Maximum score boost a fully-reinforced memory can receive. Capped so
+    # reinforcement nudges ranking without overriding semantic relevance.
+    self_tuning_max_boost: float = 0.15
+
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
@@ -251,6 +272,12 @@ class YantrikDBConfig:
                 "YANTRIKDB_SHARED_BRAIN_NAMESPACE", "",
             ).strip(),
             agent_name=os.environ.get("YANTRIKDB_AGENT_NAME", "").strip(),
+            self_tuning_recall=_parse_bool(
+                os.environ.get("YANTRIKDB_SELF_TUNING_RECALL"), default=False,
+            ),
+            self_tuning_max_boost=_parse_float(
+                os.environ.get("YANTRIKDB_SELF_TUNING_MAX_BOOST"), 0.15,
+            ),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
             ),
