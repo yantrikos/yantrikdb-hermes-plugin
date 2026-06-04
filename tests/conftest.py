@@ -187,6 +187,8 @@ def _clean_yantrikdb_env(monkeypatch):
         "YANTRIKDB_IDENTITY_MAP_JSON",
         "YANTRIKDB_SELF_TUNING_RECALL",
         "YANTRIKDB_SELF_TUNING_MAX_BOOST",
+        "YANTRIKDB_SURFACE_HYGIENE",
+        "YANTRIKDB_HYGIENE_MAX_SURFACED",
     ):
         monkeypatch.delenv(var, raising=False)
     yield

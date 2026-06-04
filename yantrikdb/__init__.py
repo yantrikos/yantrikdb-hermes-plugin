@@ -715,6 +715,55 @@ EXTRACTION_STATS_SCHEMA = {
     },
 }
 
+HYGIENE_SCHEMA = {
+    "name": "yantrikdb_hygiene",
+    "description": (
+        "v0.6 Wave G — proactive memory hygiene. `action=\"scan\"` (default) "
+        "returns a digest of cleanup opportunities: open contradictions, "
+        "engine counters (active / consolidated / tombstoned), and "
+        "low-usefulness candidates (memories that keep surfacing in recall "
+        "but were never reinforced as useful — a plugin-side stale signal "
+        "that needs self-tuning recall enabled to populate). "
+        "`action=\"apply\"` acts on them: pass `consolidate=true` to run a "
+        "canonicalization pass that merges duplicates, and/or "
+        "`forget_rids=[...]` to delete specific memories. Use scan to decide, "
+        "apply to clean up. Forgetting is permanent — only forget rids you "
+        "(or the user) have confirmed are stale or wrong."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["scan", "apply"],
+                "description": "scan (default) to inspect, apply to act.",
+            },
+            "consolidate": {
+                "type": "boolean",
+                "description": (
+                    "apply only: run a think() consolidation pass to merge "
+                    "near-duplicate memories. Default false."
+                ),
+            },
+            "forget_rids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "apply only: rids to permanently forget. Each is "
+                    "tombstoned individually; the response reports which "
+                    "were found."
+                ),
+            },
+            "namespace": {
+                "type": "string",
+                "description": "Optional namespace to scope to. "
+                              "Defaults to the provider's active namespace.",
+            },
+        },
+        "required": [],
+    },
+}
+
 ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
@@ -733,6 +782,7 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     SKILL_OUTCOME_SCHEMA,
     EXTRACTION_STATS_SCHEMA,
     OBSERVABILITY_SCHEMA,
+    HYGIENE_SCHEMA,
 ]
 
 
@@ -1580,6 +1630,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             + self._format_recent_skills_block()
             + self._format_auto_skill_block()
             + self._format_pending_conflicts_block()
+            + self._format_hygiene_block()
         )
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
@@ -1892,6 +1943,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_extraction_stats(args)
             elif tool_name == "yantrikdb_observability":
                 raw = self._do_observability(args)
+            elif tool_name == "yantrikdb_hygiene":
+                raw = self._do_hygiene(args)
             elif tool_name.startswith("yantrikdb_skill_"):
                 if not (self._config and self._config.skills_enabled):
                     return tool_error(
@@ -2286,6 +2339,170 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
         self._record_success()
         return json.dumps(snapshot)
+
+    # -- v0.6.0 Wave G: proactive memory hygiene --------------------------
+
+    def _low_usefulness_candidates(
+        self, *, min_surfaced: int = 3, limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """rids surfaced often in recall but never reinforced as useful.
+
+        A plugin-side stale signal: the engine has no scan/access-count API,
+        but the self-tuning feedback ledger records what recall kept showing.
+        A memory surfaced many times yet never reinforced is a candidate for
+        review. Empty unless self-tuning recall has been populating the
+        ledger. Sorted by surfaced count descending.
+        """
+        with self._recall_feedback_lock:
+            ledger = self._load_recall_feedback()
+        out: list[dict[str, Any]] = []
+        for rid, fb in ledger.items():
+            surfaced = int(fb.get("surfaced", 0))
+            reinforced = int(fb.get("reinforced", 0))
+            if reinforced == 0 and surfaced >= min_surfaced:
+                out.append({
+                    "rid": rid,
+                    "surfaced": surfaced,
+                    "reinforced": reinforced,
+                    "last_ts": fb.get("last_ts"),
+                })
+        out.sort(key=lambda e: e["surfaced"], reverse=True)
+        return out[:limit]
+
+    def _do_hygiene(self, args: dict[str, Any]) -> str:
+        """Scan for cleanup opportunities, or apply consolidate/forget.
+
+        scan composes the existing read primitives (no engine scan API
+        exists) — stats counters + open conflicts + the plugin-side
+        low-usefulness signal — into one digest with a human-readable
+        summary. apply runs a consolidation pass and/or forgets specific
+        rids (looped, since the engine has no batch delete). Each component
+        degrades gracefully.
+        """
+        client = self._require_client()
+        namespace = (args.get("namespace") or self._namespace or "").strip()
+        action = (args.get("action") or "scan").strip().lower()
+
+        if action == "apply":
+            result: dict[str, Any] = {"action": "apply", "namespace": namespace}
+            if args.get("consolidate"):
+                try:
+                    think = client.think(
+                        run_pattern_mining=False, namespace=namespace,
+                    )
+                    result["consolidated"] = think.get("consolidation_count", 0)
+                    result["conflicts_found"] = think.get("conflicts_found", 0)
+                except YantrikDBError as e:
+                    result["consolidate_error"] = str(e)
+            forget_rids = _coerce_str_list(args.get("forget_rids"))
+            if forget_rids:
+                forgotten: list[dict[str, Any]] = []
+                for rid in forget_rids:
+                    try:
+                        resp = client.forget(rid)
+                        found = bool(resp.get("found", False))
+                    except YantrikDBError as e:
+                        forgotten.append({"rid": rid, "error": str(e)})
+                        continue
+                    forgotten.append({"rid": rid, "found": found})
+                    # Drop the rid from the feedback ledger too — it's gone.
+                    self._purge_recall_feedback(rid)
+                result["forgotten"] = forgotten
+                result["forgotten_count"] = sum(
+                    1 for f in forgotten if f.get("found")
+                )
+            if "consolidated" not in result and "forgotten" not in result:
+                self._record_success()
+                return tool_error(
+                    "hygiene apply needs consolidate=true and/or "
+                    "forget_rids=[...]. Nothing to do.",
+                )
+            self._record_success()
+            return json.dumps(result)
+
+        # action == "scan" (default)
+        digest: dict[str, Any] = {"action": "scan", "namespace": namespace}
+        try:
+            engine_stats = client.stats(namespace=namespace)
+            digest["engine"] = {
+                "active_memories": engine_stats.get("active_memories", 0),
+                "consolidated_memories": engine_stats.get(
+                    "consolidated_memories", 0,
+                ),
+                "tombstoned_memories": engine_stats.get(
+                    "tombstoned_memories", 0,
+                ),
+                "open_conflicts": engine_stats.get("open_conflicts", 0),
+            }
+        except YantrikDBError as e:
+            digest["engine"] = {"error": str(e)}
+
+        try:
+            conflicts = (
+                client.conflicts(namespace=namespace).get("conflicts", []) or []
+            )
+            cap = (
+                self._config.hygiene_max_surfaced if self._config else 3
+            )
+            digest["open_conflicts"] = conflicts[: max(cap, 1)]
+            digest["open_conflicts_total"] = len(conflicts)
+        except YantrikDBError as e:
+            digest["open_conflicts"] = {"error": str(e)}
+
+        low_use = self._low_usefulness_candidates()
+        digest["low_usefulness"] = low_use
+
+        eng = (
+            digest["engine"]
+            if isinstance(digest["engine"], dict)
+            and "error" not in digest["engine"] else {}
+        )
+        digest["summary"] = (
+            f"namespace={namespace} | "
+            f"active={eng.get('active_memories', '?')} "
+            f"consolidated={eng.get('consolidated_memories', '?')} "
+            f"tombstoned={eng.get('tombstoned_memories', '?')} | "
+            f"open_conflicts={digest.get('open_conflicts_total', '?')} | "
+            f"low_usefulness={len(low_use)}"
+        )
+        digest["recommended_actions"] = self._hygiene_recommendations(
+            eng, digest.get("open_conflicts_total", 0), low_use,
+        )
+        self._record_success()
+        return json.dumps(digest)
+
+    @staticmethod
+    def _hygiene_recommendations(
+        eng: dict[str, Any], open_conflicts: int, low_use: list[dict[str, Any]],
+    ) -> list[str]:
+        recs: list[str] = []
+        if open_conflicts:
+            recs.append(
+                f"{open_conflicts} unresolved contradiction(s) — call "
+                "yantrikdb_resolve_conflict or surface to the user."
+            )
+        if low_use:
+            recs.append(
+                f"{len(low_use)} memory(ies) keep surfacing but were never "
+                "reinforced — review and forget the stale ones via "
+                "yantrikdb_hygiene(action=apply, forget_rids=[...])."
+            )
+        if int(eng.get("active_memories", 0) or 0) > 0 and not recs:
+            recs.append(
+                "Substrate looks healthy. Run "
+                "yantrikdb_hygiene(action=apply, consolidate=true) "
+                "periodically to merge any new near-duplicates."
+            )
+        return recs
+
+    def _purge_recall_feedback(self, rid: str) -> None:
+        if self._recall_feedback_path is None or not rid:
+            return
+        with self._recall_feedback_lock:
+            data = self._load_recall_feedback()
+            if rid in data:
+                data.pop(rid, None)
+                self._save_recall_feedback(data)
 
     def _do_pending_triggers(self, args: dict[str, Any]) -> str:
         limit = _coerce_int(args.get("limit"), 10)
@@ -2699,6 +2916,34 @@ class YantrikDBMemoryProvider(MemoryProvider):
         lines.append(
             "Unresolved. Call `yantrikdb_resolve_conflict` when a decision "
             "is made, or surface to the user if you need their input."
+        )
+        return "\n".join(lines)
+
+    def _format_hygiene_block(self) -> str:
+        """v0.6 Wave G — passively surface memory-hygiene opportunities.
+
+        Opt-in (YANTRIKDB_SURFACE_HYGIENE=true). Shows the plugin-side
+        low-usefulness candidates (memories that keep surfacing in recall
+        but were never reinforced) so the agent can proactively clean up
+        without being asked. Cheap: reads only the local feedback ledger,
+        no engine round-trip. Empty unless self-tuning recall has populated
+        the ledger.
+        """
+        if self._config is None or not self._config.surface_hygiene:
+            return ""
+        cap = max(self._config.hygiene_max_surfaced, 1)
+        low_use = self._low_usefulness_candidates(limit=cap)
+        if not low_use:
+            return ""
+        lines = ["", "## Memory hygiene — review candidates"]
+        for e in low_use:
+            lines.append(
+                f"- `{e['rid']}` surfaced {e['surfaced']}× in recall, "
+                "never reinforced as useful."
+            )
+        lines.append(
+            "These keep appearing without proving useful. Call "
+            "`yantrikdb_hygiene` to inspect, then forget the stale ones."
         )
         return "\n".join(lines)
 

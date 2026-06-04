@@ -1,9 +1,9 @@
-"""v0.6 Wave F — self-tuning recall.
+"""v0.6 Wave F + G — self-tuning recall and proactive hygiene.
 
 Mock-backend dispatch tests (no real engine). The recall-quality side of
 self-tuning is covered end-to-end by test_recall_benchmark.py; here we
-verify the plumbing: the feedback sidecar, the reinforce arg, and the
-re-rank ordering.
+verify the plumbing: the feedback sidecar, the reinforce arg, the re-rank
+ordering, and the hygiene scan/apply paths.
 """
 
 from __future__ import annotations
@@ -106,3 +106,98 @@ class TestSelfTuningRecall:
         assert p._recall_boost(50) == pytest.approx(0.15)
         assert p._recall_boost(1) == pytest.approx(0.05)
 
+
+class TestHygiene:
+    def test_scan_returns_digest(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _make_provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.conflicts.return_value = {"conflicts": [
+            {"conflict_id": "c1", "a": "x", "b": "y"},
+        ]}
+        out = json.loads(p.handle_tool_call("yantrikdb_hygiene", {"action": "scan"}))
+        assert out["ok"] is True
+        assert out["engine"]["active_memories"] == 42
+        assert out["open_conflicts_total"] == 1
+        assert "summary" in out
+        assert isinstance(out["recommended_actions"], list)
+
+    def test_apply_forget_loops_and_counts(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _make_provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.forget.side_effect = [
+            {"rid": "r1", "found": True},
+            {"rid": "r2", "found": False},
+        ]
+        out = json.loads(p.handle_tool_call("yantrikdb_hygiene", {
+            "action": "apply", "forget_rids": ["r1", "r2"],
+        }))
+        assert mock_client.forget.call_count == 2
+        assert out["forgotten_count"] == 1  # only r1 was found
+
+    def test_apply_consolidate_runs_think(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _make_provider(provider_module, mock_client, monkeypatch, tmp_path)
+        out = json.loads(p.handle_tool_call("yantrikdb_hygiene", {
+            "action": "apply", "consolidate": True,
+        }))
+        mock_client.think.assert_called_once()
+        assert out["consolidated"] == 2
+
+    def test_apply_empty_is_error(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _make_provider(provider_module, mock_client, monkeypatch, tmp_path)
+        out = json.loads(p.handle_tool_call("yantrikdb_hygiene", {"action": "apply"}))
+        assert out["ok"] is False
+
+    def test_low_usefulness_surfaces_unreinforced(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _make_provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.recall.return_value = _recall_payload([("stale", 0.9)])
+        for _ in range(4):  # surfaced 4×, never reinforced
+            p.handle_tool_call("yantrikdb_recall", {"query": "x"})
+        out = json.loads(p.handle_tool_call("yantrikdb_hygiene", {"action": "scan"}))
+        rids = [e["rid"] for e in out["low_usefulness"]]
+        assert "stale" in rids
+
+    def test_forget_purges_feedback_ledger(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _make_provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.recall.return_value = _recall_payload([("stale", 0.9)])
+        for _ in range(4):
+            p.handle_tool_call("yantrikdb_recall", {"query": "x"})
+        mock_client.forget.return_value = {"rid": "stale", "found": True}
+        p.handle_tool_call("yantrikdb_hygiene", {
+            "action": "apply", "forget_rids": ["stale"],
+        })
+        ledger = json.loads(
+            (tmp_path / "yantrikdb-recall-feedback.json").read_text("utf-8"),
+        )
+        assert "stale" not in ledger
+
+
+class TestHygieneSurfacing:
+    def test_block_empty_when_flag_off(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _make_provider(provider_module, mock_client, monkeypatch, tmp_path)
+        assert p._format_hygiene_block() == ""
+
+    def test_block_surfaces_candidates_when_on(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _make_provider(
+            provider_module, mock_client, monkeypatch, tmp_path,
+            surface_hygiene=True,
+        )
+        mock_client.recall.return_value = _recall_payload([("stale", 0.9)])
+        for _ in range(4):
+            p.handle_tool_call("yantrikdb_recall", {"query": "x"})
+        block = p._format_hygiene_block()
+        assert "Memory hygiene" in block
+        assert "stale" in block
