@@ -283,6 +283,18 @@ RECALL_SCHEMA = {
                     "candidates are hidden until think() promotes them."
                 ),
             },
+            "reinforce": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "v0.6+: list of rids (from a PRIOR recall) that proved "
+                    "useful. Reinforces them so future recalls rank them "
+                    "higher. Only takes effect when self-tuning recall is "
+                    "enabled (YANTRIKDB_SELF_TUNING_RECALL=true); otherwise "
+                    "ignored. Pass the rids you actually relied on after "
+                    "acting on a recall result."
+                ),
+            },
         },
         "required": ["query"],
     },
@@ -1043,6 +1055,29 @@ def _coerce_int(raw: Any, default: int) -> int:
         return default
 
 
+def _coerce_str_list(raw: Any) -> list[str]:
+    """Coerce a tool arg into a clean list of non-empty strings.
+
+    Accepts a list (filtered + stripped), a single string (wrapped), or
+    None/anything else (empty list). Used for the recall ``reinforce`` arg.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        s = raw.strip()
+        return [s] if s else []
+    if isinstance(raw, (list, tuple)):
+        out: list[str] = []
+        for item in raw:
+            if item is None:
+                continue
+            s = str(item).strip()
+            if s:
+                out.append(s)
+        return out
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Provider
 # ---------------------------------------------------------------------------
@@ -1083,6 +1118,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # don't pass hermes_home; the helpers no-op silently in that case.
         self._recent_skills_path: Path | None = None
         self._recent_skills_lock = threading.Lock()
+
+        # v0.6.0+ Wave F — per-rid recall feedback ledger for self-tuning
+        # recall. Same lifecycle as the skills sidecar: set in initialize()
+        # once hermes_home is resolved, None otherwise (helpers no-op). Maps
+        # rid -> {"surfaced": int, "reinforced": int, "last_ts": float}.
+        self._recall_feedback_path: Path | None = None
+        self._recall_feedback_lock = threading.Lock()
 
         # v0.5.0+ Wave A — active-memory caches populated by the prefetch
         # background thread, drained by system_prompt_block().
@@ -1283,6 +1325,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._config = YantrikDBConfig.load(hermes_home)
         if hermes_home is not None:
             self._recent_skills_path = hermes_home / "yantrikdb-recent-skills.json"
+            self._recall_feedback_path = (
+                hermes_home / "yantrikdb-recall-feedback.json"
+            )
 
         # Embedded mode is self-contained (`pip install` and go); HTTP mode
         # requires a token. is_available() short-circuits at the provider
@@ -1987,11 +2032,60 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     continue
                 kept.append(r)
             results = kept
+
+        # v0.6.0 Wave F — explicit reinforcement. The caller passes the
+        # rids of memories that proved useful on a prior turn; record them
+        # so future recalls rank them higher. Independent of this query's
+        # results. Silent no-op when self-tuning is off or no sidecar.
+        self_tuning = bool(self._config and self._config.self_tuning_recall)
+        reinforce_rids = _coerce_str_list(args.get("reinforce"))
+        if self_tuning and reinforce_rids:
+            self._bump_recall_feedback(reinforce_rids, "reinforced")
+
+        # v0.6.0 Wave F — self-tuning re-rank. Apply a capped boost from the
+        # reinforcement ledger and re-sort BEFORE the top_k cut, so a
+        # repeatedly-useful memory can climb into the returned window. Tag
+        # boosted results in why_retrieved for explainability.
+        boost_by_rid: dict[str, float] = {}
+        if self_tuning and results:
+            ledger = self._load_recall_feedback()
+            for r in results:
+                rid = r.get("rid")
+                fb = ledger.get(rid) if rid else None
+                reinforced = int((fb or {}).get("reinforced", 0))
+                boost = self._recall_boost(reinforced)
+                if boost > 0.0 and rid:
+                    boost_by_rid[rid] = boost
+            if boost_by_rid:
+                results = sorted(
+                    results,
+                    key=lambda r: (
+                        _coerce_float(r.get("score"), default=0.0)
+                        + boost_by_rid.get(str(r.get("rid") or ""), 0.0)
+                    ),
+                    reverse=True,
+                )
+
         results = results[:top_k]
         self._record_success()
-        compact = [
-            {
-                "rid": r.get("rid"),
+
+        # v0.6.0 Wave F — record that these rids were surfaced (weak signal
+        # used only by hygiene, never to boost ranking). After the top_k cut
+        # so we only count what the agent actually saw.
+        if self_tuning:
+            surfaced_rids = [
+                str(r.get("rid")) for r in results if r.get("rid")
+            ]
+            self._bump_recall_feedback(surfaced_rids, "surfaced")
+
+        compact = []
+        for r in results:
+            why = list(r.get("why_retrieved") or [])
+            rid = r.get("rid")
+            if rid in boost_by_rid:
+                why.append(f"reinforced (+{boost_by_rid[rid]:.2f})")
+            compact.append({
+                "rid": rid,
                 "text": r.get("text"),
                 "score": r.get("score"),
                 # v0.4.17+ — full score-component breakdown from the engine.
@@ -2006,10 +2100,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "domain": r.get("domain"),
                 "created_at": r.get("created_at"),
                 # Explainable recall — server returns a list of reasons per result.
-                "why_retrieved": r.get("why_retrieved") or [],
-            }
-            for r in results
-        ]
+                "why_retrieved": why,
+            })
         return json.dumps({"count": len(compact), "results": compact})
 
     def _do_forget(self, args: dict[str, Any]) -> str:
@@ -2404,6 +2496,80 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "matches any, call `yantrikdb_skill_search` to retrieve the body."
         )
         return "\n".join(lines)
+
+    # -- v0.6.0 Wave F: recall feedback ledger (self-tuning recall) --------
+    #
+    # Local per-rid usefulness ledger. ``surfaced`` counts how often a
+    # memory appeared in recall results; ``reinforced`` counts explicit
+    # "this proved useful" signals (recall(reinforce=[rid])). Only
+    # reinforcement boosts ranking — surfaced-only frequency would entrench
+    # whatever already ranks high. Capped + pruned by recency so the file
+    # stays small. Fail-soft: any IO error degrades to "no feedback."
+
+    _RECALL_FEEDBACK_MAX = 1000
+
+    def _load_recall_feedback(self) -> dict[str, dict[str, Any]]:
+        if (
+            self._recall_feedback_path is None
+            or not self._recall_feedback_path.exists()
+        ):
+            return {}
+        try:
+            raw = json.loads(
+                self._recall_feedback_path.read_text(encoding="utf-8"),
+            )
+        except (OSError, json.JSONDecodeError) as e:
+            logger.debug("recall-feedback read failed: %s", e)
+            return {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _save_recall_feedback(self, data: dict[str, dict[str, Any]]) -> None:
+        if self._recall_feedback_path is None:
+            return
+        # Prune to the most-recently-touched entries if oversized.
+        if len(data) > self._RECALL_FEEDBACK_MAX:
+            ordered = sorted(
+                data.items(),
+                key=lambda kv: kv[1].get("last_ts", 0.0),
+                reverse=True,
+            )
+            data = dict(ordered[: self._RECALL_FEEDBACK_MAX])
+        try:
+            self._recall_feedback_path.parent.mkdir(parents=True, exist_ok=True)
+            self._recall_feedback_path.write_text(
+                json.dumps(data), encoding="utf-8",
+            )
+        except OSError as e:
+            logger.debug("recall-feedback persist failed: %s", e)
+
+    def _bump_recall_feedback(self, rids: list[str], field: str) -> None:
+        """Increment ``field`` ('surfaced' or 'reinforced') for each rid."""
+        if self._recall_feedback_path is None or not rids:
+            return
+        now = time.time()
+        with self._recall_feedback_lock:
+            data = self._load_recall_feedback()
+            for rid in rids:
+                if not rid:
+                    continue
+                entry = data.get(rid) or {"surfaced": 0, "reinforced": 0}
+                entry[field] = int(entry.get(field, 0)) + 1
+                entry["last_ts"] = now
+                data[rid] = entry
+            self._save_recall_feedback(data)
+
+    def _recall_boost(self, reinforced: int) -> float:
+        """Capped score boost from explicit reinforcement count.
+
+        Linear in reinforcement up to ``self_tuning_max_boost``. ~3
+        reinforcements reach the cap at the default 0.15 / 0.05 settings.
+        """
+        if reinforced <= 0:
+            return 0.0
+        max_boost = (
+            self._config.self_tuning_max_boost if self._config else 0.15
+        )
+        return min(max_boost, 0.05 * reinforced)
 
     # -- v0.5.0 Wave B: extraction stats handler --------------------------
 
