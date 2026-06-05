@@ -3,6 +3,29 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.6.0] — 2026-06-05 — Prove it, then tune it: benchmarked recall + self-tuning + hygiene
+
+v0.5 made the substrate *active*. v0.6 makes it **accountable**. The plugin has always claimed best-in-class recall; v0.6 ships a reproducible number to back the claim, closes the feedback loop so memories that keep proving useful rank higher over time, and surfaces cleanup opportunities so "self-maintaining" becomes visible instead of implicit. Two waves, both pure-plugin (no engine changes), both opt-in by default — existing deployments see zero behaviour change.
+
+### Wave F — Benchmarked recall + self-tuning (PR #35)
+
+- **F1 reproducible recall benchmark (NEW)** — `benchmarks/run_recall_bench.py` spins up a real embedded YantrikDB in a temp dir, ingests a curated, MIT-clean memory-QA corpus (`benchmarks/dataset.json` — 40 memories, 37 queries), runs the real provider recall path, and scores **recall@k**, **answer-containment@k**, and **MRR**. Deterministic; emits JSON + a markdown table. `tests/test_recall_benchmark.py` asserts conservative floors as a CI regression guard (skips when the native engine wheel is absent). First Hermes memory provider to ship a reproducible recall benchmark.
+- **F2 self-tuning recall (NEW, opt-in)** — `YANTRIKDB_SELF_TUNING_RECALL=true` enables a plugin-side feedback ledger (`$HERMES_HOME/yantrikdb-recall-feedback.json`). Pass `recall(reinforce=[rid,...])` with the rids that proved useful; a capped boost (`self_tuning_max_boost`, default `0.15`) lifts reinforced memories and re-ranks *before* the top_k cut, so a repeatedly-useful memory climbs into the returned window. Boosted results are tagged `reinforced (+N)` in `why_retrieved`. **Surfaced-only frequency is never a positive boost** — only explicit reinforcement moves ranking, so recall can't entrench whatever already ranks high. The benchmark's `--reinforce` mode measures the MRR lift directly.
+
+### Wave G — Proactive memory hygiene (PR #37)
+
+- **G1 `yantrikdb_hygiene` tool (NEW)** — `action="scan"` (default) composes engine counters + open contradictions + plugin-side low-usefulness candidates (memories that keep surfacing in recall but were never reinforced) into one digest with a human-readable summary and recommended actions. `action="apply"` runs a consolidation pass (`consolidate=true`) and/or permanently forgets specific rids (`forget_rids=[...]`, looped since the engine has no batch delete). Forgetting also purges the rid from the feedback ledger.
+- **G2 passive hygiene surfacing (NEW, opt-in)** — `YANTRIKDB_SURFACE_HYGIENE=true` appends a compact "review candidates" block to `system_prompt_block` so the agent sees stale-memory cleanup opportunities without being asked. Cheap: reads only the local ledger, no engine round-trip.
+
+### Tool surface
+
+17 → 18 tools (`yantrikdb_hygiene` added). `yantrikdb_recall` gains an optional `reinforce` array. Four new config flags (`self_tuning_recall`, `self_tuning_max_boost`, `surface_hygiene`, `hygiene_max_surfaced`), all default-off / zero-behaviour-change. No new hooks, no new dependencies, no engine changes.
+
+### Fixes (community contributions, thanks @Moodow)
+
+- **`yantrikdb_relate` crash in embedded mode** (PR #39) — the embedded backend forwarded a `namespace` kwarg to the engine's `relate()`, which doesn't accept it, raising `TypeError` and tripping the circuit breaker on a single call. The kwarg is no longer forwarded (the public method signature is unchanged) until the engine adds namespace-scoped edges.
+- **`sentence-transformers` deprecation warning** (PR #38) — the HF embedder loader now prefers `get_embedding_dimension`, falling back to the deprecated `get_sentence_embedding_dimension`, silencing the startup `FutureWarning` on newer `sentence-transformers` while staying backward-compatible.
+
 ## [0.5.0] — 2026-05-31 — Active memory: substrate stops waiting
 
 v0.5 is a thesis release. v0.4.x made the substrate richer; v0.5 makes it **active**. The agent doesn't have to remember memory exists to benefit — every turn, the plugin's `system_prompt_block()` injects relevant memories and skills automatically, surfaces unresolved contradictions, captures the gist before compression, time-filters by natural-language ranges, extracts facts from conversation, and (opt-in) shares discoveries across the user's sibling agents.
