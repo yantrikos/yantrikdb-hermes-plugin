@@ -548,8 +548,8 @@ class EmbeddedYantrikDBClient:
             "rel_type": relationship,
             "weight": float(weight) if weight is not None else 1.0,
         }
-        if namespace:
-            rel_kwargs["namespace"] = namespace
+        # NOTE: namespace kwarg is intentionally NOT forwarded to the engine
+        # until the engine adds namespace-scoped edge support.
         try:
             edge_id = self._db.relate(entity, target, **rel_kwargs)
         except Exception as e:
