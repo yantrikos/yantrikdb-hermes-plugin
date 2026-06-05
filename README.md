@@ -35,6 +35,9 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 | Owner-scoping for multi-platform Hermes (Telegram + WhatsApp + Discord routed by canonical owner) | ✓ v0.4.10 identity-map + v0.4.11 shared group spaces | one shared namespace, manual scoping |
 | Embedded mode default (no server, no token, no GPU) | ✓ v0.2.0+ | varies |
 | HTTP backend for HA clusters | ✓ v0.5.0 (against yantrikdb-server) | varies |
+| Reproducible recall benchmark (`benchmarks/run_recall_bench.py`) | ✓ v0.6.0 — recall@k / MRR / answer-containment, CI-guarded | claims, rarely a runnable number |
+| Self-tuning recall (`recall(reinforce=[...])`) | ✓ v0.6.0 — reinforced memories climb over time, opt-in | static ranking |
+| Proactive memory hygiene (`yantrikdb_hygiene`) | ✓ v0.6.0 — scan/apply consolidate-or-forget | manual cleanup |
 
 ## End-to-end demo — substrate growing through the skill lifecycle
 
@@ -352,6 +355,24 @@ Tier 1 (`with_default()`, ~8 MB) uses [`potion-base-2M`](https://huggingface.co/
 **Quality numbers cited in this README are R@5 vs `sentence-transformers/all-MiniLM-L6-v2` (dim=384) on the upstream [evaluation corpus](https://github.com/yantrikos/yantrikdb/blob/main/scratch/eval_potion_2m.py).** The "~89% / ~92% / ~95% of MiniLM" approximations are from that specific eval; your mileage will vary on a different corpus or task. Semantic separation is also corpus-size dependent — at 3 records all vectors look similar (top score ~0.58); at 8+ with real diversity the score range opens up (top score ~0.84). If you're evaluating, run against your own data.
 
 CI runs ruff + mypy + pytest on Python 3.11 / 3.12 / 3.13 / 3.14 on every push.
+
+## Benchmarks (recall quality, v0.6.0+)
+
+"Best in class" is only worth saying if you can reproduce it. `benchmarks/run_recall_bench.py` spins up a real embedded YantrikDB, ingests a curated MIT-clean memory-QA corpus (`benchmarks/dataset.json` — 40 memories, 37 queries across preferences / architecture / people / work / infra), runs the real provider recall path, and scores it:
+
+```bash
+python benchmarks/run_recall_bench.py            # baseline
+python benchmarks/run_recall_bench.py --reinforce  # + self-tuning lift
+```
+
+Current run (bundled `potion-2M` embedder, deterministic):
+
+| metric | @1 | @3 | @5 |
+|---|---|---|---|
+| recall | 0.865 | 1.000 | 1.000 |
+| answer-containment | 0.865 | 1.000 | 1.000 |
+
+**MRR 0.928.** With `--reinforce`, reinforcing each query's gold memory lifts recall@1 to 0.865 and MRR to 0.928 — a measurable self-tuning gain that the loop produces on its own. `tests/test_recall_benchmark.py` asserts conservative floors so a ranking regression fails CI (it skips when the native engine wheel isn't installed). Extend the corpus to benchmark against your own data. Details: **[benchmarks/README.md](benchmarks/README.md)**.
 
 ## Running the tests
 
