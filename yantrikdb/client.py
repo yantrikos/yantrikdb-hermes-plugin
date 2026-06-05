@@ -207,6 +207,15 @@ class YantrikDBConfig:
     # reinforcement nudges ranking without overriding semantic relevance.
     self_tuning_max_boost: float = 0.15
 
+    # v0.6.0+ Wave G — proactive memory hygiene surfacing (OPT-IN, default
+    # off). When on, system_prompt_block appends a compact hygiene digest
+    # (open conflicts + low-usefulness candidates) so the agent sees
+    # cleanup opportunities without being asked. The yantrikdb_hygiene
+    # tool works regardless of this flag; the flag only controls passive
+    # surfacing. Default OFF → no prompt-budget change for existing users.
+    surface_hygiene: bool = False
+    hygiene_max_surfaced: int = 3
+
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
@@ -277,6 +286,12 @@ class YantrikDBConfig:
             ),
             self_tuning_max_boost=_parse_float(
                 os.environ.get("YANTRIKDB_SELF_TUNING_MAX_BOOST"), 0.15,
+            ),
+            surface_hygiene=_parse_bool(
+                os.environ.get("YANTRIKDB_SURFACE_HYGIENE"), default=False,
+            ),
+            hygiene_max_surfaced=_parse_int(
+                os.environ.get("YANTRIKDB_HYGIENE_MAX_SURFACED"), 3,
             ),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
