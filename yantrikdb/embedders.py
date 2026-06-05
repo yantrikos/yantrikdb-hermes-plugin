@@ -144,7 +144,7 @@ class SentenceTransformerEmbedder:
             ) from e
         # Prefer the model's declared dim if available — saves an encode
         # call and matches what HF says rather than relying on probe.
-        declared = getattr(self._model, "get_sentence_embedding_dimension", None)
+        declared = getattr(self._model, "get_embedding_dimension", None) or getattr(self._model, "get_sentence_embedding_dimension", None)
         if callable(declared):
             try:
                 self.embedding_dim = int(declared())
