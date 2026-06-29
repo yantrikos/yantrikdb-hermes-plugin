@@ -29,6 +29,8 @@ def mock_client(client_module) -> MagicMock:
         "tombstoned_memories": 5, "edges": 17, "entities": 12,
         "operations": 128, "open_conflicts": 1, "pending_triggers": 0,
     }
+    # v0.7: hygiene scan pages list_records; default to an empty page.
+    c.list_records.return_value = {"records": [], "next_cursor": None}
     return c
 
 

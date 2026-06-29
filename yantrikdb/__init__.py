@@ -718,12 +718,12 @@ EXTRACTION_STATS_SCHEMA = {
 HYGIENE_SCHEMA = {
     "name": "yantrikdb_hygiene",
     "description": (
-        "v0.6 Wave G — proactive memory hygiene. `action=\"scan\"` (default) "
-        "returns a digest of cleanup opportunities: open contradictions, "
-        "engine counters (active / consolidated / tombstoned), and "
-        "low-usefulness candidates (memories that keep surfacing in recall "
-        "but were never reinforced as useful — a plugin-side stale signal "
-        "that needs self-tuning recall enabled to populate). "
+        "Proactive memory hygiene. `action=\"scan\"` (default) returns a "
+        "digest of cleanup opportunities: open contradictions, engine "
+        "counters (active / consolidated / tombstoned), `stale_candidates` "
+        "(v0.7 — low-importance, cold/rarely-recalled memories from the "
+        "engine's own access stats), and `low_usefulness` (memories that "
+        "keep surfacing in recall but were never reinforced). "
         "`action=\"apply\"` acts on them: pass `consolidate=true` to run a "
         "canonicalization pass that merges duplicates, and/or "
         "`forget_rids=[...]` to delete specific memories. Use scan to decide, "
@@ -2342,15 +2342,22 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
     # -- v0.6.0 Wave G: proactive memory hygiene --------------------------
 
+    # v0.7 Wave H — staleness thresholds for the engine-backed scan.
+    _STALE_IMPORTANCE = 0.4          # below this is "low value"
+    _STALE_AGE_SECS = 30 * 24 * 3600  # untouched for 30d is "old"
+    _STALE_SCAN_CAP = 300            # max records paged per scan
+
     def _low_usefulness_candidates(
         self, *, min_surfaced: int = 3, limit: int = 10,
     ) -> list[dict[str, Any]]:
         """rids surfaced often in recall but never reinforced as useful.
 
-        A plugin-side stale signal: the engine has no scan/access-count API,
-        but the self-tuning feedback ledger records what recall kept showing.
-        A memory surfaced many times yet never reinforced is a candidate for
-        review. Empty unless self-tuning recall has been populating the
+        Plugin-side SECONDARY signal (v0.6): the self-tuning feedback ledger
+        records what recall kept showing. A memory surfaced many times yet
+        never reinforced is a review candidate. As of v0.7 the primary
+        staleness signal is `_engine_stale_candidates` (engine truth via
+        `list_records`); this remains as a complementary "shown-but-never-
+        useful" overlay. Empty unless self-tuning recall populated the
         ledger. Sorted by surfaced count descending.
         """
         with self._recall_feedback_lock:
@@ -2368,6 +2375,76 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 })
         out.sort(key=lambda e: e["surfaced"], reverse=True)
         return out[:limit]
+
+    def _engine_stale_candidates(
+        self, namespace: str, *, limit: int = 10,
+    ) -> tuple[list[dict[str, Any]], bool, bool]:
+        """Engine-truth stale candidates via `list_records` (v0.7 Wave H).
+
+        Pages the namespace (bounded by `_STALE_SCAN_CAP`) and flags records
+        that are low-value AND cold: `importance < _STALE_IMPORTANCE` and at
+        least one of (cold storage tier, access_count <= 1, last_access older
+        than `_STALE_AGE_SECS`). Returns (candidates, available, truncated).
+        `available=False` when the engine/server lacks `list_records` (older
+        engine or HTTP server without the endpoint) — caller falls back.
+        """
+        client = self._require_client()
+        records: list[dict[str, Any]] = []
+        cursor: str | None = None
+        truncated = False
+        try:
+            while len(records) < self._STALE_SCAN_CAP:
+                page = client.list_records(
+                    namespace=namespace,
+                    limit=min(100, self._STALE_SCAN_CAP - len(records)),
+                    since_rid=cursor,
+                )
+                batch = page.get("records") or []
+                records.extend(batch)
+                cursor = page.get("next_cursor")
+                if not cursor or not batch:
+                    break
+            else:
+                truncated = bool(cursor)
+        except (AttributeError, YantrikDBServerError):
+            # Older engine (no method) or HTTP server without /v1/records.
+            return [], False, False
+        except YantrikDBError:
+            return [], False, False
+
+        now = time.time()
+        cands: list[dict[str, Any]] = []
+        for r in records:
+            imp = _coerce_float(r.get("importance"), default=0.5)
+            if imp >= self._STALE_IMPORTANCE:
+                continue
+            ac = _coerce_int(r.get("access_count"), 0)
+            la = r.get("last_access") or r.get("created_at")
+            cold = (r.get("storage_tier") == "cold")
+            unused = ac <= 1
+            old = isinstance(la, (int, float)) and (now - la) > self._STALE_AGE_SECS
+            if not (cold or unused or old):
+                continue
+            reasons = []
+            if cold:
+                reasons.append("cold")
+            if unused:
+                reasons.append(f"access_count={ac}")
+            if old:
+                reasons.append("untouched_30d")
+            text = (r.get("text") or "").strip()
+            cands.append({
+                "rid": r.get("rid"),
+                "text": text[:120] + ("…" if len(text) > 120 else ""),
+                "importance": round(imp, 3),
+                "access_count": ac,
+                "last_access": la,
+                "storage_tier": r.get("storage_tier"),
+                "reason": ", ".join(reasons),
+            })
+        # Least valuable first.
+        cands.sort(key=lambda c: (c["importance"], c["access_count"]))
+        return cands[:limit], True, truncated
 
     def _do_hygiene(self, args: dict[str, Any]) -> str:
         """Scan for cleanup opportunities, or apply consolidate/forget.
@@ -2449,6 +2526,17 @@ class YantrikDBMemoryProvider(MemoryProvider):
         except YantrikDBError as e:
             digest["open_conflicts"] = {"error": str(e)}
 
+        # v0.7 Wave H — primary staleness signal from engine truth, with
+        # graceful fallback to the v0.6 sidecar overlay when unavailable.
+        cap = self._config.hygiene_max_surfaced if self._config else 3
+        stale, engine_scan, truncated = self._engine_stale_candidates(
+            namespace, limit=max(cap, 1) * 3,
+        )
+        digest["stale_candidates"] = stale
+        digest["engine_scan_available"] = engine_scan
+        if truncated:
+            digest["stale_scan_truncated"] = True
+
         low_use = self._low_usefulness_candidates()
         digest["low_usefulness"] = low_use
 
@@ -2463,17 +2551,19 @@ class YantrikDBMemoryProvider(MemoryProvider):
             f"consolidated={eng.get('consolidated_memories', '?')} "
             f"tombstoned={eng.get('tombstoned_memories', '?')} | "
             f"open_conflicts={digest.get('open_conflicts_total', '?')} | "
+            f"stale={len(stale)}{'+' if truncated else ''} "
             f"low_usefulness={len(low_use)}"
         )
         digest["recommended_actions"] = self._hygiene_recommendations(
-            eng, digest.get("open_conflicts_total", 0), low_use,
+            eng, digest.get("open_conflicts_total", 0), stale, low_use,
         )
         self._record_success()
         return json.dumps(digest)
 
     @staticmethod
     def _hygiene_recommendations(
-        eng: dict[str, Any], open_conflicts: int, low_use: list[dict[str, Any]],
+        eng: dict[str, Any], open_conflicts: int,
+        stale: list[dict[str, Any]], low_use: list[dict[str, Any]],
     ) -> list[str]:
         recs: list[str] = []
         if open_conflicts:
@@ -2481,11 +2571,16 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 f"{open_conflicts} unresolved contradiction(s) — call "
                 "yantrikdb_resolve_conflict or surface to the user."
             )
+        if stale:
+            recs.append(
+                f"{len(stale)} low-value, cold memory(ies) (low importance + "
+                "rarely/never recalled) — review and forget via "
+                "yantrikdb_hygiene(action=apply, forget_rids=[...])."
+            )
         if low_use:
             recs.append(
                 f"{len(low_use)} memory(ies) keep surfacing but were never "
-                "reinforced — review and forget the stale ones via "
-                "yantrikdb_hygiene(action=apply, forget_rids=[...])."
+                "reinforced — likely review candidates too."
             )
         if int(eng.get("active_memories", 0) or 0) > 0 and not recs:
             recs.append(

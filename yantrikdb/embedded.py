@@ -565,6 +565,39 @@ class EmbeddedYantrikDBClient:
             raise _map_engine_error("stats", e) from e
         return out if isinstance(out, dict) else {}
 
+    # -- Record listing (engine 0.8+/0.9+) ----------------------------
+
+    def list_records(
+        self,
+        *,
+        namespace: str | None = None,
+        limit: int = 50,
+        order: str = "asc",
+        domain: str | None = None,
+        since_rid: str | None = None,
+    ) -> dict[str, Any]:
+        """Structured scan over a namespace (engine ``list_records``).
+
+        Returns ``{"records": [...], "next_cursor": ...}``. Raises
+        ``AttributeError`` on engines too old to expose ``list_records``;
+        the provider catches that and falls back to its sidecar signal.
+        """
+        try:
+            out = self._db.list_records(
+                namespace=namespace or self.config.namespace,
+                limit=int(limit),
+                order=order,
+                domain=domain,
+                since_rid=since_rid,
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("list_records", e) from e
+        if isinstance(out, dict):
+            return out
+        return {"records": list(out) if out else []}
+
     # -- Skills (v0.3.0+) ---------------------------------------------
     #
     # Skills live in the shared ``skill_substrate`` namespace alongside

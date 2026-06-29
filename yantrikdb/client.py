@@ -722,6 +722,32 @@ class YantrikDBClient:
         params = {"namespace": namespace} if namespace else None
         return self._request("GET", "/v1/stats", params=params)
 
+    # -- Record listing (engine 0.8+/0.9+) ----------------------------
+    #
+    # Structured (non-semantic) scan over a namespace. Each record carries
+    # engine-truth fields (importance, access_count, last_access,
+    # storage_tier, …) used by the v0.7 hygiene scan. HTTP mode depends on
+    # yantrikdb-server exposing /v1/records; older servers return 404,
+    # which the provider treats as "engine scan unavailable" and falls back.
+
+    def list_records(
+        self,
+        *,
+        namespace: str | None = None,
+        limit: int = 50,
+        order: str = "asc",
+        domain: str | None = None,
+        since_rid: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": int(limit), "order": order}
+        if namespace:
+            params["namespace"] = namespace
+        if domain:
+            params["domain"] = domain
+        if since_rid:
+            params["since_rid"] = since_rid
+        return self._request("GET", "/v1/records", params=params)
+
     # -- Skills (v0.3.0+) ---------------------------------------------
     #
     # The HTTP path delegates to yantrikdb-server's wrapper endpoints,
