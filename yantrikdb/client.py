@@ -216,6 +216,23 @@ class YantrikDBConfig:
     surface_hygiene: bool = False
     hygiene_max_surfaced: int = 3
 
+    # v0.7.0+ Wave J — conversation buffer (engine 0.9+ working memory).
+    #
+    # When enabled, sync_turn also records each user/assistant turn into the
+    # engine's bounded, verbatim ring buffer (record_turn). Unlike the
+    # semantic store this is a cheap last-N-turns transcript that survives
+    # Hermes compression — so the exact recent exchange is always
+    # recoverable via recent_turns. Default ON (cheap, additive); set
+    # YANTRIKDB_CONVERSATION_BUFFER_ENABLED=false to disable.
+    conversation_buffer_enabled: bool = True
+    conversation_buffer_max_turns: int = 10
+    # Passive surfacing of the verbatim buffer into system_prompt_block —
+    # OPT-IN (default off) since it costs prompt budget. Most useful
+    # post-compression, where the semantic store has the gist but the exact
+    # last turns would otherwise be gone.
+    surface_conversation_buffer: bool = False
+    conversation_buffer_surface_limit: int = 6
+
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
@@ -292,6 +309,20 @@ class YantrikDBConfig:
             ),
             hygiene_max_surfaced=_parse_int(
                 os.environ.get("YANTRIKDB_HYGIENE_MAX_SURFACED"), 3,
+            ),
+            conversation_buffer_enabled=_parse_bool(
+                os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_ENABLED"),
+                default=True,
+            ),
+            conversation_buffer_max_turns=_parse_int(
+                os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_MAX_TURNS"), 10,
+            ),
+            surface_conversation_buffer=_parse_bool(
+                os.environ.get("YANTRIKDB_SURFACE_CONVERSATION_BUFFER"),
+                default=False,
+            ),
+            conversation_buffer_surface_limit=_parse_int(
+                os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_SURFACE_LIMIT"), 6,
             ),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
@@ -768,6 +799,40 @@ class YantrikDBClient:
             "limit": int(limit),
         }
         return self._request("GET", "/v1/knowledge_gaps", params=params)
+
+    # -- Conversation buffer (engine 0.9+) ----------------------------
+    #
+    # Bounded, verbatim last-N-turns working memory, namespace-scoped.
+    # Complements the semantic store: survives Hermes compression and is
+    # cheaper than recall for "what did we just say." HTTP mode depends on
+    # yantrikdb-server exposing /v1/conversation/*; older servers 404.
+
+    def record_turn(
+        self,
+        role: str,
+        content: str,
+        *,
+        namespace: str | None = None,
+        max_turns: int = 10,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "role": role, "content": content, "max_turns": int(max_turns),
+        }
+        if namespace:
+            body["namespace"] = namespace
+        return self._request("POST", "/v1/conversation/turns", body)
+
+    def recent_turns(
+        self, *, namespace: str | None = None, limit: int = 10,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": int(limit)}
+        if namespace:
+            params["namespace"] = namespace
+        return self._request("GET", "/v1/conversation/recent", params=params)
+
+    def clear_turns(self, *, namespace: str | None = None) -> dict[str, Any]:
+        body = {"namespace": namespace} if namespace else {}
+        return self._request("POST", "/v1/conversation/clear", body)
 
     # -- Skills (v0.3.0+) ---------------------------------------------
     #

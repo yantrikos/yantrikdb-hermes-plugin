@@ -26,6 +26,10 @@ def mock_client(client_module) -> MagicMock:
     c.conflicts.return_value = {"conflicts": []}
     c.list_records.return_value = {"records": [], "next_cursor": None}
     c.knowledge_gaps.return_value = {"gaps": []}
+    c.remember.return_value = {"rid": "r1"}
+    c.record_turn.return_value = {"recorded": True}
+    c.recent_turns.return_value = {"turns": []}
+    c.clear_turns.return_value = {"cleared": True}
     return c
 
 
@@ -141,3 +145,85 @@ class TestKnowledgeGaps:
         assert kw["min_count"] == 3
         assert kw["max_avg_top_score"] == 0.4
         assert kw["limit"] == 20
+
+
+def _join_sync(p):
+    t = getattr(p, "_sync_thread", None)
+    if t is not None and t.is_alive():
+        t.join(timeout=3)
+
+
+class TestConversationBuffer:
+    def test_sync_turn_records_both_roles(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        p.sync_turn("which database do we use?", "PostgreSQL for billing.")
+        _join_sync(p)
+        roles = [c.args[0] for c in mock_client.record_turn.call_args_list]
+        assert "user" in roles and "assistant" in roles
+
+    def test_disabled_skips_recording(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        monkeypatch.setenv("YANTRIKDB_CONVERSATION_BUFFER_ENABLED", "false")
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        p.sync_turn("hello", "hi there")
+        _join_sync(p)
+        mock_client.record_turn.assert_not_called()
+
+    def test_recent_turns_tool_reads(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.recent_turns.return_value = {"turns": [
+            {"role": "user", "content": "q", "created_at": 1.0},
+            {"role": "assistant", "content": "a", "created_at": 2.0},
+        ]}
+        out = json.loads(p.handle_tool_call("yantrikdb_recent_turns", {"limit": 5}))
+        assert out["count"] == 2
+        assert mock_client.recent_turns.call_args.kwargs["limit"] == 5
+
+    def test_recent_turns_clear(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        out = json.loads(p.handle_tool_call("yantrikdb_recent_turns", {"clear": True}))
+        mock_client.clear_turns.assert_called_once()
+        assert out["cleared"] is True
+
+    def test_graceful_when_buffer_absent(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.recent_turns.side_effect = AttributeError("no recent_turns")
+        out = json.loads(p.handle_tool_call("yantrikdb_recent_turns", {}))
+        assert out["ok"] is False
+        assert "0.9.0" in out["error"]
+
+    def test_sync_turn_disables_after_attribute_error(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.record_turn.side_effect = AttributeError("old engine")
+        p.sync_turn("a", "b")
+        _join_sync(p)
+        assert p._conversation_buffer_unavailable is True
+
+    def test_surfacing_block_opt_in(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        monkeypatch.setenv("YANTRIKDB_SURFACE_CONVERSATION_BUFFER", "true")
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.recent_turns.return_value = {"turns": [
+            {"role": "user", "content": "what db?", "created_at": 1.0},
+        ]}
+        block = p._format_conversation_block()
+        assert "Recent conversation" in block
+        assert "what db?" in block
+
+    def test_surfacing_block_off_by_default(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        assert p._format_conversation_block() == ""

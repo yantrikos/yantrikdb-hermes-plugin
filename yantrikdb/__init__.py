@@ -798,6 +798,38 @@ KNOWLEDGE_GAPS_SCHEMA = {
     },
 }
 
+RECENT_TURNS_SCHEMA = {
+    "name": "yantrikdb_recent_turns",
+    "description": (
+        "v0.7 — the verbatim recent-conversation buffer (bounded last-N "
+        "turns), recorded automatically each turn and kept VERBATIM. It "
+        "survives Hermes compression, so use it to recover exactly what was "
+        "just said when the semantic store only kept the gist. Optional "
+        "`limit` (default 10). Pass `clear=true` to wipe the buffer for the "
+        "current namespace. Returns 'not available' on engines/servers "
+        "older than 0.9.0."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "description": "Max turns to return (default 10).",
+            },
+            "clear": {
+                "type": "boolean",
+                "description": "If true, clear the buffer for this namespace "
+                               "instead of reading it.",
+            },
+            "namespace": {
+                "type": "string",
+                "description": "Optional namespace. Defaults to the active one.",
+            },
+        },
+        "required": [],
+    },
+}
+
 ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
@@ -818,6 +850,7 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     OBSERVABILITY_SCHEMA,
     HYGIENE_SCHEMA,
     KNOWLEDGE_GAPS_SCHEMA,
+    RECENT_TURNS_SCHEMA,
 ]
 
 
@@ -1210,6 +1243,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # rid -> {"surfaced": int, "reinforced": int, "last_ts": float}.
         self._recall_feedback_path: Path | None = None
         self._recall_feedback_lock = threading.Lock()
+
+        # v0.7 Wave J — set once if the engine/server lacks the conversation
+        # buffer API, so we stop attempting record_turn every turn.
+        self._conversation_buffer_unavailable = False
 
         # v0.5.0+ Wave A — active-memory caches populated by the prefetch
         # background thread, drained by system_prompt_block().
@@ -1666,6 +1703,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             + self._format_auto_skill_block()
             + self._format_pending_conflicts_block()
             + self._format_hygiene_block()
+            + self._format_conversation_block()
         )
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
@@ -1841,6 +1879,16 @@ class YantrikDBMemoryProvider(MemoryProvider):
                         confirmed_by_user=True,
                     )
 
+            # 3. v0.7 Wave J — verbatim conversation buffer. Cheap, bounded,
+            # survives Hermes compression so the exact last turns are always
+            # recoverable via recent_turns / the optional surfaced block.
+            if cfg.conversation_buffer_enabled:
+                self._record_conversation_turns(
+                    user_content=text,
+                    assistant_content=(assistant_content or "").strip(),
+                    namespace=namespace,
+                )
+
         if self._sync_thread and self._sync_thread.is_alive():
             self._sync_thread.join(timeout=_SYNC_JOIN_SECS)
         self._sync_thread = threading.Thread(
@@ -1854,6 +1902,39 @@ class YantrikDBMemoryProvider(MemoryProvider):
             self._prior_assistant_by_session[snapshot_sid] = ac
         else:
             self._prior_assistant_by_session.pop(snapshot_sid, None)
+
+    def _record_conversation_turns(
+        self, *, user_content: str, assistant_content: str, namespace: str,
+    ) -> None:
+        """Append the user + assistant turns to the engine ring buffer.
+
+        Fail-soft. On the first ``AttributeError`` (engine too old) or a
+        404 in HTTP mode, sets ``_conversation_buffer_unavailable`` so we
+        stop retrying every turn.
+        """
+        if self._client is None or self._config is None:
+            return
+        if self._conversation_buffer_unavailable:
+            return
+        max_turns = self._config.conversation_buffer_max_turns
+        for role, content in (("user", user_content),
+                              ("assistant", assistant_content)):
+            if not content:
+                continue
+            try:
+                self._client.record_turn(
+                    role, content, namespace=namespace, max_turns=max_turns,
+                )
+            except (AttributeError, YantrikDBServerError):
+                self._conversation_buffer_unavailable = True
+                logger.info(
+                    "YantrikDB conversation buffer unavailable "
+                    "(needs yantrikdb>=0.9.0 / server endpoint) — disabling.",
+                )
+                return
+            except YantrikDBError as e:
+                logger.debug("YantrikDB record_turn failed: %s", e)
+                return
 
     def _extract_and_record(
         self,
@@ -1982,6 +2063,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_hygiene(args)
             elif tool_name == "yantrikdb_knowledge_gaps":
                 raw = self._do_knowledge_gaps(args)
+            elif tool_name == "yantrikdb_recent_turns":
+                raw = self._do_recent_turns(args)
             elif tool_name.startswith("yantrikdb_skill_"):
                 if not (self._config and self._config.skills_enabled):
                     return tool_error(
@@ -2669,6 +2752,39 @@ class YantrikDBMemoryProvider(MemoryProvider):
             ),
         })
 
+    # -- v0.7 Wave J: conversation buffer --------------------------------
+
+    _CONV_UNAVAILABLE_MSG = (
+        "conversation buffer needs yantrikdb>=0.9.0 (embedded) or a "
+        "yantrikdb-server exposing /v1/conversation/* — not available in "
+        "this mode/version."
+    )
+
+    def _do_recent_turns(self, args: dict[str, Any]) -> str:
+        """Read (or clear) the verbatim conversation buffer."""
+        client = self._require_client()
+        namespace = (args.get("namespace") or self._namespace or "").strip()
+        if args.get("clear"):
+            try:
+                client.clear_turns(namespace=namespace)
+            except (AttributeError, YantrikDBServerError):
+                return tool_error(
+                    self._CONV_UNAVAILABLE_MSG, tool="yantrikdb_recent_turns",
+                )
+            self._record_success()
+            return json.dumps({"cleared": True, "namespace": namespace})
+        limit = _coerce_int(args.get("limit"), 10)
+        try:
+            resp = client.recent_turns(namespace=namespace, limit=limit)
+        except (AttributeError, YantrikDBServerError):
+            return tool_error(
+                self._CONV_UNAVAILABLE_MSG, tool="yantrikdb_recent_turns",
+            )
+        turns = resp.get("turns") if isinstance(resp, dict) else resp
+        turns = turns or []
+        self._record_success()
+        return json.dumps({"count": len(turns), "turns": turns})
+
     def _do_pending_triggers(self, args: dict[str, Any]) -> str:
         limit = _coerce_int(args.get("limit"), 10)
         # Defensive bound — large limits hit the engine pointlessly when
@@ -3110,6 +3226,41 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "These keep appearing without proving useful. Call "
             "`yantrikdb_hygiene` to inspect, then forget the stale ones."
         )
+        return "\n".join(lines)
+
+    def _format_conversation_block(self) -> str:
+        """v0.7 Wave J — optionally surface the verbatim recent turns.
+
+        Opt-in (YANTRIKDB_SURFACE_CONVERSATION_BUFFER=true). Most useful
+        post-compression, when the semantic store has the gist but the exact
+        last turns would otherwise be gone. Costs one engine read per call
+        (hence opt-in). Fail-soft; disables itself if the buffer API is
+        absent.
+        """
+        if self._config is None or not self._config.surface_conversation_buffer:
+            return ""
+        if self._client is None or self._conversation_buffer_unavailable:
+            return ""
+        limit = max(self._config.conversation_buffer_surface_limit, 1)
+        try:
+            resp = self._client.recent_turns(
+                namespace=self._namespace, limit=limit,
+            )
+        except (AttributeError, YantrikDBServerError):
+            self._conversation_buffer_unavailable = True
+            return ""
+        except YantrikDBError:
+            return ""
+        turns = (resp.get("turns") if isinstance(resp, dict) else resp) or []
+        if not turns:
+            return ""
+        lines = ["", "## Recent conversation (verbatim)"]
+        for t in turns[-limit:]:
+            role = t.get("role", "?")
+            content = (t.get("content") or "").strip()
+            snippet = content[:200] + ("…" if len(content) > 200 else "")
+            lines.append(f"- **{role}**: {snippet}")
+        lines.append("(Preserved verbatim by YantrikDB across compression.)")
         return "\n".join(lines)
 
     def _do_skill_outcome(self, args: dict[str, Any]) -> str:

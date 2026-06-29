@@ -627,6 +627,51 @@ class EmbeddedYantrikDBClient:
             return out
         return {"gaps": list(out) if out else []}
 
+    # -- Conversation buffer (engine 0.9+) ----------------------------
+
+    def record_turn(
+        self,
+        role: str,
+        content: str,
+        *,
+        namespace: str | None = None,
+        max_turns: int = 10,
+    ) -> dict[str, Any]:
+        try:
+            self._db.record_turn(
+                namespace or self.config.namespace,
+                role,
+                content,
+                max_turns=int(max_turns),
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("record_turn", e) from e
+        return {"recorded": True, "role": role}
+
+    def recent_turns(
+        self, *, namespace: str | None = None, limit: int = 10,
+    ) -> dict[str, Any]:
+        try:
+            out = self._db.recent_turns(
+                namespace or self.config.namespace, limit=int(limit),
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("recent_turns", e) from e
+        return {"turns": list(out) if out else []}
+
+    def clear_turns(self, *, namespace: str | None = None) -> dict[str, Any]:
+        try:
+            self._db.clear_turns(namespace or self.config.namespace)
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("clear_turns", e) from e
+        return {"cleared": True}
+
     # -- Skills (v0.3.0+) ---------------------------------------------
     #
     # Skills live in the shared ``skill_substrate`` namespace alongside
