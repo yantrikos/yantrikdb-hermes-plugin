@@ -3,6 +3,34 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.7.0] — 2026-06-29 — Build on the engine: gap-closers, conversation + task storage
+
+Engine **0.9.0 "close the memory gaps"** (and 0.8.0) added exactly the primitives the plugin worked around in v0.6, plus two new first-class storage surfaces. v0.7 builds on them. Four waves, all additive and opt-in / graceful-degradation; existing deployments see zero behaviour change. **Requires `yantrikdb>=0.9.0`** (pin bumped on all surfaces) — which also pulls the engine's Backpressure/compactor reliability fix for long embedded write sessions. No new Python dependencies.
+
+A compatibility spike (isolated 0.9.0 venv) confirmed the prior plugin was already fully compatible with 0.9.0 (full suite green, recall benchmark MRR 0.928→0.932) before any of this work; v0.7 is purely the new capabilities.
+
+### Wave H — Engine-backed hygiene scan (PR #42)
+
+- **`yantrikdb_hygiene` scan now uses engine truth.** Via the new `list_records` API it pages the namespace (bounded, truncation-flagged) and computes `stale_candidates` from real engine stats: low `importance` AND (cold `storage_tier` OR `access_count<=1` OR untouched 30d). This supersedes the v0.6 plugin-side sidecar heuristic as the primary staleness signal; `low_usefulness` (surfaced-but-never-reinforced) remains a complementary overlay. Falls back to the v0.6 path when `list_records` is unavailable. New `list_records` client method (HTTP + embedded parity).
+
+### Wave I — Knowledge gaps (PR #42)
+
+- **`yantrikdb_knowledge_gaps` (NEW tool).** Exposes the engine's `knowledge_gaps()` — queries asked often (`>= min_count`) but answered poorly (avg top recall score `<= max_avg_top_score`). The substrate's *known unknowns*: a direct signal of what your memory is missing. No other Hermes memory provider surfaces this. Engine-global scope (documented); degrades to "not available" on older engines/servers.
+
+### Wave J — Conversation storage (PR #42)
+
+- **Verbatim conversation buffer.** New `record_turn` / `recent_turns` / `clear_turns` client methods (HTTP + embedded). `sync_turn` now also records each user + assistant turn into the engine's bounded, verbatim ring buffer (default on, cheap; `YANTRIKDB_CONVERSATION_BUFFER_ENABLED`) — and it **survives Hermes compression**, complementing the semantic store + `on_pre_compress` gist.
+- **`yantrikdb_recent_turns` (NEW tool)** reads the verbatim recent exchange (or `clear=true` to wipe it).
+- **Opt-in post-compression surfacing** (`YANTRIKDB_SURFACE_CONVERSATION_BUFFER`): a "## Recent conversation (verbatim)" block in `system_prompt_block`, most useful after a compress when only the gist remains.
+
+### Wave K — Task storage (PR #42)
+
+- **`yantrikdb_tasks` (NEW tool)** — a durable, namespace-scoped task/chore store kept in the substrate (status, priority, subtasks via `parent_id`), action-dispatched (`list`/`add`/`update`/`delete`/`get`). Distinct from ephemeral host TODOs and from engine-generated triggers: agent-authored tasks that persist across sessions. New `task_add/list/get/update/delete` client methods (HTTP + embedded parity).
+
+### Tool surface
+
+18 → 21 tools (`yantrikdb_knowledge_gaps`, `yantrikdb_recent_turns`, `yantrikdb_tasks`). Several new opt-in config flags, all default to zero-behaviour-change. Pin `yantrikdb>=0.7.6` → `>=0.9.0`. 302 tests pass (verified on both 0.8.0 and 0.9.0); ruff + mypy clean.
+
 ## [0.6.0] — 2026-06-05 — Prove it, then tune it: benchmarked recall + self-tuning + hygiene
 
 v0.5 made the substrate *active*. v0.6 makes it **accountable**. The plugin has always claimed best-in-class recall; v0.6 ships a reproducible number to back the claim, closes the feedback loop so memories that keep proving useful rank higher over time, and surfaces cleanup opportunities so "self-maintaining" becomes visible instead of implicit. Two waves, both pure-plugin (no engine changes), both opt-in by default — existing deployments see zero behaviour change.
