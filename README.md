@@ -4,7 +4,7 @@
 [![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.7.6-orange)](https://github.com/yantrikos/yantrikdb-server)
+[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.9.0-orange)](https://github.com/yantrikos/yantrikdb-server)
 [![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)
@@ -37,7 +37,10 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 | HTTP backend for HA clusters | ✓ v0.5.0 (against yantrikdb-server) | varies |
 | Reproducible recall benchmark (`benchmarks/run_recall_bench.py`) | ✓ v0.6.0 — recall@k / MRR / answer-containment, CI-guarded | claims, rarely a runnable number |
 | Self-tuning recall (`recall(reinforce=[...])`) | ✓ v0.6.0 — reinforced memories climb over time, opt-in | static ranking |
-| Proactive memory hygiene (`yantrikdb_hygiene`) | ✓ v0.6.0 — scan/apply consolidate-or-forget | manual cleanup |
+| Proactive memory hygiene (`yantrikdb_hygiene`) | ✓ v0.7.0 — engine-backed stale scan + consolidate-or-forget | manual cleanup |
+| Knowledge gaps (`yantrikdb_knowledge_gaps`) | ✓ v0.7.0 — "what is my memory missing?" from real recall demand | not surfaced |
+| Verbatim conversation buffer (`yantrikdb_recent_turns`) | ✓ v0.7.0 — survives compression, auto-captured | host context only |
+| Durable task store (`yantrikdb_tasks`) | ✓ v0.7.0 — namespace-scoped chores in the substrate | ephemeral / external |
 
 ## End-to-end demo — substrate growing through the skill lifecycle
 
