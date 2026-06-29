@@ -830,6 +830,58 @@ RECENT_TURNS_SCHEMA = {
     },
 }
 
+TASKS_SCHEMA = {
+    "name": "yantrikdb_tasks",
+    "description": (
+        "v0.7 — a durable, namespace-scoped task/chore store kept IN the "
+        "memory substrate (persists across sessions). Unlike an ephemeral "
+        "host TODO list and unlike engine-generated triggers, these are "
+        "agent-authored tasks with status + priority + optional subtasks. "
+        "`action=\"list\"` (default) returns tasks (optional `status` "
+        "filter); `add` creates one (`title` required; optional `priority` "
+        "low/medium/high, `parent_id` for a subtask); `update` changes the "
+        "`status`/`priority` of `task_id`; `delete` removes `task_id`; "
+        "`get` fetches `task_id`. Needs yantrikdb>=0.9.0."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["list", "add", "update", "delete", "get"],
+                "description": "list (default) / add / update / delete / get.",
+            },
+            "title": {
+                "type": "string",
+                "description": "add: the task title (required for add).",
+            },
+            "priority": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "description": "add/update: task priority. Default medium.",
+            },
+            "parent_id": {
+                "type": "string",
+                "description": "add: parent task id to create a subtask.",
+            },
+            "task_id": {
+                "type": "string",
+                "description": "update/delete/get: the target task id.",
+            },
+            "status": {
+                "type": "string",
+                "description": "list: filter by status. update: new status "
+                               "(e.g. open / in_progress / done).",
+            },
+            "namespace": {
+                "type": "string",
+                "description": "Optional namespace. Defaults to the active one.",
+            },
+        },
+        "required": [],
+    },
+}
+
 ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
@@ -851,6 +903,7 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     HYGIENE_SCHEMA,
     KNOWLEDGE_GAPS_SCHEMA,
     RECENT_TURNS_SCHEMA,
+    TASKS_SCHEMA,
 ]
 
 
@@ -2065,6 +2118,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_knowledge_gaps(args)
             elif tool_name == "yantrikdb_recent_turns":
                 raw = self._do_recent_turns(args)
+            elif tool_name == "yantrikdb_tasks":
+                raw = self._do_tasks(args)
             elif tool_name.startswith("yantrikdb_skill_"):
                 if not (self._config and self._config.skills_enabled):
                     return tool_error(
@@ -2784,6 +2839,85 @@ class YantrikDBMemoryProvider(MemoryProvider):
         turns = turns or []
         self._record_success()
         return json.dumps({"count": len(turns), "turns": turns})
+
+    # -- v0.7 Wave K: task store -----------------------------------------
+
+    _TASKS_UNAVAILABLE_MSG = (
+        "tasks need yantrikdb>=0.9.0 (embedded) or a yantrikdb-server "
+        "exposing /v1/tasks — not available in this mode/version."
+    )
+
+    def _do_tasks(self, args: dict[str, Any]) -> str:
+        """Durable namespace-scoped task store (action-dispatched)."""
+        client = self._require_client()
+        action = (args.get("action") or "list").strip().lower()
+        namespace = (args.get("namespace") or self._namespace or "").strip()
+
+        def _need_id() -> str:
+            return (args.get("task_id") or "").strip()
+
+        try:
+            if action == "list":
+                resp = client.task_list(
+                    namespace=namespace, status=args.get("status"),
+                )
+                tasks = (resp.get("tasks") if isinstance(resp, dict) else resp) or []
+                out: dict[str, Any] = {
+                    "action": "list", "count": len(tasks), "tasks": tasks,
+                }
+            elif action == "add":
+                title = (args.get("title") or "").strip()
+                if not title:
+                    return tool_error(
+                        "Missing required parameter: title",
+                        tool="yantrikdb_tasks",
+                    )
+                priority = (args.get("priority") or "medium").strip().lower()
+                resp = client.task_add(
+                    title, namespace=namespace, priority=priority,
+                    parent_id=args.get("parent_id"),
+                )
+                out = {"action": "add",
+                       **(resp if isinstance(resp, dict) else {"id": resp})}
+            elif action == "get":
+                tid = _need_id()
+                if not tid:
+                    return tool_error(
+                        "Missing required parameter: task_id",
+                        tool="yantrikdb_tasks",
+                    )
+                out = {"action": "get", **client.task_get(tid)}
+            elif action == "update":
+                tid = _need_id()
+                if not tid:
+                    return tool_error(
+                        "Missing required parameter: task_id",
+                        tool="yantrikdb_tasks",
+                    )
+                out = {"action": "update", **client.task_update(
+                    tid, status=args.get("status"),
+                    priority=args.get("priority"),
+                )}
+            elif action == "delete":
+                tid = _need_id()
+                if not tid:
+                    return tool_error(
+                        "Missing required parameter: task_id",
+                        tool="yantrikdb_tasks",
+                    )
+                out = {"action": "delete", **client.task_delete(tid)}
+            else:
+                return tool_error(
+                    f"unknown action {action!r}; use "
+                    "list / add / update / delete / get.",
+                    tool="yantrikdb_tasks",
+                )
+        except (AttributeError, YantrikDBServerError):
+            return tool_error(
+                self._TASKS_UNAVAILABLE_MSG, tool="yantrikdb_tasks",
+            )
+        self._record_success()
+        return json.dumps(out)
 
     def _do_pending_triggers(self, args: dict[str, Any]) -> str:
         limit = _coerce_int(args.get("limit"), 10)

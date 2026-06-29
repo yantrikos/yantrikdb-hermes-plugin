@@ -245,6 +245,7 @@ EXPECTED_TOOL_NAMES = {
     "yantrikdb_hygiene",
     "yantrikdb_knowledge_gaps",
     "yantrikdb_recent_turns",
+    "yantrikdb_tasks",
 }
 
 
@@ -266,7 +267,7 @@ class TestToolSchemas:
             "yantrikdb_skill_search", "yantrikdb_skill_define", "yantrikdb_skill_outcome",
         }
         assert names == base
-        assert len(names) == 17  # +knowledge_gaps +recent_turns (v0.7)
+        assert len(names) == 18  # +knowledge_gaps +recent_turns +tasks (v0.7)
 
     def test_no_tools_in_cron_context(self, provider_module, monkeypatch):
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
@@ -1385,7 +1386,7 @@ class TestSkillsFeatureFlag:
         skill_names = {n for n in names if n.startswith("yantrikdb_skill_")}
         assert skill_names == set(), f"skills should be hidden by default, got {skill_names}"
         # 8 core + 4 trigger + extraction_stats + observability + hygiene = 15
-        assert len(names) == 17
+        assert len(names) == 18
 
     def test_enabled_includes_skill_tools(
         self, provider_module, mock_client, monkeypatch,
@@ -1396,7 +1397,7 @@ class TestSkillsFeatureFlag:
         assert "yantrikdb_skill_define" in names
         assert "yantrikdb_skill_outcome" in names
         # 15 core+trigger+stats+observability+hygiene + 3 skill tools = 18
-        assert len(names) == 20
+        assert len(names) == 21
 
     def test_disabled_skill_call_short_circuits(
         self, provider_module, mock_client, monkeypatch,

@@ -672,6 +672,72 @@ class EmbeddedYantrikDBClient:
             raise _map_engine_error("clear_turns", e) from e
         return {"cleared": True}
 
+    # -- Tasks (engine 0.9+) ------------------------------------------
+
+    def task_add(
+        self,
+        title: str,
+        *,
+        namespace: str | None = None,
+        priority: str = "medium",
+        parent_id: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            tid = self._db.task_add(
+                namespace or self.config.namespace,
+                title,
+                priority=priority,
+                parent_id=parent_id,
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_add", e) from e
+        return tid if isinstance(tid, dict) else {"id": tid}
+
+    def task_list(
+        self, *, namespace: str | None = None, status: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            out = self._db.task_list(
+                namespace or self.config.namespace, status=status,
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_list", e) from e
+        return {"tasks": list(out) if out else []}
+
+    def task_get(self, task_id: str) -> dict[str, Any]:
+        try:
+            out = self._db.task_get(task_id)
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_get", e) from e
+        return out if isinstance(out, dict) else {"task": out}
+
+    def task_update(
+        self, task_id: str, *, status: str | None = None,
+        priority: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            self._db.task_update(task_id, status=status, priority=priority)
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_update", e) from e
+        return {"id": task_id, "updated": True}
+
+    def task_delete(self, task_id: str) -> dict[str, Any]:
+        try:
+            self._db.task_delete(task_id)
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_delete", e) from e
+        return {"id": task_id, "deleted": True}
+
     # -- Skills (v0.3.0+) ---------------------------------------------
     #
     # Skills live in the shared ``skill_substrate`` namespace alongside

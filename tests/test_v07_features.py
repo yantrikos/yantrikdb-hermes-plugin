@@ -30,6 +30,11 @@ def mock_client(client_module) -> MagicMock:
     c.record_turn.return_value = {"recorded": True}
     c.recent_turns.return_value = {"turns": []}
     c.clear_turns.return_value = {"cleared": True}
+    c.task_add.return_value = {"id": "t1"}
+    c.task_list.return_value = {"tasks": []}
+    c.task_get.return_value = {"id": "t1", "title": "x", "status": "open"}
+    c.task_update.return_value = {"id": "t1", "updated": True}
+    c.task_delete.return_value = {"id": "t1", "deleted": True}
     return c
 
 
@@ -227,3 +232,63 @@ class TestConversationBuffer:
     ):
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
         assert p._format_conversation_block() == ""
+
+
+class TestTasks:
+    def test_add(self, provider_module, mock_client, monkeypatch, tmp_path):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        out = json.loads(p.handle_tool_call("yantrikdb_tasks", {
+            "action": "add", "title": "Ship v0.7", "priority": "high",
+        }))
+        assert out["ok"] is True and out["id"] == "t1"
+        kw = mock_client.task_add.call_args.kwargs
+        assert mock_client.task_add.call_args.args[0] == "Ship v0.7"
+        assert kw["priority"] == "high"
+
+    def test_add_requires_title(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        out = json.loads(p.handle_tool_call("yantrikdb_tasks", {"action": "add"}))
+        assert out["ok"] is False
+        assert "title" in out["error"]
+
+    def test_list_default_action(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.task_list.return_value = {"tasks": [
+            {"id": "t1", "title": "a", "status": "open"},
+            {"id": "t2", "title": "b", "status": "done"},
+        ]}
+        out = json.loads(p.handle_tool_call("yantrikdb_tasks", {}))
+        assert out["action"] == "list" and out["count"] == 2
+
+    def test_update_and_delete(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        u = json.loads(p.handle_tool_call("yantrikdb_tasks", {
+            "action": "update", "task_id": "t1", "status": "done",
+        }))
+        assert u["updated"] is True
+        assert mock_client.task_update.call_args.kwargs["status"] == "done"
+        d = json.loads(p.handle_tool_call("yantrikdb_tasks", {
+            "action": "delete", "task_id": "t1",
+        }))
+        assert d["deleted"] is True
+
+    def test_update_requires_task_id(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        out = json.loads(p.handle_tool_call("yantrikdb_tasks", {"action": "update"}))
+        assert out["ok"] is False and "task_id" in out["error"]
+
+    def test_graceful_when_tasks_absent(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.task_list.side_effect = AttributeError("no tasks")
+        out = json.loads(p.handle_tool_call("yantrikdb_tasks", {"action": "list"}))
+        assert out["ok"] is False and "0.9.0" in out["error"]

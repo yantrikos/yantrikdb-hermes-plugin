@@ -834,6 +834,56 @@ class YantrikDBClient:
         body = {"namespace": namespace} if namespace else {}
         return self._request("POST", "/v1/conversation/clear", body)
 
+    # -- Tasks (engine 0.9+) ------------------------------------------
+    #
+    # A flat, namespace-scoped chore store (title + status + priority +
+    # optional subtask parent). Distinct from engine-generated triggers and
+    # from ephemeral host TODOs — these are durable, agent-authored tasks.
+    # HTTP mode depends on yantrikdb-server exposing /v1/tasks; older
+    # servers 404 → "not available."
+
+    def task_add(
+        self,
+        title: str,
+        *,
+        namespace: str | None = None,
+        priority: str = "medium",
+        parent_id: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"title": title, "priority": priority}
+        if namespace:
+            body["namespace"] = namespace
+        if parent_id:
+            body["parent_id"] = parent_id
+        return self._request("POST", "/v1/tasks", body)
+
+    def task_list(
+        self, *, namespace: str | None = None, status: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if namespace:
+            params["namespace"] = namespace
+        if status:
+            params["status"] = status
+        return self._request("GET", "/v1/tasks", params=params or None)
+
+    def task_get(self, task_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/tasks/{task_id}")
+
+    def task_update(
+        self, task_id: str, *, status: str | None = None,
+        priority: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if status:
+            body["status"] = status
+        if priority:
+            body["priority"] = priority
+        return self._request("PATCH", f"/v1/tasks/{task_id}", body)
+
+    def task_delete(self, task_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/v1/tasks/{task_id}")
+
     # -- Skills (v0.3.0+) ---------------------------------------------
     #
     # The HTTP path delegates to yantrikdb-server's wrapper endpoints,
