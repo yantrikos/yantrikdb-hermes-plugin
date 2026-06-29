@@ -718,12 +718,12 @@ EXTRACTION_STATS_SCHEMA = {
 HYGIENE_SCHEMA = {
     "name": "yantrikdb_hygiene",
     "description": (
-        "v0.6 Wave G — proactive memory hygiene. `action=\"scan\"` (default) "
-        "returns a digest of cleanup opportunities: open contradictions, "
-        "engine counters (active / consolidated / tombstoned), and "
-        "low-usefulness candidates (memories that keep surfacing in recall "
-        "but were never reinforced as useful — a plugin-side stale signal "
-        "that needs self-tuning recall enabled to populate). "
+        "Proactive memory hygiene. `action=\"scan\"` (default) returns a "
+        "digest of cleanup opportunities: open contradictions, engine "
+        "counters (active / consolidated / tombstoned), `stale_candidates` "
+        "(v0.7 — low-importance, cold/rarely-recalled memories from the "
+        "engine's own access stats), and `low_usefulness` (memories that "
+        "keep surfacing in recall but were never reinforced). "
         "`action=\"apply\"` acts on them: pass `consolidate=true` to run a "
         "canonicalization pass that merges duplicates, and/or "
         "`forget_rids=[...]` to delete specific memories. Use scan to decide, "
@@ -764,6 +764,124 @@ HYGIENE_SCHEMA = {
     },
 }
 
+KNOWLEDGE_GAPS_SCHEMA = {
+    "name": "yantrikdb_knowledge_gaps",
+    "description": (
+        "v0.7 — the substrate's known unknowns. Returns queries that were "
+        "asked often (>= min_count) but answered poorly (average top recall "
+        "score <= max_avg_top_score) — a direct signal of what your memory "
+        "is MISSING. Use it to decide what to research, ask the user about, "
+        "or write down. Note: this signal is engine-global (across all "
+        "namespaces on the backend), not scoped to the active namespace. "
+        "Returns 'not available' on engines/servers older than 0.9.0."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "min_count": {
+                "type": "integer",
+                "description": "Minimum times a query must have been asked to "
+                               "count as demand. Default 3.",
+            },
+            "max_avg_top_score": {
+                "type": "number",
+                "description": "Only surface queries whose average top recall "
+                               "score is at or below this (poorly answered). "
+                               "Default 0.4.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max gaps to return. Default 20.",
+            },
+        },
+        "required": [],
+    },
+}
+
+RECENT_TURNS_SCHEMA = {
+    "name": "yantrikdb_recent_turns",
+    "description": (
+        "v0.7 — the verbatim recent-conversation buffer (bounded last-N "
+        "turns), recorded automatically each turn and kept VERBATIM. It "
+        "survives Hermes compression, so use it to recover exactly what was "
+        "just said when the semantic store only kept the gist. Optional "
+        "`limit` (default 10). Pass `clear=true` to wipe the buffer for the "
+        "current namespace. Returns 'not available' on engines/servers "
+        "older than 0.9.0."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "description": "Max turns to return (default 10).",
+            },
+            "clear": {
+                "type": "boolean",
+                "description": "If true, clear the buffer for this namespace "
+                               "instead of reading it.",
+            },
+            "namespace": {
+                "type": "string",
+                "description": "Optional namespace. Defaults to the active one.",
+            },
+        },
+        "required": [],
+    },
+}
+
+TASKS_SCHEMA = {
+    "name": "yantrikdb_tasks",
+    "description": (
+        "v0.7 — a durable, namespace-scoped task/chore store kept IN the "
+        "memory substrate (persists across sessions). Unlike an ephemeral "
+        "host TODO list and unlike engine-generated triggers, these are "
+        "agent-authored tasks with status + priority + optional subtasks. "
+        "`action=\"list\"` (default) returns tasks (optional `status` "
+        "filter); `add` creates one (`title` required; optional `priority` "
+        "low/medium/high, `parent_id` for a subtask); `update` changes the "
+        "`status`/`priority` of `task_id`; `delete` removes `task_id`; "
+        "`get` fetches `task_id`. Needs yantrikdb>=0.9.0."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["list", "add", "update", "delete", "get"],
+                "description": "list (default) / add / update / delete / get.",
+            },
+            "title": {
+                "type": "string",
+                "description": "add: the task title (required for add).",
+            },
+            "priority": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "description": "add/update: task priority. Default medium.",
+            },
+            "parent_id": {
+                "type": "string",
+                "description": "add: parent task id to create a subtask.",
+            },
+            "task_id": {
+                "type": "string",
+                "description": "update/delete/get: the target task id.",
+            },
+            "status": {
+                "type": "string",
+                "description": "list: filter by status. update: new status "
+                               "(e.g. open / in_progress / done).",
+            },
+            "namespace": {
+                "type": "string",
+                "description": "Optional namespace. Defaults to the active one.",
+            },
+        },
+        "required": [],
+    },
+}
+
 ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
@@ -783,6 +901,9 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     EXTRACTION_STATS_SCHEMA,
     OBSERVABILITY_SCHEMA,
     HYGIENE_SCHEMA,
+    KNOWLEDGE_GAPS_SCHEMA,
+    RECENT_TURNS_SCHEMA,
+    TASKS_SCHEMA,
 ]
 
 
@@ -1175,6 +1296,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # rid -> {"surfaced": int, "reinforced": int, "last_ts": float}.
         self._recall_feedback_path: Path | None = None
         self._recall_feedback_lock = threading.Lock()
+
+        # v0.7 Wave J — set once if the engine/server lacks the conversation
+        # buffer API, so we stop attempting record_turn every turn.
+        self._conversation_buffer_unavailable = False
 
         # v0.5.0+ Wave A — active-memory caches populated by the prefetch
         # background thread, drained by system_prompt_block().
@@ -1631,6 +1756,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             + self._format_auto_skill_block()
             + self._format_pending_conflicts_block()
             + self._format_hygiene_block()
+            + self._format_conversation_block()
         )
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
@@ -1806,6 +1932,16 @@ class YantrikDBMemoryProvider(MemoryProvider):
                         confirmed_by_user=True,
                     )
 
+            # 3. v0.7 Wave J — verbatim conversation buffer. Cheap, bounded,
+            # survives Hermes compression so the exact last turns are always
+            # recoverable via recent_turns / the optional surfaced block.
+            if cfg.conversation_buffer_enabled:
+                self._record_conversation_turns(
+                    user_content=text,
+                    assistant_content=(assistant_content or "").strip(),
+                    namespace=namespace,
+                )
+
         if self._sync_thread and self._sync_thread.is_alive():
             self._sync_thread.join(timeout=_SYNC_JOIN_SECS)
         self._sync_thread = threading.Thread(
@@ -1819,6 +1955,39 @@ class YantrikDBMemoryProvider(MemoryProvider):
             self._prior_assistant_by_session[snapshot_sid] = ac
         else:
             self._prior_assistant_by_session.pop(snapshot_sid, None)
+
+    def _record_conversation_turns(
+        self, *, user_content: str, assistant_content: str, namespace: str,
+    ) -> None:
+        """Append the user + assistant turns to the engine ring buffer.
+
+        Fail-soft. On the first ``AttributeError`` (engine too old) or a
+        404 in HTTP mode, sets ``_conversation_buffer_unavailable`` so we
+        stop retrying every turn.
+        """
+        if self._client is None or self._config is None:
+            return
+        if self._conversation_buffer_unavailable:
+            return
+        max_turns = self._config.conversation_buffer_max_turns
+        for role, content in (("user", user_content),
+                              ("assistant", assistant_content)):
+            if not content:
+                continue
+            try:
+                self._client.record_turn(
+                    role, content, namespace=namespace, max_turns=max_turns,
+                )
+            except (AttributeError, YantrikDBServerError):
+                self._conversation_buffer_unavailable = True
+                logger.info(
+                    "YantrikDB conversation buffer unavailable "
+                    "(needs yantrikdb>=0.9.0 / server endpoint) — disabling.",
+                )
+                return
+            except YantrikDBError as e:
+                logger.debug("YantrikDB record_turn failed: %s", e)
+                return
 
     def _extract_and_record(
         self,
@@ -1945,6 +2114,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_observability(args)
             elif tool_name == "yantrikdb_hygiene":
                 raw = self._do_hygiene(args)
+            elif tool_name == "yantrikdb_knowledge_gaps":
+                raw = self._do_knowledge_gaps(args)
+            elif tool_name == "yantrikdb_recent_turns":
+                raw = self._do_recent_turns(args)
+            elif tool_name == "yantrikdb_tasks":
+                raw = self._do_tasks(args)
             elif tool_name.startswith("yantrikdb_skill_"):
                 if not (self._config and self._config.skills_enabled):
                     return tool_error(
@@ -2342,15 +2517,22 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
     # -- v0.6.0 Wave G: proactive memory hygiene --------------------------
 
+    # v0.7 Wave H — staleness thresholds for the engine-backed scan.
+    _STALE_IMPORTANCE = 0.4          # below this is "low value"
+    _STALE_AGE_SECS = 30 * 24 * 3600  # untouched for 30d is "old"
+    _STALE_SCAN_CAP = 300            # max records paged per scan
+
     def _low_usefulness_candidates(
         self, *, min_surfaced: int = 3, limit: int = 10,
     ) -> list[dict[str, Any]]:
         """rids surfaced often in recall but never reinforced as useful.
 
-        A plugin-side stale signal: the engine has no scan/access-count API,
-        but the self-tuning feedback ledger records what recall kept showing.
-        A memory surfaced many times yet never reinforced is a candidate for
-        review. Empty unless self-tuning recall has been populating the
+        Plugin-side SECONDARY signal (v0.6): the self-tuning feedback ledger
+        records what recall kept showing. A memory surfaced many times yet
+        never reinforced is a review candidate. As of v0.7 the primary
+        staleness signal is `_engine_stale_candidates` (engine truth via
+        `list_records`); this remains as a complementary "shown-but-never-
+        useful" overlay. Empty unless self-tuning recall populated the
         ledger. Sorted by surfaced count descending.
         """
         with self._recall_feedback_lock:
@@ -2368,6 +2550,76 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 })
         out.sort(key=lambda e: e["surfaced"], reverse=True)
         return out[:limit]
+
+    def _engine_stale_candidates(
+        self, namespace: str, *, limit: int = 10,
+    ) -> tuple[list[dict[str, Any]], bool, bool]:
+        """Engine-truth stale candidates via `list_records` (v0.7 Wave H).
+
+        Pages the namespace (bounded by `_STALE_SCAN_CAP`) and flags records
+        that are low-value AND cold: `importance < _STALE_IMPORTANCE` and at
+        least one of (cold storage tier, access_count <= 1, last_access older
+        than `_STALE_AGE_SECS`). Returns (candidates, available, truncated).
+        `available=False` when the engine/server lacks `list_records` (older
+        engine or HTTP server without the endpoint) — caller falls back.
+        """
+        client = self._require_client()
+        records: list[dict[str, Any]] = []
+        cursor: str | None = None
+        truncated = False
+        try:
+            while len(records) < self._STALE_SCAN_CAP:
+                page = client.list_records(
+                    namespace=namespace,
+                    limit=min(100, self._STALE_SCAN_CAP - len(records)),
+                    since_rid=cursor,
+                )
+                batch = page.get("records") or []
+                records.extend(batch)
+                cursor = page.get("next_cursor")
+                if not cursor or not batch:
+                    break
+            else:
+                truncated = bool(cursor)
+        except (AttributeError, YantrikDBServerError):
+            # Older engine (no method) or HTTP server without /v1/records.
+            return [], False, False
+        except YantrikDBError:
+            return [], False, False
+
+        now = time.time()
+        cands: list[dict[str, Any]] = []
+        for r in records:
+            imp = _coerce_float(r.get("importance"), default=0.5)
+            if imp >= self._STALE_IMPORTANCE:
+                continue
+            ac = _coerce_int(r.get("access_count"), 0)
+            la = r.get("last_access") or r.get("created_at")
+            cold = (r.get("storage_tier") == "cold")
+            unused = ac <= 1
+            old = isinstance(la, (int, float)) and (now - la) > self._STALE_AGE_SECS
+            if not (cold or unused or old):
+                continue
+            reasons = []
+            if cold:
+                reasons.append("cold")
+            if unused:
+                reasons.append(f"access_count={ac}")
+            if old:
+                reasons.append("untouched_30d")
+            text = (r.get("text") or "").strip()
+            cands.append({
+                "rid": r.get("rid"),
+                "text": text[:120] + ("…" if len(text) > 120 else ""),
+                "importance": round(imp, 3),
+                "access_count": ac,
+                "last_access": la,
+                "storage_tier": r.get("storage_tier"),
+                "reason": ", ".join(reasons),
+            })
+        # Least valuable first.
+        cands.sort(key=lambda c: (c["importance"], c["access_count"]))
+        return cands[:limit], True, truncated
 
     def _do_hygiene(self, args: dict[str, Any]) -> str:
         """Scan for cleanup opportunities, or apply consolidate/forget.
@@ -2449,6 +2701,17 @@ class YantrikDBMemoryProvider(MemoryProvider):
         except YantrikDBError as e:
             digest["open_conflicts"] = {"error": str(e)}
 
+        # v0.7 Wave H — primary staleness signal from engine truth, with
+        # graceful fallback to the v0.6 sidecar overlay when unavailable.
+        cap = self._config.hygiene_max_surfaced if self._config else 3
+        stale, engine_scan, truncated = self._engine_stale_candidates(
+            namespace, limit=max(cap, 1) * 3,
+        )
+        digest["stale_candidates"] = stale
+        digest["engine_scan_available"] = engine_scan
+        if truncated:
+            digest["stale_scan_truncated"] = True
+
         low_use = self._low_usefulness_candidates()
         digest["low_usefulness"] = low_use
 
@@ -2463,17 +2726,19 @@ class YantrikDBMemoryProvider(MemoryProvider):
             f"consolidated={eng.get('consolidated_memories', '?')} "
             f"tombstoned={eng.get('tombstoned_memories', '?')} | "
             f"open_conflicts={digest.get('open_conflicts_total', '?')} | "
+            f"stale={len(stale)}{'+' if truncated else ''} "
             f"low_usefulness={len(low_use)}"
         )
         digest["recommended_actions"] = self._hygiene_recommendations(
-            eng, digest.get("open_conflicts_total", 0), low_use,
+            eng, digest.get("open_conflicts_total", 0), stale, low_use,
         )
         self._record_success()
         return json.dumps(digest)
 
     @staticmethod
     def _hygiene_recommendations(
-        eng: dict[str, Any], open_conflicts: int, low_use: list[dict[str, Any]],
+        eng: dict[str, Any], open_conflicts: int,
+        stale: list[dict[str, Any]], low_use: list[dict[str, Any]],
     ) -> list[str]:
         recs: list[str] = []
         if open_conflicts:
@@ -2481,11 +2746,16 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 f"{open_conflicts} unresolved contradiction(s) — call "
                 "yantrikdb_resolve_conflict or surface to the user."
             )
+        if stale:
+            recs.append(
+                f"{len(stale)} low-value, cold memory(ies) (low importance + "
+                "rarely/never recalled) — review and forget via "
+                "yantrikdb_hygiene(action=apply, forget_rids=[...])."
+            )
         if low_use:
             recs.append(
                 f"{len(low_use)} memory(ies) keep surfacing but were never "
-                "reinforced — review and forget the stale ones via "
-                "yantrikdb_hygiene(action=apply, forget_rids=[...])."
+                "reinforced — likely review candidates too."
             )
         if int(eng.get("active_memories", 0) or 0) > 0 and not recs:
             recs.append(
@@ -2503,6 +2773,151 @@ class YantrikDBMemoryProvider(MemoryProvider):
             if rid in data:
                 data.pop(rid, None)
                 self._save_recall_feedback(data)
+
+    # -- v0.7 Wave I: knowledge gaps --------------------------------------
+
+    def _do_knowledge_gaps(self, args: dict[str, Any]) -> str:
+        """Surface the engine's known-unknowns. Degrades gracefully when the
+        engine/server is older than 0.9.0 (no `knowledge_gaps`)."""
+        client = self._require_client()
+        min_count = _coerce_int(args.get("min_count"), 3)
+        max_avg = _coerce_float(args.get("max_avg_top_score"), default=0.4)
+        limit = _coerce_int(args.get("limit"), 20)
+        try:
+            resp = client.knowledge_gaps(
+                min_count=min_count, max_avg_top_score=max_avg, limit=limit,
+            )
+        except (AttributeError, YantrikDBServerError):
+            return tool_error(
+                "knowledge_gaps needs yantrikdb>=0.9.0 (embedded) or a "
+                "yantrikdb-server exposing /v1/knowledge_gaps — not "
+                "available in this mode/version.",
+                tool="yantrikdb_knowledge_gaps",
+            )
+        gaps = resp.get("gaps") if isinstance(resp, dict) else resp
+        gaps = gaps or []
+        self._record_success()
+        return json.dumps({
+            "count": len(gaps),
+            "gaps": gaps,
+            "summary": (
+                f"{len(gaps)} knowledge gap(s) — queries asked "
+                f">={min_count}x but answered poorly "
+                f"(avg top score <= {max_avg})."
+            ),
+        })
+
+    # -- v0.7 Wave J: conversation buffer --------------------------------
+
+    _CONV_UNAVAILABLE_MSG = (
+        "conversation buffer needs yantrikdb>=0.9.0 (embedded) or a "
+        "yantrikdb-server exposing /v1/conversation/* — not available in "
+        "this mode/version."
+    )
+
+    def _do_recent_turns(self, args: dict[str, Any]) -> str:
+        """Read (or clear) the verbatim conversation buffer."""
+        client = self._require_client()
+        namespace = (args.get("namespace") or self._namespace or "").strip()
+        if args.get("clear"):
+            try:
+                client.clear_turns(namespace=namespace)
+            except (AttributeError, YantrikDBServerError):
+                return tool_error(
+                    self._CONV_UNAVAILABLE_MSG, tool="yantrikdb_recent_turns",
+                )
+            self._record_success()
+            return json.dumps({"cleared": True, "namespace": namespace})
+        limit = _coerce_int(args.get("limit"), 10)
+        try:
+            resp = client.recent_turns(namespace=namespace, limit=limit)
+        except (AttributeError, YantrikDBServerError):
+            return tool_error(
+                self._CONV_UNAVAILABLE_MSG, tool="yantrikdb_recent_turns",
+            )
+        turns = resp.get("turns") if isinstance(resp, dict) else resp
+        turns = turns or []
+        self._record_success()
+        return json.dumps({"count": len(turns), "turns": turns})
+
+    # -- v0.7 Wave K: task store -----------------------------------------
+
+    _TASKS_UNAVAILABLE_MSG = (
+        "tasks need yantrikdb>=0.9.0 (embedded) or a yantrikdb-server "
+        "exposing /v1/tasks — not available in this mode/version."
+    )
+
+    def _do_tasks(self, args: dict[str, Any]) -> str:
+        """Durable namespace-scoped task store (action-dispatched)."""
+        client = self._require_client()
+        action = (args.get("action") or "list").strip().lower()
+        namespace = (args.get("namespace") or self._namespace or "").strip()
+
+        def _need_id() -> str:
+            return (args.get("task_id") or "").strip()
+
+        try:
+            if action == "list":
+                resp = client.task_list(
+                    namespace=namespace, status=args.get("status"),
+                )
+                tasks = (resp.get("tasks") if isinstance(resp, dict) else resp) or []
+                out: dict[str, Any] = {
+                    "action": "list", "count": len(tasks), "tasks": tasks,
+                }
+            elif action == "add":
+                title = (args.get("title") or "").strip()
+                if not title:
+                    return tool_error(
+                        "Missing required parameter: title",
+                        tool="yantrikdb_tasks",
+                    )
+                priority = (args.get("priority") or "medium").strip().lower()
+                resp = client.task_add(
+                    title, namespace=namespace, priority=priority,
+                    parent_id=args.get("parent_id"),
+                )
+                out = {"action": "add",
+                       **(resp if isinstance(resp, dict) else {"id": resp})}
+            elif action == "get":
+                tid = _need_id()
+                if not tid:
+                    return tool_error(
+                        "Missing required parameter: task_id",
+                        tool="yantrikdb_tasks",
+                    )
+                out = {"action": "get", **client.task_get(tid)}
+            elif action == "update":
+                tid = _need_id()
+                if not tid:
+                    return tool_error(
+                        "Missing required parameter: task_id",
+                        tool="yantrikdb_tasks",
+                    )
+                out = {"action": "update", **client.task_update(
+                    tid, status=args.get("status"),
+                    priority=args.get("priority"),
+                )}
+            elif action == "delete":
+                tid = _need_id()
+                if not tid:
+                    return tool_error(
+                        "Missing required parameter: task_id",
+                        tool="yantrikdb_tasks",
+                    )
+                out = {"action": "delete", **client.task_delete(tid)}
+            else:
+                return tool_error(
+                    f"unknown action {action!r}; use "
+                    "list / add / update / delete / get.",
+                    tool="yantrikdb_tasks",
+                )
+        except (AttributeError, YantrikDBServerError):
+            return tool_error(
+                self._TASKS_UNAVAILABLE_MSG, tool="yantrikdb_tasks",
+            )
+        self._record_success()
+        return json.dumps(out)
 
     def _do_pending_triggers(self, args: dict[str, Any]) -> str:
         limit = _coerce_int(args.get("limit"), 10)
@@ -2945,6 +3360,41 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "These keep appearing without proving useful. Call "
             "`yantrikdb_hygiene` to inspect, then forget the stale ones."
         )
+        return "\n".join(lines)
+
+    def _format_conversation_block(self) -> str:
+        """v0.7 Wave J — optionally surface the verbatim recent turns.
+
+        Opt-in (YANTRIKDB_SURFACE_CONVERSATION_BUFFER=true). Most useful
+        post-compression, when the semantic store has the gist but the exact
+        last turns would otherwise be gone. Costs one engine read per call
+        (hence opt-in). Fail-soft; disables itself if the buffer API is
+        absent.
+        """
+        if self._config is None or not self._config.surface_conversation_buffer:
+            return ""
+        if self._client is None or self._conversation_buffer_unavailable:
+            return ""
+        limit = max(self._config.conversation_buffer_surface_limit, 1)
+        try:
+            resp = self._client.recent_turns(
+                namespace=self._namespace, limit=limit,
+            )
+        except (AttributeError, YantrikDBServerError):
+            self._conversation_buffer_unavailable = True
+            return ""
+        except YantrikDBError:
+            return ""
+        turns = (resp.get("turns") if isinstance(resp, dict) else resp) or []
+        if not turns:
+            return ""
+        lines = ["", "## Recent conversation (verbatim)"]
+        for t in turns[-limit:]:
+            role = t.get("role", "?")
+            content = (t.get("content") or "").strip()
+            snippet = content[:200] + ("…" if len(content) > 200 else "")
+            lines.append(f"- **{role}**: {snippet}")
+        lines.append("(Preserved verbatim by YantrikDB across compression.)")
         return "\n".join(lines)
 
     def _do_skill_outcome(self, args: dict[str, Any]) -> str:

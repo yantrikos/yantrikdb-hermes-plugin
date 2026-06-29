@@ -35,7 +35,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-  "yantrikdb>=0.7.6",
+  "yantrikdb>=0.9.0",
   "requests>=2.31",
 ]
 

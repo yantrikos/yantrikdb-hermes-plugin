@@ -216,6 +216,23 @@ class YantrikDBConfig:
     surface_hygiene: bool = False
     hygiene_max_surfaced: int = 3
 
+    # v0.7.0+ Wave J — conversation buffer (engine 0.9+ working memory).
+    #
+    # When enabled, sync_turn also records each user/assistant turn into the
+    # engine's bounded, verbatim ring buffer (record_turn). Unlike the
+    # semantic store this is a cheap last-N-turns transcript that survives
+    # Hermes compression — so the exact recent exchange is always
+    # recoverable via recent_turns. Default ON (cheap, additive); set
+    # YANTRIKDB_CONVERSATION_BUFFER_ENABLED=false to disable.
+    conversation_buffer_enabled: bool = True
+    conversation_buffer_max_turns: int = 10
+    # Passive surfacing of the verbatim buffer into system_prompt_block —
+    # OPT-IN (default off) since it costs prompt budget. Most useful
+    # post-compression, where the semantic store has the gist but the exact
+    # last turns would otherwise be gone.
+    surface_conversation_buffer: bool = False
+    conversation_buffer_surface_limit: int = 6
+
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
@@ -292,6 +309,20 @@ class YantrikDBConfig:
             ),
             hygiene_max_surfaced=_parse_int(
                 os.environ.get("YANTRIKDB_HYGIENE_MAX_SURFACED"), 3,
+            ),
+            conversation_buffer_enabled=_parse_bool(
+                os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_ENABLED"),
+                default=True,
+            ),
+            conversation_buffer_max_turns=_parse_int(
+                os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_MAX_TURNS"), 10,
+            ),
+            surface_conversation_buffer=_parse_bool(
+                os.environ.get("YANTRIKDB_SURFACE_CONVERSATION_BUFFER"),
+                default=False,
+            ),
+            conversation_buffer_surface_limit=_parse_int(
+                os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_SURFACE_LIMIT"), 6,
             ),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
@@ -721,6 +752,137 @@ class YantrikDBClient:
     def stats(self, *, namespace: str | None = None) -> dict[str, Any]:
         params = {"namespace": namespace} if namespace else None
         return self._request("GET", "/v1/stats", params=params)
+
+    # -- Record listing (engine 0.8+/0.9+) ----------------------------
+    #
+    # Structured (non-semantic) scan over a namespace. Each record carries
+    # engine-truth fields (importance, access_count, last_access,
+    # storage_tier, …) used by the v0.7 hygiene scan. HTTP mode depends on
+    # yantrikdb-server exposing /v1/records; older servers return 404,
+    # which the provider treats as "engine scan unavailable" and falls back.
+
+    def list_records(
+        self,
+        *,
+        namespace: str | None = None,
+        limit: int = 50,
+        order: str = "asc",
+        domain: str | None = None,
+        since_rid: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": int(limit), "order": order}
+        if namespace:
+            params["namespace"] = namespace
+        if domain:
+            params["domain"] = domain
+        if since_rid:
+            params["since_rid"] = since_rid
+        return self._request("GET", "/v1/records", params=params)
+
+    # -- Knowledge gaps (engine 0.9+) ---------------------------------
+    #
+    # The substrate's "known unknowns": queries asked often (>= min_count)
+    # but answered poorly (avg top score <= max_avg_top_score). Engine-
+    # global (not namespace-scoped). HTTP mode depends on yantrikdb-server
+    # exposing /v1/knowledge_gaps; older servers 404 → "not available."
+
+    def knowledge_gaps(
+        self,
+        *,
+        min_count: int = 3,
+        max_avg_top_score: float = 0.4,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "min_count": int(min_count),
+            "max_avg_top_score": float(max_avg_top_score),
+            "limit": int(limit),
+        }
+        return self._request("GET", "/v1/knowledge_gaps", params=params)
+
+    # -- Conversation buffer (engine 0.9+) ----------------------------
+    #
+    # Bounded, verbatim last-N-turns working memory, namespace-scoped.
+    # Complements the semantic store: survives Hermes compression and is
+    # cheaper than recall for "what did we just say." HTTP mode depends on
+    # yantrikdb-server exposing /v1/conversation/*; older servers 404.
+
+    def record_turn(
+        self,
+        role: str,
+        content: str,
+        *,
+        namespace: str | None = None,
+        max_turns: int = 10,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "role": role, "content": content, "max_turns": int(max_turns),
+        }
+        if namespace:
+            body["namespace"] = namespace
+        return self._request("POST", "/v1/conversation/turns", body)
+
+    def recent_turns(
+        self, *, namespace: str | None = None, limit: int = 10,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": int(limit)}
+        if namespace:
+            params["namespace"] = namespace
+        return self._request("GET", "/v1/conversation/recent", params=params)
+
+    def clear_turns(self, *, namespace: str | None = None) -> dict[str, Any]:
+        body = {"namespace": namespace} if namespace else {}
+        return self._request("POST", "/v1/conversation/clear", body)
+
+    # -- Tasks (engine 0.9+) ------------------------------------------
+    #
+    # A flat, namespace-scoped chore store (title + status + priority +
+    # optional subtask parent). Distinct from engine-generated triggers and
+    # from ephemeral host TODOs — these are durable, agent-authored tasks.
+    # HTTP mode depends on yantrikdb-server exposing /v1/tasks; older
+    # servers 404 → "not available."
+
+    def task_add(
+        self,
+        title: str,
+        *,
+        namespace: str | None = None,
+        priority: str = "medium",
+        parent_id: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"title": title, "priority": priority}
+        if namespace:
+            body["namespace"] = namespace
+        if parent_id:
+            body["parent_id"] = parent_id
+        return self._request("POST", "/v1/tasks", body)
+
+    def task_list(
+        self, *, namespace: str | None = None, status: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if namespace:
+            params["namespace"] = namespace
+        if status:
+            params["status"] = status
+        return self._request("GET", "/v1/tasks", params=params or None)
+
+    def task_get(self, task_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/tasks/{task_id}")
+
+    def task_update(
+        self, task_id: str, *, status: str | None = None,
+        priority: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if status:
+            body["status"] = status
+        if priority:
+            body["priority"] = priority
+        return self._request("PATCH", f"/v1/tasks/{task_id}", body)
+
+    def task_delete(self, task_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/v1/tasks/{task_id}")
 
     # -- Skills (v0.3.0+) ---------------------------------------------
     #

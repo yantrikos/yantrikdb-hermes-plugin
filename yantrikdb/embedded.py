@@ -565,6 +565,179 @@ class EmbeddedYantrikDBClient:
             raise _map_engine_error("stats", e) from e
         return out if isinstance(out, dict) else {}
 
+    # -- Record listing (engine 0.8+/0.9+) ----------------------------
+
+    def list_records(
+        self,
+        *,
+        namespace: str | None = None,
+        limit: int = 50,
+        order: str = "asc",
+        domain: str | None = None,
+        since_rid: str | None = None,
+    ) -> dict[str, Any]:
+        """Structured scan over a namespace (engine ``list_records``).
+
+        Returns ``{"records": [...], "next_cursor": ...}``. Raises
+        ``AttributeError`` on engines too old to expose ``list_records``;
+        the provider catches that and falls back to its sidecar signal.
+        """
+        try:
+            out = self._db.list_records(
+                namespace=namespace or self.config.namespace,
+                limit=int(limit),
+                order=order,
+                domain=domain,
+                since_rid=since_rid,
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("list_records", e) from e
+        if isinstance(out, dict):
+            return out
+        return {"records": list(out) if out else []}
+
+    # -- Knowledge gaps (engine 0.9+) ---------------------------------
+
+    def knowledge_gaps(
+        self,
+        *,
+        min_count: int = 3,
+        max_avg_top_score: float = 0.4,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """The substrate's known unknowns (engine ``knowledge_gaps``).
+
+        Engine-global (not namespace-scoped). Raises ``AttributeError`` on
+        engines too old to expose it; the provider catches that and returns
+        a clean "not available" envelope.
+        """
+        try:
+            out = self._db.knowledge_gaps(
+                min_count=int(min_count),
+                max_avg_top_score=float(max_avg_top_score),
+                limit=int(limit),
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("knowledge_gaps", e) from e
+        if isinstance(out, dict):
+            return out
+        return {"gaps": list(out) if out else []}
+
+    # -- Conversation buffer (engine 0.9+) ----------------------------
+
+    def record_turn(
+        self,
+        role: str,
+        content: str,
+        *,
+        namespace: str | None = None,
+        max_turns: int = 10,
+    ) -> dict[str, Any]:
+        try:
+            self._db.record_turn(
+                namespace or self.config.namespace,
+                role,
+                content,
+                max_turns=int(max_turns),
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("record_turn", e) from e
+        return {"recorded": True, "role": role}
+
+    def recent_turns(
+        self, *, namespace: str | None = None, limit: int = 10,
+    ) -> dict[str, Any]:
+        try:
+            out = self._db.recent_turns(
+                namespace or self.config.namespace, limit=int(limit),
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("recent_turns", e) from e
+        return {"turns": list(out) if out else []}
+
+    def clear_turns(self, *, namespace: str | None = None) -> dict[str, Any]:
+        try:
+            self._db.clear_turns(namespace or self.config.namespace)
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("clear_turns", e) from e
+        return {"cleared": True}
+
+    # -- Tasks (engine 0.9+) ------------------------------------------
+
+    def task_add(
+        self,
+        title: str,
+        *,
+        namespace: str | None = None,
+        priority: str = "medium",
+        parent_id: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            tid = self._db.task_add(
+                namespace or self.config.namespace,
+                title,
+                priority=priority,
+                parent_id=parent_id,
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_add", e) from e
+        return tid if isinstance(tid, dict) else {"id": tid}
+
+    def task_list(
+        self, *, namespace: str | None = None, status: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            out = self._db.task_list(
+                namespace or self.config.namespace, status=status,
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_list", e) from e
+        return {"tasks": list(out) if out else []}
+
+    def task_get(self, task_id: str) -> dict[str, Any]:
+        try:
+            out = self._db.task_get(task_id)
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_get", e) from e
+        return out if isinstance(out, dict) else {"task": out}
+
+    def task_update(
+        self, task_id: str, *, status: str | None = None,
+        priority: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            self._db.task_update(task_id, status=status, priority=priority)
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_update", e) from e
+        return {"id": task_id, "updated": True}
+
+    def task_delete(self, task_id: str) -> dict[str, Any]:
+        try:
+            self._db.task_delete(task_id)
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("task_delete", e) from e
+        return {"id": task_id, "deleted": True}
+
     # -- Skills (v0.3.0+) ---------------------------------------------
     #
     # Skills live in the shared ``skill_substrate`` namespace alongside

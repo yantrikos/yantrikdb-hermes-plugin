@@ -189,6 +189,10 @@ def _clean_yantrikdb_env(monkeypatch):
         "YANTRIKDB_SELF_TUNING_MAX_BOOST",
         "YANTRIKDB_SURFACE_HYGIENE",
         "YANTRIKDB_HYGIENE_MAX_SURFACED",
+        "YANTRIKDB_CONVERSATION_BUFFER_ENABLED",
+        "YANTRIKDB_CONVERSATION_BUFFER_MAX_TURNS",
+        "YANTRIKDB_SURFACE_CONVERSATION_BUFFER",
+        "YANTRIKDB_CONVERSATION_BUFFER_SURFACE_LIMIT",
     ):
         monkeypatch.delenv(var, raising=False)
     yield
