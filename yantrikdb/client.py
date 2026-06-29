@@ -748,6 +748,27 @@ class YantrikDBClient:
             params["since_rid"] = since_rid
         return self._request("GET", "/v1/records", params=params)
 
+    # -- Knowledge gaps (engine 0.9+) ---------------------------------
+    #
+    # The substrate's "known unknowns": queries asked often (>= min_count)
+    # but answered poorly (avg top score <= max_avg_top_score). Engine-
+    # global (not namespace-scoped). HTTP mode depends on yantrikdb-server
+    # exposing /v1/knowledge_gaps; older servers 404 → "not available."
+
+    def knowledge_gaps(
+        self,
+        *,
+        min_count: int = 3,
+        max_avg_top_score: float = 0.4,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "min_count": int(min_count),
+            "max_avg_top_score": float(max_avg_top_score),
+            "limit": int(limit),
+        }
+        return self._request("GET", "/v1/knowledge_gaps", params=params)
+
     # -- Skills (v0.3.0+) ---------------------------------------------
     #
     # The HTTP path delegates to yantrikdb-server's wrapper endpoints,

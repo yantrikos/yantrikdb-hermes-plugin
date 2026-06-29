@@ -25,6 +25,7 @@ def mock_client(client_module) -> MagicMock:
     }
     c.conflicts.return_value = {"conflicts": []}
     c.list_records.return_value = {"records": [], "next_cursor": None}
+    c.knowledge_gaps.return_value = {"gaps": []}
     return c
 
 
@@ -102,3 +103,41 @@ class TestEngineStaleScan:
             "action": "apply", "forget_rids": ["stale_cold"],
         }))
         assert out["forgotten_count"] == 1
+
+
+class TestKnowledgeGaps:
+    def test_returns_gaps(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.knowledge_gaps.return_value = {"gaps": [
+            {"query": "kubernetes ingress config", "count": 5, "avg_top_score": 0.2},
+            {"query": "oncall escalation path", "count": 4, "avg_top_score": 0.3},
+        ]}
+        out = json.loads(p.handle_tool_call(
+            "yantrikdb_knowledge_gaps", {"min_count": 3},
+        ))
+        assert out["ok"] is True
+        assert out["count"] == 2
+        assert "knowledge gap" in out["summary"]
+        mock_client.knowledge_gaps.assert_called_once()
+        assert mock_client.knowledge_gaps.call_args.kwargs["min_count"] == 3
+
+    def test_graceful_when_engine_too_old(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.knowledge_gaps.side_effect = AttributeError("no knowledge_gaps")
+        out = json.loads(p.handle_tool_call("yantrikdb_knowledge_gaps", {}))
+        assert out["ok"] is False
+        assert "0.9.0" in out["error"]
+
+    def test_defaults_applied(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        p.handle_tool_call("yantrikdb_knowledge_gaps", {})
+        kw = mock_client.knowledge_gaps.call_args.kwargs
+        assert kw["min_count"] == 3
+        assert kw["max_avg_top_score"] == 0.4
+        assert kw["limit"] == 20

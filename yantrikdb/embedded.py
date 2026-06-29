@@ -598,6 +598,35 @@ class EmbeddedYantrikDBClient:
             return out
         return {"records": list(out) if out else []}
 
+    # -- Knowledge gaps (engine 0.9+) ---------------------------------
+
+    def knowledge_gaps(
+        self,
+        *,
+        min_count: int = 3,
+        max_avg_top_score: float = 0.4,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """The substrate's known unknowns (engine ``knowledge_gaps``).
+
+        Engine-global (not namespace-scoped). Raises ``AttributeError`` on
+        engines too old to expose it; the provider catches that and returns
+        a clean "not available" envelope.
+        """
+        try:
+            out = self._db.knowledge_gaps(
+                min_count=int(min_count),
+                max_avg_top_score=float(max_avg_top_score),
+                limit=int(limit),
+            )
+        except AttributeError:
+            raise
+        except Exception as e:
+            raise _map_engine_error("knowledge_gaps", e) from e
+        if isinstance(out, dict):
+            return out
+        return {"gaps": list(out) if out else []}
+
     # -- Skills (v0.3.0+) ---------------------------------------------
     #
     # Skills live in the shared ``skill_substrate`` namespace alongside

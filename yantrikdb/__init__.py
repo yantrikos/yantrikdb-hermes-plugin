@@ -764,6 +764,40 @@ HYGIENE_SCHEMA = {
     },
 }
 
+KNOWLEDGE_GAPS_SCHEMA = {
+    "name": "yantrikdb_knowledge_gaps",
+    "description": (
+        "v0.7 — the substrate's known unknowns. Returns queries that were "
+        "asked often (>= min_count) but answered poorly (average top recall "
+        "score <= max_avg_top_score) — a direct signal of what your memory "
+        "is MISSING. Use it to decide what to research, ask the user about, "
+        "or write down. Note: this signal is engine-global (across all "
+        "namespaces on the backend), not scoped to the active namespace. "
+        "Returns 'not available' on engines/servers older than 0.9.0."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "min_count": {
+                "type": "integer",
+                "description": "Minimum times a query must have been asked to "
+                               "count as demand. Default 3.",
+            },
+            "max_avg_top_score": {
+                "type": "number",
+                "description": "Only surface queries whose average top recall "
+                               "score is at or below this (poorly answered). "
+                               "Default 0.4.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max gaps to return. Default 20.",
+            },
+        },
+        "required": [],
+    },
+}
+
 ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
@@ -783,6 +817,7 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     EXTRACTION_STATS_SCHEMA,
     OBSERVABILITY_SCHEMA,
     HYGIENE_SCHEMA,
+    KNOWLEDGE_GAPS_SCHEMA,
 ]
 
 
@@ -1945,6 +1980,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_observability(args)
             elif tool_name == "yantrikdb_hygiene":
                 raw = self._do_hygiene(args)
+            elif tool_name == "yantrikdb_knowledge_gaps":
+                raw = self._do_knowledge_gaps(args)
             elif tool_name.startswith("yantrikdb_skill_"):
                 if not (self._config and self._config.skills_enabled):
                     return tool_error(
@@ -2598,6 +2635,39 @@ class YantrikDBMemoryProvider(MemoryProvider):
             if rid in data:
                 data.pop(rid, None)
                 self._save_recall_feedback(data)
+
+    # -- v0.7 Wave I: knowledge gaps --------------------------------------
+
+    def _do_knowledge_gaps(self, args: dict[str, Any]) -> str:
+        """Surface the engine's known-unknowns. Degrades gracefully when the
+        engine/server is older than 0.9.0 (no `knowledge_gaps`)."""
+        client = self._require_client()
+        min_count = _coerce_int(args.get("min_count"), 3)
+        max_avg = _coerce_float(args.get("max_avg_top_score"), default=0.4)
+        limit = _coerce_int(args.get("limit"), 20)
+        try:
+            resp = client.knowledge_gaps(
+                min_count=min_count, max_avg_top_score=max_avg, limit=limit,
+            )
+        except (AttributeError, YantrikDBServerError):
+            return tool_error(
+                "knowledge_gaps needs yantrikdb>=0.9.0 (embedded) or a "
+                "yantrikdb-server exposing /v1/knowledge_gaps — not "
+                "available in this mode/version.",
+                tool="yantrikdb_knowledge_gaps",
+            )
+        gaps = resp.get("gaps") if isinstance(resp, dict) else resp
+        gaps = gaps or []
+        self._record_success()
+        return json.dumps({
+            "count": len(gaps),
+            "gaps": gaps,
+            "summary": (
+                f"{len(gaps)} knowledge gap(s) — queries asked "
+                f">={min_count}x but answered poorly "
+                f"(avg top score <= {max_avg})."
+            ),
+        })
 
     def _do_pending_triggers(self, args: dict[str, Any]) -> str:
         limit = _coerce_int(args.get("limit"), 10)
