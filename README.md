@@ -13,6 +13,10 @@
 
 This repository **is** the canonical distribution. Per Hermes maintainer guidance, new memory providers aren't being merged upstream — the recommended pattern is standalone plugins that users install via `pip` and register with their Hermes home directory. That keeps the version cadence, CI gating, issue triage, and review cycle on the plugin author's side, so fixes ship the same day they're ready instead of waiting on upstream review bandwidth.
 
+## Companion X/Twitter Memory
+
+When a Hermes profile also installs [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet), YantrikDB can preserve reusable campaign facts, audience constraints, brand voice decisions, and monitoring lessons across X/Twitter sessions. Hermes Tweet remains responsible for live X/Twitter reads and optional actions; YantrikDB stores the durable context the agent should recall later.
+
 ## Why this exists
 
 Two recurring observations from the Hermes community map directly to what yantrikdb does:
