@@ -3,6 +3,21 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.8.0] — 2026-07-13 — The self-directing substrate
+
+v0.7 gave the substrate new primitives (knowledge gaps, tasks). v0.8 wires them into a **loop no other Hermes memory provider can do**: the memory notices what it doesn't know, queues the work, hands the agent its own agenda, and closes the loop when the gap is answered. All additive and opt-in — zero behaviour change by default, no new tools, no new dependencies.
+
+See the loop end-to-end: [`assets/demos/self-directing/`](../assets/demos/self-directing/) (runnable via `python demos/self_directing_memory.py`).
+
+### Features
+
+- **Gap→task automation (NEW, opt-in `YANTRIKDB_AUTO_GAP_TASKS`).** On session end, run `knowledge_gaps()` and create a durable task (`Resolve knowledge gap: <query>`) for each recurring gap not already covered by an open task — so the agent's unanswered questions become actionable to-dos. Bounded per session (`gap_task_max`, default 3), deduped by title, fail-soft and graceful-degrading on engines/servers without the APIs.
+- **"Your memory's agenda" block (NEW, opt-in `YANTRIKDB_SURFACE_AGENDA`).** Prepends open tasks + top unresolved knowledge gaps to `system_prompt_block`, so every session opens with what the memory still needs.
+- **`gap_max_avg_top_score` config (default 0.5).** The gap threshold is embedder-dependent — the bundled dim-64 potion-2M scores unanswered queries ~0.6, so the engine's default of 0.4 is too strict. Exposed and tunable per embedder.
+- **Demo + reproducible GIF.** `demos/self_directing_memory.py` (runnable, no API key) plus a pure-Pillow GIF renderer under `assets/demos/self-directing/` (no VHS dependency).
+
+No tool-surface change (still 21). Several new opt-in config flags, all default to zero-behaviour-change. 311 tests pass on both engine 0.8.0 and 0.9.2; ruff + mypy clean.
+
 ## [0.7.1] — 2026-07-13 — Require engine 0.9.2 (recall stability)
 
 Patch release: bumps the engine pin `yantrikdb>=0.9.0` → **`>=0.9.2`** to guarantee two upstream correctness fixes for embedded-mode users. No plugin code changes; the full test suite and the recall benchmark are green on 0.9.2 (recall@1 and MRR both improved vs 0.9.0).

@@ -41,6 +41,13 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 | Knowledge gaps (`yantrikdb_knowledge_gaps`) | ✓ v0.7.0 — "what is my memory missing?" from real recall demand | not surfaced |
 | Verbatim conversation buffer (`yantrikdb_recent_turns`) | ✓ v0.7.0 — survives compression, auto-captured | host context only |
 | Durable task store (`yantrikdb_tasks`) | ✓ v0.7.0 — namespace-scoped chores in the substrate | ephemeral / external |
+| Self-directing loop (gaps → tasks → agenda) | ✓ v0.8.0 — the memory queues its own gaps and hands the agent an agenda | none |
+
+## The self-directing substrate (v0.8)
+
+![Self-directing memory loop: gap → task → agenda → learn → close](./assets/demos/self-directing/demo.gif)
+
+The loop no other Hermes memory provider can do — the memory **notices what it doesn't know, queues the work, hands the agent its own agenda, and closes the loop** when the gap is answered. Opt-in (`YANTRIKDB_AUTO_GAP_TASKS`, `YANTRIKDB_SURFACE_AGENDA`); runnable via `python demos/self_directing_memory.py`. Details: **[assets/demos/self-directing/](./assets/demos/self-directing/)**.
 
 ## End-to-end demo — substrate growing through the skill lifecycle
 
