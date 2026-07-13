@@ -1757,6 +1757,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             + self._format_pending_conflicts_block()
             + self._format_hygiene_block()
             + self._format_conversation_block()
+            + self._format_agenda_block()
         )
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
@@ -3397,6 +3398,57 @@ class YantrikDBMemoryProvider(MemoryProvider):
         lines.append("(Preserved verbatim by YantrikDB across compression.)")
         return "\n".join(lines)
 
+    def _format_agenda_block(self) -> str:
+        """v0.8 — the self-directing substrate's agenda.
+
+        Opt-in (YANTRIKDB_SURFACE_AGENDA=true). Prepends what the memory
+        still needs: open tasks (agent-authored + auto-created from knowledge
+        gaps) and the top unresolved knowledge gaps. Turns the substrate from
+        a passive store into an active participant that hands the agent its
+        own to-do list. Fail-soft; empty when nothing is pending or the APIs
+        are unavailable.
+        """
+        if self._config is None or not self._config.surface_agenda:
+            return ""
+        if self._client is None:
+            return ""
+        cap = max(self._config.agenda_max_items, 1)
+        tasks: list[dict[str, Any]] = []
+        gaps: list[dict[str, Any]] = []
+        try:
+            listed = self._client.task_list(
+                namespace=self._namespace, status="open",
+            )
+            tasks = (listed.get("tasks") if isinstance(listed, dict) else listed) or []
+        except (AttributeError, YantrikDBServerError, YantrikDBError):
+            tasks = []
+        try:
+            resp = self._client.knowledge_gaps(
+                max_avg_top_score=self._config.gap_max_avg_top_score, limit=cap,
+            )
+            gaps = (resp.get("gaps") if isinstance(resp, dict) else resp) or []
+        except (AttributeError, YantrikDBServerError, YantrikDBError):
+            gaps = []
+        if not tasks and not gaps:
+            return ""
+        lines = ["", "## Your memory's agenda"]
+        if tasks:
+            lines.append("Open tasks:")
+            for t in tasks[:cap]:
+                title = (t.get("title") or "").strip()
+                pri = t.get("priority") or "medium"
+                lines.append(f"- [{pri}] {title}  (`{t.get('id', '?')}`)")
+        if gaps:
+            lines.append("Unanswered (asked often, answered poorly):")
+            for g in gaps[:cap]:
+                q = (g.get("query") if isinstance(g, dict) else str(g)) or ""
+                lines.append(f"- {q.strip()}")
+        lines.append(
+            "Address a gap, then mark its task done with "
+            "`yantrikdb_tasks(action=update, status=done)`."
+        )
+        return "\n".join(lines)
+
     def _do_skill_outcome(self, args: dict[str, Any]) -> str:
         skill_id = (args.get("skill_id") or "").strip()
         if not skill_id:
@@ -3451,6 +3503,69 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # one bad trigger doesn't block the rest.
         if self._config.auto_acknowledge_triggers:
             self._auto_acknowledge_pending_triggers()
+
+        # v0.8 — self-directing substrate: turn recurring knowledge gaps into
+        # durable tasks so the agent's unanswered questions become an agenda.
+        if self._config.auto_gap_tasks:
+            self._auto_gap_tasks()
+
+    def _auto_gap_tasks(self) -> None:
+        """Convert recurring knowledge gaps into durable tasks (v0.8).
+
+        Runs ``knowledge_gaps()`` and, for each gap not already covered by an
+        open task, creates ``Resolve knowledge gap: <query>``. Bounded per
+        session (``gap_task_max``); dedups against existing task titles.
+        Fail-soft; silently disables on engines/servers without the APIs.
+        """
+        if self._client is None or self._config is None:
+            return
+        cfg = self._config
+        try:
+            resp = self._client.knowledge_gaps(
+                min_count=cfg.gap_task_min_count,
+                max_avg_top_score=cfg.gap_max_avg_top_score,
+                limit=max(cfg.gap_task_max * 3, 1),
+            )
+            gaps = (resp.get("gaps") if isinstance(resp, dict) else resp) or []
+        except (AttributeError, YantrikDBServerError):
+            return
+        except YantrikDBError as e:
+            logger.debug("YantrikDB auto-gap-tasks knowledge_gaps failed: %s", e)
+            return
+        if not gaps:
+            return
+        try:
+            listed = self._client.task_list(namespace=self._namespace)
+            tasks = (listed.get("tasks") if isinstance(listed, dict) else listed) or []
+            existing = {(t.get("title") or "").strip().lower() for t in tasks}
+        except (AttributeError, YantrikDBServerError):
+            return
+        except YantrikDBError:
+            existing = set()
+        created = 0
+        for g in gaps:
+            if created >= cfg.gap_task_max:
+                break
+            query = (g.get("query") if isinstance(g, dict) else str(g)) or ""
+            query = query.strip()
+            if not query:
+                continue
+            title = f"Resolve knowledge gap: {query}"
+            if title.lower() in existing:
+                continue
+            try:
+                self._client.task_add(
+                    title, namespace=self._namespace, priority="medium",
+                )
+                existing.add(title.lower())
+                created += 1
+            except YantrikDBError as e:
+                logger.debug("YantrikDB auto-gap-task create failed: %s", e)
+        if created:
+            logger.info(
+                "YantrikDB self-directing: created %d gap task(s) at session end",
+                created,
+            )
 
     def _auto_acknowledge_pending_triggers(self) -> None:
         """Drain the pending-trigger queue by calling acknowledge on each.
