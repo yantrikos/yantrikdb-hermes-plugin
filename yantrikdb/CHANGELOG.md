@@ -3,6 +3,13 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.7.1] — 2026-07-13 — Require engine 0.9.2 (recall stability)
+
+Patch release: bumps the engine pin `yantrikdb>=0.9.0` → **`>=0.9.2`** to guarantee two upstream correctness fixes for embedded-mode users. No plugin code changes; the full test suite and the recall benchmark are green on 0.9.2 (recall@1 and MRR both improved vs 0.9.0).
+
+- **0.9.2 — NaN-safe recall.** A NaN-valued embedding could panic the process during `recall()` (Rust ≥1.81's sort detecting a broken total order), which killed the call and surfaced as `-32602` in MCP sessions. The engine now guards NaN/zero norms and uses `f64::total_cmp` for every score sort. Embedded-mode plugin recall inherits the fix.
+- **0.9.1 — `set_embedder_named` with the worker pool.** Fixes a 0.9.0 regression where the named/multilingual embedder swap always failed ("requires exclusive access to the engine"). Restores the plugin's named-embedder path (`YANTRIKDB_EMBEDDER=potion-base-8M` / `potion-base-32M`).
+
 ## [0.7.0] — 2026-06-29 — Build on the engine: gap-closers, conversation + task storage
 
 Engine **0.9.0 "close the memory gaps"** (and 0.8.0) added exactly the primitives the plugin worked around in v0.6, plus two new first-class storage surfaces. v0.7 builds on them. Four waves, all additive and opt-in / graceful-degradation; existing deployments see zero behaviour change. **Requires `yantrikdb>=0.9.0`** (pin bumped on all surfaces) — which also pulls the engine's Backpressure/compactor reliability fix for long embedded write sessions. No new Python dependencies.
