@@ -193,6 +193,12 @@ def _clean_yantrikdb_env(monkeypatch):
         "YANTRIKDB_CONVERSATION_BUFFER_MAX_TURNS",
         "YANTRIKDB_SURFACE_CONVERSATION_BUFFER",
         "YANTRIKDB_CONVERSATION_BUFFER_SURFACE_LIMIT",
+        "YANTRIKDB_AUTO_GAP_TASKS",
+        "YANTRIKDB_GAP_TASK_MAX",
+        "YANTRIKDB_GAP_TASK_MIN_COUNT",
+        "YANTRIKDB_GAP_MAX_AVG_TOP_SCORE",
+        "YANTRIKDB_SURFACE_AGENDA",
+        "YANTRIKDB_AGENDA_MAX_ITEMS",
     ):
         monkeypatch.delenv(var, raising=False)
     yield

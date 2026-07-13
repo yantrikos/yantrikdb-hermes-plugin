@@ -233,6 +233,29 @@ class YantrikDBConfig:
     surface_conversation_buffer: bool = False
     conversation_buffer_surface_limit: int = 6
 
+    # v0.8.0+ — the self-directing substrate. Turns the discrete v0.7
+    # primitives (knowledge_gaps + tasks + hygiene + conflicts) into a loop:
+    # the memory notices what it doesn't know, queues the work, and hands the
+    # agent its own agenda. All OPT-IN (default off) — zero behaviour change.
+    #
+    # auto_gap_tasks: on session end, run knowledge_gaps() and create a task
+    # for each recurring gap that doesn't already have one — so the agent's
+    # unanswered questions become durable, actionable to-dos.
+    auto_gap_tasks: bool = False
+    gap_task_max: int = 3            # cap new gap-tasks created per session
+    gap_task_min_count: int = 3      # a gap must recur >= this to become a task
+    # Max average top recall score for a query to count as a "gap". The
+    # engine default is 0.4; that's strict for the bundled dim-64 potion-2M
+    # (unanswered queries still score ~0.5-0.6), so the plugin default is a
+    # touch more lenient. Tune per embedder: larger models separate better,
+    # so a lower value avoids false-positive gaps.
+    gap_max_avg_top_score: float = 0.5
+    # surface_agenda: prepend a compact "## Your memory's agenda" block to
+    # system_prompt_block — top open tasks + unresolved knowledge gaps — so
+    # every session opens with what the memory still needs.
+    surface_agenda: bool = False
+    agenda_max_items: int = 5
+
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
@@ -323,6 +346,24 @@ class YantrikDBConfig:
             ),
             conversation_buffer_surface_limit=_parse_int(
                 os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_SURFACE_LIMIT"), 6,
+            ),
+            auto_gap_tasks=_parse_bool(
+                os.environ.get("YANTRIKDB_AUTO_GAP_TASKS"), default=False,
+            ),
+            gap_task_max=_parse_int(
+                os.environ.get("YANTRIKDB_GAP_TASK_MAX"), 3,
+            ),
+            gap_task_min_count=_parse_int(
+                os.environ.get("YANTRIKDB_GAP_TASK_MIN_COUNT"), 3,
+            ),
+            gap_max_avg_top_score=_parse_float(
+                os.environ.get("YANTRIKDB_GAP_MAX_AVG_TOP_SCORE"), 0.5,
+            ),
+            surface_agenda=_parse_bool(
+                os.environ.get("YANTRIKDB_SURFACE_AGENDA"), default=False,
+            ),
+            agenda_max_items=_parse_int(
+                os.environ.get("YANTRIKDB_AGENDA_MAX_ITEMS"), 5,
             ),
             sync_user_messages=_parse_bool(
                 os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
