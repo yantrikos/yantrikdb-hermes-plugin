@@ -3,6 +3,25 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.9.0] — 2026-07-17 — Idempotent writes, typed errors, and a contract gate
+
+Built with the yantrikdb ecosystem (core / server / mcp) on engine **0.10.0 "the Reliability release"**, and the reason the plugin now **requires `yantrikdb>=0.10.0`** (pin bumped). Three additive pieces; existing behaviour unchanged.
+
+### Idempotent `remember` (NEW, opt-in)
+
+- `yantrikdb_remember` accepts an optional `idempotency_key`. In embedded mode the keyed write routes through the engine's `record(idempotency_key=…)` (drift-safe digest — the engine vector is excluded, so an embedder upgrade between retries can't fake a conflict). **Same key + same text → the original rid with zero writes; same key + different text → a conflict carrying the existing rid** (surfaced to the agent as claim resolution, `stored:false` — fetch/correct it, don't re-store). Derive keys from stable EXTERNAL identity (a message id), never from the text.
+- **Honest refusal** (ecosystem agreement #6): keys are refused loudly, never silently dropped, in http mode (server endpoint not shipped) and on python-fallback embedders (`model2vec` / `sentence-transformers`), which can't produce the drift-safe digest — the error names the backend and the fix.
+
+### Typed error taxonomy (NEW)
+
+- `_map_engine_error` now branches on the engine's 0.10 **typed exceptions** (`Backpressure` / `RecallContended` / `CorrectionDeferredDuringReembed` / `BatchDeferredDuringReembed` → transient/retryable; `IdempotencyConflict` / `InvalidIdempotencyKey` / `ProvenanceInconsistent` → caller-actionable) — by **type, never message text**. Falls back to the prior string heuristics on engines that don't export them.
+
+### Consumer-simulation contract gate (NEW)
+
+- `tests/test_semantic_contract.py` — a semantic gate seeded through the public tool surface, all-or-nothing, **feature-probed (never version-parsed)**. Cases: namespace isolation, **knowledge_gaps namespace-scoping (encodes the 0.9.3 break so it can never silently regress)**, idempotency dedup (zero-writes) + divergent conflict, verbatim/injection fidelity, and explainable-recall survival. Design ported from yantrikdb-mcp's contract suite (thanks). Skips cleanly without the native engine wheel.
+
+324 tests pass on engine 0.10.0; ruff + mypy clean; no new dependencies.
+
 ## [0.8.1] — 2026-07-17 — Fix: knowledge_gaps is namespace-scoped on engine 0.9.3+
 
 Bug fix. Engine **0.9.3** made `knowledge_gaps` namespace-scoped (demand is now recorded per namespace, and disabled entirely on encrypted DBs — a privacy fix). The plugin called it without a namespace, so on any engine **≥0.9.3** it queried the wrong (`default`) namespace and returned nothing — leaving the **`yantrikdb_knowledge_gaps` tool and the entire v0.8 self-directing loop (gap→task, "your memory's agenda") silently dormant.**

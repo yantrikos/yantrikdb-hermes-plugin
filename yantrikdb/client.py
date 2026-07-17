@@ -658,7 +658,18 @@ class YantrikDBClient:
         domain: str | None = None,
         memory_type: str | None = None,
         metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
+        # Honest surface (ecosystem agreement #6): yantrikdb-server does not
+        # yet accept idempotency keys, so REFUSE loudly rather than forward
+        # and silently drop the key. Flip to a request param the day the
+        # server ships it.
+        if idempotency_key:
+            raise YantrikDBClientError(
+                "idempotency keys are not yet supported in http mode "
+                "(yantrikdb-server has not shipped the endpoint). Use "
+                "embedded mode with yantrikdb>=0.10.0, or omit the key."
+            )
         safe_text = truncate_text(text, self.config.max_text_len)
         body: dict[str, Any] = {
             "text": safe_text,
