@@ -41,60 +41,35 @@ from .client import (
 logger = logging.getLogger(__name__)
 
 
-def _load_typed_exception_map() -> list[tuple[type, type]]:
-    """Map engine 0.10+ typed exceptions to the plugin's taxonomy.
-
-    Branches on TYPE, never message text (per the ecosystem contract — two
-    builds reported the same version with opposite behaviour). Empty on
-    engines older than 0.10 that don't export these types, so `_map_engine_error`
-    falls back to its string heuristics there. Ordered most-specific-first.
-    """
-    try:
-        import yantrikdb as _y
-    except ImportError:
-        return []
-    # (engine type name, plugin taxonomy class)
-    spec = [
-        # retryable / transient — safe to retry, trips the circuit breaker
-        ("Backpressure", YantrikDBTransientError),
-        ("RecallContended", YantrikDBTransientError),
-        ("CorrectionDeferredDuringReembed", YantrikDBTransientError),
-        ("BatchDeferredDuringReembed", YantrikDBTransientError),
-        # caller-actionable — surface to the agent, does NOT trip the breaker
-        ("IdempotencyConflict", YantrikDBClientError),
-        ("InvalidIdempotencyKey", YantrikDBClientError),
-        ("ProvenanceInconsistent", YantrikDBClientError),
-    ]
-    out: list[tuple[type, type]] = []
-    for name, tax in spec:
-        cls = getattr(_y, name, None)
-        if isinstance(cls, type) and issubclass(cls, BaseException):
-            out.append((cls, tax))
-    return out
-
-
-_TYPED_EXC_MAP = _load_typed_exception_map()
-
-
-def _engine_exc(name: str) -> type | None:
-    try:
-        import yantrikdb as _y
-    except ImportError:
-        return None
-    cls = getattr(_y, name, None)
-    return cls if isinstance(cls, type) else None
-
-
-_IdempotencyConflict = _engine_exc("IdempotencyConflict")
-_InvalidIdempotencyKey = _engine_exc("InvalidIdempotencyKey")
+# Engine 0.10+ typed exceptions, identified by CLASS NAME + engine module —
+# never by message text (the ecosystem contract), and deliberately WITHOUT
+# ``import yantrikdb`` (this plugin package is also named ``yantrikdb``; a
+# stray import in a test/CI env with no installed engine would load a second
+# copy of the plugin and duplicate the exception classes). We only ever see
+# these instances via ``self._db`` calls against a real engine, so name+module
+# identification is exact and side-effect-free.
+_TRANSIENT_EXC_NAMES = frozenset({
+    "Backpressure", "RecallContended",
+    "CorrectionDeferredDuringReembed", "BatchDeferredDuringReembed",
+})
+_CALLER_EXC_NAMES = frozenset({
+    "IdempotencyConflict", "InvalidIdempotencyKey", "ProvenanceInconsistent",
+})
 _RID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f-]{20,}")
 
 
+def _is_engine_exc(exc: Exception, names: frozenset[str]) -> bool:
+    cls = type(exc)
+    return (
+        cls.__name__ in names
+        and cls.__module__.split(".")[0] == "yantrikdb"
+    )
+
+
 def _idempotency_conflict_rid(exc: Exception) -> str | None:
-    """If ``exc`` is an IdempotencyConflict, return the existing rid it carries
-    (best-effort — attribute, then message). Returns ``None`` when ``exc`` is
-    not a conflict at all."""
-    if not (_IdempotencyConflict and isinstance(exc, _IdempotencyConflict)):
+    """If ``exc`` is the engine's IdempotencyConflict, return the existing rid
+    it carries (attribute, then message). ``None`` when not a conflict."""
+    if not _is_engine_exc(exc, frozenset({"IdempotencyConflict"})):
         return None
     for attr in ("existing_rid", "rid", "original_rid"):
         val = getattr(exc, attr, None)
@@ -105,11 +80,10 @@ def _idempotency_conflict_rid(exc: Exception) -> str | None:
 
 
 def _is_key_capability_refusal(exc: Exception) -> bool:
-    """True when a key was rejected because this backend can't honor it:
-    the engine's typed ``InvalidIdempotencyKey``, or a bare ``ValueError``
-    from the python-fallback-embedder wrapper (host-capability refusal,
-    per core's recorded decision)."""
-    if _InvalidIdempotencyKey and isinstance(exc, _InvalidIdempotencyKey):
+    """True when a key was rejected because this backend can't honor it: the
+    engine's typed ``InvalidIdempotencyKey``, or a bare ``ValueError`` from the
+    python-fallback-embedder wrapper (host-capability refusal)."""
+    if _is_engine_exc(exc, frozenset({"InvalidIdempotencyKey"})):
         return True
     return isinstance(exc, ValueError)
 
@@ -118,10 +92,11 @@ def _map_engine_error(operation: str, exc: Exception) -> YantrikDBError:
     """Map embedded-engine exceptions into the plugin's error taxonomy."""
     if isinstance(exc, YantrikDBError):
         return exc
-    # Engine 0.10+ typed exceptions — branch on type first (authoritative).
-    for exc_type, tax in _TYPED_EXC_MAP:
-        if isinstance(exc, exc_type):
-            return tax(f"{operation} failed: {exc}")
+    # Engine 0.10+ typed exceptions — branch on type (name+module), not text.
+    if _is_engine_exc(exc, _TRANSIENT_EXC_NAMES):
+        return YantrikDBTransientError(f"{operation} failed: {exc}")
+    if _is_engine_exc(exc, _CALLER_EXC_NAMES):
+        return YantrikDBClientError(f"{operation} failed: {exc}")
     msg = str(exc)
     lowered = msg.lower()
     if (

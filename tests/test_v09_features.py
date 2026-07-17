@@ -74,23 +74,41 @@ class TestHttpKeyRefusal:
 
 
 class TestTypedExceptionMap:
-    def test_map_well_formed_and_maps_by_type(self, provider_module, client_module):
+    def _emb(self, provider_module):
         import importlib
-        emb = importlib.import_module(provider_module.__name__ + ".embedded")
-        # Each entry is (engine exc type, plugin taxonomy type). Empty on
-        # engines <0.10 that don't export the typed exceptions.
-        for exc_type, tax in emb._TYPED_EXC_MAP:
-            assert isinstance(exc_type, type)
-            assert issubclass(tax, client_module.YantrikDBError)
+        return importlib.import_module(provider_module.__name__ + ".embedded")
 
-        # _map_engine_error branches on TYPE: a fake typed exception injected
-        # into the map routes to its taxonomy class, not the string heuristic.
-        class _FakeBackpressure(RuntimeError):
-            pass
+    def _fake_engine_exc(self, name):
+        # An exception whose class LOOKS like an engine typed exception
+        # (class name + top-level module "yantrikdb"), without importing the
+        # engine — mirrors how _map_engine_error identifies them.
+        cls = type(name, (RuntimeError,), {"__module__": "yantrikdb"})
+        return cls
 
-        emb._TYPED_EXC_MAP.insert(0, (_FakeBackpressure, client_module.YantrikDBTransientError))
-        try:
-            mapped = emb._map_engine_error("op", _FakeBackpressure("anything at all"))
-            assert isinstance(mapped, client_module.YantrikDBTransientError)
-        finally:
-            emb._TYPED_EXC_MAP.pop(0)
+    def test_transient_typed_exc_maps_to_transient(self, provider_module, client_module):
+        emb = self._emb(provider_module)
+        exc = self._fake_engine_exc("Backpressure")("queue is full")
+        mapped = emb._map_engine_error("record", exc)
+        assert isinstance(mapped, client_module.YantrikDBTransientError)
+
+    def test_caller_typed_exc_maps_to_client(self, provider_module, client_module):
+        emb = self._emb(provider_module)
+        exc = self._fake_engine_exc("ProvenanceInconsistent")("nope")
+        mapped = emb._map_engine_error("record", exc)
+        assert isinstance(mapped, client_module.YantrikDBClientError)
+
+    def test_non_engine_same_name_is_not_typed(self, provider_module, client_module):
+        # A "Backpressure" from some OTHER module must NOT be treated as the
+        # engine's typed exception (module guard). Falls to string/server.
+        emb = self._emb(provider_module)
+        other = type("Backpressure", (RuntimeError,), {"__module__": "somelib"})
+        mapped = emb._map_engine_error("record", other("x"))
+        assert not isinstance(mapped, client_module.YantrikDBTransientError)
+
+    def test_no_side_effect_import_of_yantrikdb(self, provider_module):
+        # Guard against regressions: embedded.py must not import the engine
+        # (same-named package) at load — it identifies typed excs by name.
+        import inspect
+        emb = self._emb(provider_module)
+        src = inspect.getsource(emb._map_engine_error)
+        assert "import yantrikdb" not in src
