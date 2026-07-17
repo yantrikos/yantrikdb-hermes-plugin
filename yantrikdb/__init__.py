@@ -771,8 +771,8 @@ KNOWLEDGE_GAPS_SCHEMA = {
         "asked often (>= min_count) but answered poorly (average top recall "
         "score <= max_avg_top_score) — a direct signal of what your memory "
         "is MISSING. Use it to decide what to research, ask the user about, "
-        "or write down. Note: this signal is engine-global (across all "
-        "namespaces on the backend), not scoped to the active namespace. "
+        "or write down. Scoped to the active namespace on engine 0.9.3+ "
+        "(global on 0.9.0-0.9.2). "
         "Returns 'not available' on engines/servers older than 0.9.0."
     ),
     "parameters": {
@@ -2784,9 +2784,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
         min_count = _coerce_int(args.get("min_count"), 3)
         max_avg = _coerce_float(args.get("max_avg_top_score"), default=0.4)
         limit = _coerce_int(args.get("limit"), 20)
+        namespace = (args.get("namespace") or self._namespace or "").strip()
         try:
             resp = client.knowledge_gaps(
                 min_count=min_count, max_avg_top_score=max_avg, limit=limit,
+                namespace=namespace or None,
             )
         except (AttributeError, YantrikDBServerError):
             return tool_error(
@@ -3425,6 +3427,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         try:
             resp = self._client.knowledge_gaps(
                 max_avg_top_score=self._config.gap_max_avg_top_score, limit=cap,
+                namespace=self._namespace,
             )
             gaps = (resp.get("gaps") if isinstance(resp, dict) else resp) or []
         except (AttributeError, YantrikDBServerError, YantrikDBError):
@@ -3525,6 +3528,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 min_count=cfg.gap_task_min_count,
                 max_avg_top_score=cfg.gap_max_avg_top_score,
                 limit=max(cfg.gap_task_max * 3, 1),
+                namespace=self._namespace,
             )
             gaps = (resp.get("gaps") if isinstance(resp, dict) else resp) or []
         except (AttributeError, YantrikDBServerError):
