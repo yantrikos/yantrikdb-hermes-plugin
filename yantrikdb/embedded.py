@@ -41,10 +41,87 @@ from .client import (
 logger = logging.getLogger(__name__)
 
 
+def _load_typed_exception_map() -> list[tuple[type, type]]:
+    """Map engine 0.10+ typed exceptions to the plugin's taxonomy.
+
+    Branches on TYPE, never message text (per the ecosystem contract — two
+    builds reported the same version with opposite behaviour). Empty on
+    engines older than 0.10 that don't export these types, so `_map_engine_error`
+    falls back to its string heuristics there. Ordered most-specific-first.
+    """
+    try:
+        import yantrikdb as _y
+    except ImportError:
+        return []
+    # (engine type name, plugin taxonomy class)
+    spec = [
+        # retryable / transient — safe to retry, trips the circuit breaker
+        ("Backpressure", YantrikDBTransientError),
+        ("RecallContended", YantrikDBTransientError),
+        ("CorrectionDeferredDuringReembed", YantrikDBTransientError),
+        ("BatchDeferredDuringReembed", YantrikDBTransientError),
+        # caller-actionable — surface to the agent, does NOT trip the breaker
+        ("IdempotencyConflict", YantrikDBClientError),
+        ("InvalidIdempotencyKey", YantrikDBClientError),
+        ("ProvenanceInconsistent", YantrikDBClientError),
+    ]
+    out: list[tuple[type, type]] = []
+    for name, tax in spec:
+        cls = getattr(_y, name, None)
+        if isinstance(cls, type) and issubclass(cls, BaseException):
+            out.append((cls, tax))
+    return out
+
+
+_TYPED_EXC_MAP = _load_typed_exception_map()
+
+
+def _engine_exc(name: str) -> type | None:
+    try:
+        import yantrikdb as _y
+    except ImportError:
+        return None
+    cls = getattr(_y, name, None)
+    return cls if isinstance(cls, type) else None
+
+
+_IdempotencyConflict = _engine_exc("IdempotencyConflict")
+_InvalidIdempotencyKey = _engine_exc("InvalidIdempotencyKey")
+_RID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f-]{20,}")
+
+
+def _idempotency_conflict_rid(exc: Exception) -> str | None:
+    """If ``exc`` is an IdempotencyConflict, return the existing rid it carries
+    (best-effort — attribute, then message). Returns ``None`` when ``exc`` is
+    not a conflict at all."""
+    if not (_IdempotencyConflict and isinstance(exc, _IdempotencyConflict)):
+        return None
+    for attr in ("existing_rid", "rid", "original_rid"):
+        val = getattr(exc, attr, None)
+        if val:
+            return str(val)
+    m = _RID_RE.search(str(exc))
+    return m.group(0) if m else ""
+
+
+def _is_key_capability_refusal(exc: Exception) -> bool:
+    """True when a key was rejected because this backend can't honor it:
+    the engine's typed ``InvalidIdempotencyKey``, or a bare ``ValueError``
+    from the python-fallback-embedder wrapper (host-capability refusal,
+    per core's recorded decision)."""
+    if _InvalidIdempotencyKey and isinstance(exc, _InvalidIdempotencyKey):
+        return True
+    return isinstance(exc, ValueError)
+
+
 def _map_engine_error(operation: str, exc: Exception) -> YantrikDBError:
     """Map embedded-engine exceptions into the plugin's error taxonomy."""
     if isinstance(exc, YantrikDBError):
         return exc
+    # Engine 0.10+ typed exceptions — branch on type first (authoritative).
+    for exc_type, tax in _TYPED_EXC_MAP:
+        if isinstance(exc, exc_type):
+            return tax(f"{operation} failed: {exc}")
     msg = str(exc)
     lowered = msg.lower()
     if (
@@ -363,20 +440,70 @@ class EmbeddedYantrikDBClient:
         domain: str | None = None,
         memory_type: str | None = None,
         metadata: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         safe_text = truncate_text(text, self.config.max_text_len)
+        ns = namespace or self.config.namespace
+        mt = memory_type or "semantic"
+        dom = domain or "general"
+        if idempotency_key:
+            return self._remember_idempotent(
+                safe_text, key=idempotency_key, memory_type=mt,
+                importance=float(importance), namespace=ns, domain=dom,
+                metadata=metadata,
+            )
         try:
             rid = self._db.record_text(
-                safe_text,
-                memory_type=memory_type or "semantic",
-                importance=float(importance),
-                namespace=namespace or self.config.namespace,
-                domain=domain or "general",
-                metadata=metadata,
+                safe_text, memory_type=mt, importance=float(importance),
+                namespace=ns, domain=dom, metadata=metadata,
             )
         except Exception as e:
             raise _map_engine_error("remember", e) from e
         return {"rid": rid}
+
+    def _remember_idempotent(
+        self, text: str, *, key: str, memory_type: str, importance: float,
+        namespace: str, domain: str, metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Keyed write via ``record(idempotency_key=)`` (engine 0.10+).
+
+        The wrapper routes this through the drift-safe
+        ``record_text_with_idempotency`` (engine vector excluded from the
+        digest). Same key + same payload is a silent HIT (original rid, zero
+        writes); same key + divergent payload raises ``IdempotencyConflict``
+        carrying the existing rid, which we surface for claim resolution. A
+        python-fallback embedder can't produce the digest → clear refusal.
+        """
+        try:
+            rid = self._db.record(
+                text=text, memory_type=memory_type, importance=importance,
+                namespace=namespace, domain=domain, metadata=metadata,
+                idempotency_key=key,
+            )
+            return {"rid": rid, "idempotent": True}
+        except AttributeError:
+            # engine too old to expose record()/keys — honest refusal
+            raise YantrikDBClientError(
+                "idempotency keys need yantrikdb>=0.10.0 (embedded)."
+            ) from None
+        except Exception as e:
+            existing = _idempotency_conflict_rid(e)
+            if existing is not None:
+                return {
+                    "rid": existing or None,
+                    "idempotency_conflict": True,
+                    "detail": str(e),
+                }
+            if _is_key_capability_refusal(e):
+                raise YantrikDBClientError(
+                    "idempotency keys require the engine embedder (bundled "
+                    "potion-2M in embedded mode). This install uses a "
+                    "python-side embedder (YANTRIKDB_EMBEDDER_* / model2vec / "
+                    "sentence-transformers), which can't produce the "
+                    "drift-safe digest. Remove the key, or use the engine "
+                    "embedder."
+                ) from e
+            raise _map_engine_error("remember", e) from e
 
     def recall(
         self,

@@ -4,7 +4,7 @@
 [![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.9.0-orange)](https://github.com/yantrikos/yantrikdb-server)
+[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.10.0-orange)](https://github.com/yantrikos/yantrikdb-server)
 [![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)
@@ -42,6 +42,8 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 | Verbatim conversation buffer (`yantrikdb_recent_turns`) | ✓ v0.7.0 — survives compression, auto-captured | host context only |
 | Durable task store (`yantrikdb_tasks`) | ✓ v0.7.0 — namespace-scoped chores in the substrate | ephemeral / external |
 | Self-directing loop (gaps → tasks → agenda) | ✓ v0.8.0 — the memory queues its own gaps and hands the agent an agenda | none |
+| Idempotent writes (`remember(idempotency_key=…)`) | ✓ v0.9.0 — retries dedupe to zero writes; divergent payloads surface a conflict | duplicate on retry |
+| Consumer-simulation contract gate | ✓ v0.9.0 — feature-probed semantic tests that catch engine behavioral breaks | none |
 
 ## The self-directing substrate (v0.8)
 

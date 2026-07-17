@@ -228,6 +228,19 @@ REMEMBER_SCHEMA = {
                     "'people', 'architecture', 'infrastructure', etc."
                 ),
             },
+            "idempotency_key": {
+                "type": "string",
+                "description": (
+                    "v0.9+ (embedded, yantrikdb>=0.10.0): a stable EXTERNAL "
+                    "identity for this write (e.g. a source message id) so "
+                    "retries don't create duplicates — same key + same text "
+                    "returns the original rid with zero writes. Same key + "
+                    "DIFFERENT text returns a conflict carrying the existing "
+                    "rid (fetch/correct it, don't re-store). Never derive the "
+                    "key from the text. Refused in http mode and on "
+                    "python-fallback embedders."
+                ),
+            },
         },
         "required": ["text"],
     },
@@ -2161,6 +2174,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if not text:
             return tool_error("Missing required parameter: text")
         importance = _coerce_float(args.get("importance"), default=0.6)
+        idempotency_key = (args.get("idempotency_key") or "").strip() or None
         client = self._require_client()
         resp = client.remember(
             text,
@@ -2168,7 +2182,22 @@ class YantrikDBMemoryProvider(MemoryProvider):
             importance=importance,
             domain=args.get("domain"),
             metadata={"session_id": self._session_id, **self._write_scope_metadata()},
+            idempotency_key=idempotency_key,
         )
+        # v0.9: a divergent-payload conflict under the same key — surface the
+        # existing rid so the agent can fetch/correct the winner (T07). Not an
+        # error: the key already holds a claim.
+        if resp.get("idempotency_conflict"):
+            self._record_success()
+            return json.dumps({
+                "rid": resp.get("rid"),
+                "stored": False,
+                "idempotency_conflict": True,
+                "note": (
+                    "This idempotency_key already holds a different memory "
+                    "(rid above). Fetch or correct it instead of re-storing."
+                ),
+            })
         # v0.5 Wave E: mirror to the cross-agent shared brain when opted in.
         # Tag with source=agent:<name> so each contributor is traceable; a
         # failed mirror write doesn't break the primary remember path.
