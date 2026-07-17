@@ -3,6 +3,14 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.8.1] — 2026-07-17 — Fix: knowledge_gaps is namespace-scoped on engine 0.9.3+
+
+Bug fix. Engine **0.9.3** made `knowledge_gaps` namespace-scoped (demand is now recorded per namespace, and disabled entirely on encrypted DBs — a privacy fix). The plugin called it without a namespace, so on any engine **≥0.9.3** it queried the wrong (`default`) namespace and returned nothing — leaving the **`yantrikdb_knowledge_gaps` tool and the entire v0.8 self-directing loop (gap→task, "your memory's agenda") silently dormant.**
+
+- `knowledge_gaps` (HTTP + embedded) now accepts and passes `namespace`; the three call sites (`_do_knowledge_gaps`, `_auto_gap_tasks`, `_format_agenda_block`) pass the active namespace.
+- Backward-compatible: engines 0.9.0-0.9.2 have no `namespace` parameter (demand was global there) — the embedded path falls back to the unscoped call on `TypeError`.
+- Verified on engine 0.10.0: with the fix, `knowledge_gaps` returns this namespace's gaps and the self-directing loop fires again. Full suite (312 tests) + benchmark green on 0.10.0; no engine pin change.
+
 ## [0.8.0] — 2026-07-13 — The self-directing substrate
 
 v0.7 gave the substrate new primitives (knowledge gaps, tasks). v0.8 wires them into a **loop no other Hermes memory provider can do**: the memory notices what it doesn't know, queues the work, hands the agent its own agenda, and closes the loop when the gap is answered. All additive and opt-in — zero behaviour change by default, no new tools, no new dependencies.

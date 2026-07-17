@@ -833,12 +833,17 @@ class YantrikDBClient:
         min_count: int = 3,
         max_avg_top_score: float = 0.4,
         limit: int = 20,
+        namespace: str | None = None,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
             "min_count": int(min_count),
             "max_avg_top_score": float(max_avg_top_score),
             "limit": int(limit),
         }
+        # engine 0.9.3+ scopes demand per namespace; pass it through so gaps
+        # come from THIS agent's namespace, not the global/default one.
+        if namespace:
+            params["namespace"] = namespace
         return self._request("GET", "/v1/knowledge_gaps", params=params)
 
     # -- Conversation buffer (engine 0.9+) ----------------------------

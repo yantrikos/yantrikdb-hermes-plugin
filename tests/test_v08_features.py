@@ -95,6 +95,16 @@ class TestGapToTask:
         p.on_session_end([])  # must not raise
         mock_client.task_add.assert_not_called()
 
+    def test_gap_tasks_pass_namespace(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        # v0.8.1: engine 0.9.3+ scopes demand per namespace.
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
+                      YANTRIKDB_AUTO_GAP_TASKS="true")
+        mock_client.knowledge_gaps.return_value = {"gaps": [{"query": "x"}]}
+        p.on_session_end([])
+        assert mock_client.knowledge_gaps.call_args.kwargs.get("namespace")
+
 
 class TestAgendaBlock:
     def test_off_by_default(
@@ -118,6 +128,7 @@ class TestAgendaBlock:
         assert "Your memory's agenda" in block
         assert "oncall path" in block
         assert "kubernetes ingress config" in block
+        assert mock_client.knowledge_gaps.call_args.kwargs.get("namespace")
 
     def test_empty_when_nothing_pending(
         self, provider_module, mock_client, monkeypatch, tmp_path,

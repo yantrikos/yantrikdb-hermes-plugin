@@ -606,19 +606,28 @@ class EmbeddedYantrikDBClient:
         min_count: int = 3,
         max_avg_top_score: float = 0.4,
         limit: int = 20,
+        namespace: str | None = None,
     ) -> dict[str, Any]:
         """The substrate's known unknowns (engine ``knowledge_gaps``).
 
-        Engine-global (not namespace-scoped). Raises ``AttributeError`` on
-        engines too old to expose it; the provider catches that and returns
-        a clean "not available" envelope.
+        Namespace-scoped on engine 0.9.3+ (demand is recorded per namespace);
+        pass ``namespace`` so gaps come from this agent's namespace. Engines
+        0.9.0-0.9.2 have no ``namespace`` parameter (global demand) — we fall
+        back to the unscoped call there. Raises ``AttributeError`` on engines
+        without the method; the provider returns a clean "not available".
         """
+        base: dict[str, Any] = {
+            "min_count": int(min_count),
+            "max_avg_top_score": float(max_avg_top_score),
+            "limit": int(limit),
+        }
+        ns = namespace or self.config.namespace
         try:
-            out = self._db.knowledge_gaps(
-                min_count=int(min_count),
-                max_avg_top_score=float(max_avg_top_score),
-                limit=int(limit),
-            )
+            try:
+                out = self._db.knowledge_gaps(namespace=ns, **base)
+            except TypeError:
+                # engine < 0.9.3: no namespace kwarg, demand is global.
+                out = self._db.knowledge_gaps(**base)
         except AttributeError:
             raise
         except Exception as e:

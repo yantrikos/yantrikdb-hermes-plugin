@@ -150,6 +150,8 @@ class TestKnowledgeGaps:
         assert kw["min_count"] == 3
         assert kw["max_avg_top_score"] == 0.4
         assert kw["limit"] == 20
+        # v0.8.1: must pass the active namespace (engine 0.9.3+ scopes demand)
+        assert kw.get("namespace")
 
 
 def _join_sync(p):
