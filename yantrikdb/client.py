@@ -569,6 +569,9 @@ class YantrikDBClient:
     def __init__(self, config: YantrikDBConfig, session: Session | None = None):
         self.config = config
         self._session = session if session is not None else self._build_session(config)
+        # v0.9.1 — cached /v1/health capability probe for idempotency keys.
+        # None = not yet probed; True/False after the first check.
+        self._idem_cap: bool | None = None
 
     @staticmethod
     def _build_session(config: YantrikDBConfig) -> Session:
@@ -660,15 +663,15 @@ class YantrikDBClient:
         metadata: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        # Honest surface (ecosystem agreement #6): yantrikdb-server does not
-        # yet accept idempotency keys, so REFUSE loudly rather than forward
-        # and silently drop the key. Flip to a request param the day the
-        # server ships it.
-        if idempotency_key:
+        # Honest surface (ecosystem agreement #6): forward an idempotency key
+        # only if the server advertises support (v0.9.1 capability probe);
+        # otherwise REFUSE loudly rather than forward-and-silently-drop.
+        if idempotency_key and not self._supports_idempotency_key():
             raise YantrikDBClientError(
-                "idempotency keys are not yet supported in http mode "
-                "(yantrikdb-server has not shipped the endpoint). Use "
-                "embedded mode with yantrikdb>=0.10.0, or omit the key."
+                "idempotency keys are not supported by this yantrikdb-server "
+                "(its /v1/health capabilities do not advertise "
+                "'idempotency_key'). Upgrade the server, use embedded mode "
+                "(yantrikdb>=0.10.0), or omit the key."
             )
         safe_text = truncate_text(text, self.config.max_text_len)
         body: dict[str, Any] = {
@@ -682,7 +685,36 @@ class YantrikDBClient:
             body["memory_type"] = memory_type
         if metadata:
             body["metadata"] = metadata
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        # Server returns 200 {stored:false, idempotency_conflict:true, rid} on
+        # a same-key/divergent-text conflict (byte-identical to embedded), so
+        # the response flows through unchanged; a same-key/same-text hit
+        # returns the original rid. A follower-write 503 (leader redirect)
+        # maps to a transient via _parse_response.
         return self._request("POST", "/v1/remember", body)
+
+    def _supports_idempotency_key(self) -> bool:
+        """Cached /v1/health probe for the ``idempotency_key`` capability.
+
+        Only forward a key the server actually advertises (agreement #6),
+        never assume. Probed once, cached for the client's lifetime. Handles
+        both capability shapes — a list of feature strings, or a
+        ``{feature: bool}`` map.
+        """
+        if self._idem_cap is not None:
+            return self._idem_cap
+        supported = False
+        try:
+            caps = (self._request("GET", "/v1/health") or {}).get("capabilities")
+            if isinstance(caps, dict):
+                supported = bool(caps.get("idempotency_key"))
+            elif isinstance(caps, (list, tuple)):
+                supported = "idempotency_key" in caps
+        except YantrikDBError:
+            supported = False  # can't confirm → refuse, never assume support
+        self._idem_cap = supported
+        return supported
 
     def recall(
         self,

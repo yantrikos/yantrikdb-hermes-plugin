@@ -3,6 +3,16 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.9.1] — 2026-07-19 — HTTP idempotency: capability-gated key forwarding
+
+Completes the idempotency story for the **optional HTTP backend**. (The default embedded/core path has had idempotent `remember` since v0.9.0 — this only affects `YANTRIKDB_MODE=http` against a `yantrikdb-server`.) Coordinated with yantrikdb-server, whose PR #67 shipped the endpoint with the conflict as **HTTP 200** so it stays byte-identical to the embedded surface.
+
+- **Capability-gated forward (agreement #6).** In http mode, `remember(idempotency_key=…)` now probes `/v1/health` once (cached) for an advertised `idempotency_key` capability. Present → the key is forwarded and the server's response flows through unchanged (same-key/same-text → original rid; same-key/divergent-text → `200 {stored:false, idempotency_conflict:true, rid}`). Absent, or the probe can't confirm → the plugin still **refuses loudly** — never forward-and-silently-drop. Handles both capability shapes (list of features or `{feature: bool}` map).
+- A follower-write leader-redirect (503) maps to a transient via the existing error taxonomy. Auto-following the leader is out of scope (the http client is single-endpoint; point it at the leader or a load balancer).
+- New live integration case (`tests/integration/test_live.py`, gated on `YANTRIKDB_INTEGRATION_URL`) validates dedup zero-writes + divergent-conflict against a real server; feature-probed, skips when the capability is absent.
+
+No engine pin change (`yantrikdb>=0.10.0`). Mock-covered for the capability-gate logic; ruff + mypy clean.
+
 ## [0.9.0] — 2026-07-17 — Idempotent writes, typed errors, and a contract gate
 
 Built with the yantrikdb ecosystem (core / server / mcp) on engine **0.10.0 "the Reliability release"**, and the reason the plugin now **requires `yantrikdb>=0.10.0`** (pin bumped). Three additive pieces; existing behaviour unchanged.

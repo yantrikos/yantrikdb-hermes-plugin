@@ -116,3 +116,28 @@ class TestLiveRoundtrip:
         for r in (r1, r2, r3):
             resp = live_client.forget(r["rid"])
             assert resp.get("rid") == r["rid"]
+
+    def test_idempotency_dedup_and_conflict(self, live_client):
+        # v0.9.1 — HTTP idempotency against a live server (yantrikdb-server
+        # #67). Feature-probed: skip if the server doesn't advertise the
+        # capability, per the contract (never version-parse).
+        if not live_client._supports_idempotency_key():
+            pytest.skip("server does not advertise idempotency_key capability")
+        ns = live_client.config.namespace
+        key = f"it:{uuid.uuid4().hex[:8]}"
+        before = live_client.stats(namespace=ns).get("active_memories", 0)
+        r1 = live_client.remember(
+            "Idempotency live test - original.", importance=0.7, idempotency_key=key,
+        )
+        r2 = live_client.remember(
+            "Idempotency live test - original.", importance=0.7, idempotency_key=key,
+        )
+        after = live_client.stats(namespace=ns).get("active_memories", 0)
+        assert r1.get("rid") and r1.get("rid") == r2.get("rid")  # dedup -> same rid
+        assert after == before + 1                               # zero-writes on retry
+        r3 = live_client.remember(
+            "Idempotency live test - DIVERGENT.", importance=0.7, idempotency_key=key,
+        )
+        assert r3.get("idempotency_conflict") is True
+        assert r3.get("rid") == r1.get("rid")                    # surfaces the winner
+        live_client.forget(r1["rid"])
