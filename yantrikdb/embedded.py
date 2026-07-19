@@ -21,8 +21,11 @@ Lifecycle / threading model (per yantrikdb-core guidance):
 
 from __future__ import annotations
 
+import glob
 import logging
+import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -215,6 +218,123 @@ def _default_db_path() -> str:
         return str(Path.home() / ".yantrikdb-hermes-memory.db")
 
 
+_ENGINE_EXT_SUFFIXES = (".so", ".pyd", ".dylib")
+
+
+def find_engine_ext_path() -> str | None:
+    """Absolute path to the engine's ``_yantrikdb_rust`` compiled extension,
+    resolved WITHOUT importing the shadowed ``yantrikdb`` name (issue #50).
+
+    ``None`` when the engine distribution is not installed. The engine's PyPI
+    distribution is named ``yantrikdb``; this plugin's is
+    ``yantrikdb-hermes-plugin`` — so ``importlib.metadata`` disambiguates them
+    even though both expose a top-level package literally named ``yantrikdb``.
+    """
+    from importlib import metadata as _ilm
+
+    # Preferred: read the engine distribution's own file list (no import, so
+    # the plugin's shadowing ``yantrikdb`` package can't interfere).
+    try:
+        dist = _ilm.distribution("yantrikdb")
+    except _ilm.PackageNotFoundError:
+        dist = None
+    if dist is not None:
+        for f in (dist.files or []):
+            name = os.path.basename(str(f))
+            if name.startswith("_yantrikdb_rust") and name.endswith(
+                _ENGINE_EXT_SUFFIXES,
+            ):
+                located = os.path.abspath(str(dist.locate_file(f)))
+                if os.path.exists(located):
+                    return located
+
+    # Fallback: scan ``sys.path`` for a ``yantrikdb`` package dir that carries
+    # the extension and is NOT this plugin's own directory (the shadow).
+    our_dir = os.path.dirname(os.path.abspath(__file__))
+    for entry in sys.path:
+        try:
+            cand = os.path.join(entry or ".", "yantrikdb")
+            if not os.path.isdir(cand) or os.path.abspath(cand) == our_dir:
+                continue
+            for suf in _ENGINE_EXT_SUFFIXES:
+                hits = glob.glob(os.path.join(cand, "_yantrikdb_rust*" + suf))
+                if hits:
+                    return os.path.abspath(hits[0])
+        except OSError:
+            continue
+    return None
+
+
+def load_engine_yantrikdb_class() -> Any:
+    """Return the engine's ``YantrikDB`` class, resilient to the package-name
+    collision of issue #50.
+
+    This plugin package is itself named ``yantrikdb`` (to match ``plugin.yaml``
+    ``name: yantrikdb`` and the ``hermes plugins install`` layout). When the
+    plugin directory is ahead of the installed engine on ``sys.path`` — the
+    ``hermes plugins install`` path, or any run from a source checkout — a plain
+    ``from yantrikdb._yantrikdb_rust import YantrikDB`` resolves against THIS
+    package (which has no ``_yantrikdb_rust``) and raises ``ImportError``, even
+    though the real engine is installed and importable on its own. We recover by
+    loading the engine's compiled extension directly from its installed
+    distribution, and cache it so later plain imports resolve the engine too.
+    """
+    # Fast path — correct whenever the engine wins name resolution: the
+    # pip-installed plugin imports as ``yantrikdb_hermes_plugin`` (no clash), or
+    # the engine simply sits first on ``sys.path``.
+    try:
+        from yantrikdb._yantrikdb_rust import YantrikDB  # type: ignore
+        return YantrikDB
+    except ImportError:
+        pass
+
+    # Collision (or genuinely-missing) path.
+    import importlib.util as _ilu
+
+    ext_path = find_engine_ext_path()
+    if ext_path is None:
+        raise YantrikDBError(
+            "embedded mode requires the `yantrikdb` engine, which is not "
+            "installed in this environment. Install it with: "
+            "pip install --upgrade yantrikdb",
+        )
+
+    try:
+        spec = _ilu.spec_from_file_location("yantrikdb._yantrikdb_rust", ext_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"no import spec for {ext_path}")
+        module = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as e:  # noqa: BLE001 — re-raised as a truthful engine error
+        raise YantrikDBError(
+            "the `yantrikdb` engine is installed but this plugin package "
+            f"(also named `yantrikdb`) is shadowing it on sys.path, and the "
+            f"engine's native extension at {ext_path} could not be loaded "
+            f"directly: {e}. Installing the plugin via "
+            "`pip install yantrikdb-hermes-plugin` (which imports as "
+            "`yantrikdb_hermes_plugin`) avoids the collision entirely. "
+            "See https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/50",
+        ) from e
+
+    # Cache the loaded extension so subsequent plain imports (e.g. the
+    # availability probe) resolve the engine despite the shadowing package.
+    try:
+        sys.modules.setdefault("yantrikdb._yantrikdb_rust", module)
+        shadow = sys.modules.get("yantrikdb")
+        if shadow is not None and not hasattr(shadow, "_yantrikdb_rust"):
+            shadow._yantrikdb_rust = module  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 — caching is best-effort, never fatal
+        pass
+
+    try:
+        return module.YantrikDB
+    except AttributeError as e:
+        raise YantrikDBError(
+            "the loaded `yantrikdb` native extension exposes no `YantrikDB` "
+            "class; the installed engine may be too old (need >= 0.7.4).",
+        ) from e
+
+
 class EmbeddedYantrikDBClient:
     """Adapter wrapping ``yantrikdb._yantrikdb_rust.YantrikDB`` to the
     same surface as ``YantrikDBClient`` (HTTP).
@@ -227,13 +347,7 @@ class EmbeddedYantrikDBClient:
     def __init__(self, config: YantrikDBConfig) -> None:
         self.config = config
 
-        try:
-            from yantrikdb._yantrikdb_rust import YantrikDB
-        except ImportError as e:
-            raise YantrikDBError(
-                "embedded mode requires `yantrikdb >= 0.7.4`. "
-                "Install with: pip install --upgrade yantrikdb"
-            ) from e
+        YantrikDB = load_engine_yantrikdb_class()
 
         db_path = config.db_path or _default_db_path()
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)

@@ -1286,6 +1286,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # dir), capture the reason here so system_prompt_block can surface
         # it to the model instead of yantrikdb appearing silently absent.
         self._init_error: str | None = None
+        # v0.9.2: count writes dropped because the backend never initialized,
+        # and log the first one loudly (issue #50, layer 2). A silent drop lets
+        # the model believe a memory was saved when it was not.
+        self._dropped_writes: int = 0
+        self._dropped_write_logged: bool = False
 
         self._prefetch_results: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
@@ -1350,7 +1355,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 import yantrikdb._yantrikdb_rust  # noqa: F401
                 return True
             except ImportError:
-                return False
+                # The plain import can fail while the engine is installed and
+                # usable, when this plugin package (also named ``yantrikdb``)
+                # shadows the engine on sys.path (issue #50). Fall back to
+                # locating the engine's extension without importing the name,
+                # so `hermes memory status` reports the truth.
+                from .embedded import find_engine_ext_path
+                return find_engine_ext_path() is not None
         return bool(cfg.token)
 
     def get_config_schema(self) -> list[dict[str, Any]]:
@@ -1735,9 +1746,15 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 return (
                     "# YantrikDB Memory — NOT AVAILABLE\n"
                     f"The plugin failed to initialize: {self._init_error}\n"
-                    "Memory tools (`yantrikdb_*`) will not work this session. "
-                    "Inform the user and proceed without memory tooling. "
-                    "Common cause: the engine's model-cache directory "
+                    "Memory tools (`yantrikdb_*`) will not work this session, "
+                    "and any `memory add` will NOT be saved to YantrikDB. "
+                    "Do NOT tell the user their memories were saved — they were "
+                    "not. Inform the user memory persistence is unavailable and "
+                    "proceed without memory tooling.\n"
+                    "Common causes: (1) the plugin package (named `yantrikdb`) "
+                    "is shadowing the engine on sys.path — install via "
+                    "`pip install yantrikdb-hermes-plugin` to avoid it "
+                    "(issue #50); (2) the engine's model-cache directory "
                     "(`$XDG_CACHE_HOME/yantrikdb/models/` or "
                     "`$HOME/.cache/yantrikdb/models/`) isn't writable. "
                     "See https://github.com/yantrikos/yantrikdb-hermes-plugin/issues "
@@ -3784,7 +3801,17 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
     def on_memory_write(self, action: str, target: str, content: str) -> None:
         """Mirror built-in MEMORY.md / USER.md additions into YantrikDB."""
-        if self._cron_skipped or self._client is None:
+        if self._cron_skipped:
+            return
+        if self._client is None:
+            # Init failed (e.g. issue #50 collision) — the mirror to YantrikDB
+            # cannot happen. Hermes' `memory add` still reports success for its
+            # own MEMORY.md write and does not check this hook's return, so the
+            # ONLY signal we can raise is a loud, deduplicated log. Without it
+            # the failure is fully silent and the model may confabulate a saved
+            # memory (issue #50, layer 2).
+            if action == "add" and target in ("memory", "user") and content:
+                self._warn_write_dropped()
             return
         if action != "add" or target not in ("memory", "user") or not content:
             return
@@ -3819,6 +3846,27 @@ class YantrikDBMemoryProvider(MemoryProvider):
         threading.Thread(
             target=_run, daemon=True, name="yantrikdb-memwrite",
         ).start()
+
+    def _warn_write_dropped(self) -> None:
+        """Record + loudly log a write dropped because the backend is down.
+
+        Hermes reports its own `memory add` as successful and ignores this
+        hook's return, so a log is the only in-band signal we can raise that
+        the YantrikDB mirror did not happen (issue #50, layer 2). Logged once
+        at ERROR to avoid per-write spam; the count keeps accumulating.
+        """
+        self._dropped_writes += 1
+        if not self._dropped_write_logged:
+            self._dropped_write_logged = True
+            reason = self._init_error or "backend not initialized"
+            logger.error(
+                "YantrikDB memory write DROPPED — the plugin failed to "
+                "initialize (%s). Hermes' `memory add` reports success for its "
+                "own store, but nothing was mirrored into YantrikDB. Fix the "
+                "init failure or install via `pip install yantrikdb-hermes-"
+                "plugin` to avoid the package-name collision (issue #50).",
+                reason,
+            )
 
     # -- Circuit breaker --------------------------------------------------
 
