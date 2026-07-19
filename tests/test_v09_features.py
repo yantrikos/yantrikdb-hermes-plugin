@@ -56,21 +56,65 @@ class TestIdempotentRememberTool:
         assert out["stored"] is False
 
 
-class TestHttpKeyRefusal:
-    def test_http_remember_refuses_key(self, client_module):
-        cfg = client_module.YantrikDBConfig(mode="http", url="http://x", token="t")
-        client = client_module.YantrikDBClient(cfg)
-        with pytest.raises(client_module.YantrikDBClientError, match="http mode"):
-            client.remember("fact", idempotency_key="k1")
+class TestHttpIdempotency:
+    """v0.9.1 — capability-gated key forwarding in http mode (server #67)."""
 
-    def test_http_remember_ok_without_key(self, client_module):
+    def _client(self, client_module, health_caps):
         cfg = client_module.YantrikDBConfig(mode="http", url="http://x", token="t")
         client = client_module.YantrikDBClient(cfg)
-        # no key → no early refusal; it would proceed to _request (patched away)
-        with patch.object(client, "_request", return_value={"rid": "r1"}) as req:
-            out = client.remember("fact")
-        assert out["rid"] == "r1"
-        assert "idempotency_key" not in req.call_args.args[2]
+
+        def fake_request(method, path, body=None, params=None):
+            if path == "/v1/health":
+                return {"capabilities": health_caps} if health_caps is not None else {}
+            return {"rid": "r1", "_body": body}
+
+        return client, fake_request
+
+    def test_forwards_key_when_capability_present_list(self, client_module):
+        client, fr = self._client(client_module, ["recall", "idempotency_key"])
+        with patch.object(client, "_request", side_effect=fr):
+            out = client.remember("fact", idempotency_key="k1")
+        assert out["_body"]["idempotency_key"] == "k1"
+
+    def test_forwards_key_when_capability_present_dict(self, client_module):
+        client, fr = self._client(client_module, {"idempotency_key": True})
+        with patch.object(client, "_request", side_effect=fr):
+            out = client.remember("fact", idempotency_key="k1")
+        assert out["_body"]["idempotency_key"] == "k1"
+
+    def test_refuses_when_capability_absent(self, client_module):
+        client, fr = self._client(client_module, ["recall"])  # no idempotency_key
+        with patch.object(client, "_request", side_effect=fr):
+            with pytest.raises(client_module.YantrikDBClientError, match="idempotency_key"):
+                client.remember("fact", idempotency_key="k1")
+
+    def test_refuses_when_health_probe_fails(self, client_module):
+        cfg = client_module.YantrikDBConfig(mode="http", url="http://x", token="t")
+        client = client_module.YantrikDBClient(cfg)
+
+        def boom(method, path, body=None, params=None):
+            if path == "/v1/health":
+                raise client_module.YantrikDBTransientError("no server")
+            return {"rid": "r1"}
+
+        with patch.object(client, "_request", side_effect=boom):
+            with pytest.raises(client_module.YantrikDBClientError):
+                client.remember("fact", idempotency_key="k1")
+
+    def test_probe_is_cached(self, client_module):
+        client, fr = self._client(client_module, ["idempotency_key"])
+        with patch.object(client, "_request", side_effect=fr) as req:
+            client.remember("a", idempotency_key="k1")
+            client.remember("b", idempotency_key="k2")
+        health_calls = [c for c in req.call_args_list if c.args[1] == "/v1/health"]
+        assert len(health_calls) == 1  # probed once, cached
+
+    def test_no_key_skips_probe_and_field(self, client_module):
+        client, fr = self._client(client_module, ["idempotency_key"])
+        with patch.object(client, "_request", side_effect=fr) as req:
+            client.remember("fact")
+        assert not any(c.args[1] == "/v1/health" for c in req.call_args_list)
+        assert "idempotency_key" not in (req.call_args.args[2] or {})
 
 
 class TestTypedExceptionMap:
