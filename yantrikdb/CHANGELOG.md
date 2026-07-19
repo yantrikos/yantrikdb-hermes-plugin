@@ -3,6 +3,15 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.9.2] — 2026-07-19 — Fix embedded package-name collision (issue #50)
+
+Fixes a real, high-severity bug reported by [@AtheIIa](https://github.com/AtheIIa) in [#50](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/50): embedded mode could silently fail to initialize because this plugin's own top-level package is named `yantrikdb` — identical to the engine it depends on. When the plugin directory wins `sys.path` resolution (the `hermes plugins install` layout, or any run from a source checkout), `from yantrikdb._yantrikdb_rust import YantrikDB` bound to the plugin (which has no `_yantrikdb_rust`) and raised `ModuleNotFoundError`, surfaced misleadingly as "requires yantrikdb >= 0.7.4" even though the engine was installed and importable on its own. The `pip install yantrikdb-hermes-plugin` path was never affected (setuptools imports it as `yantrikdb_hermes_plugin`).
+
+- **Layer 1 — collision-proof engine load.** `embedded.py` now loads the engine through `load_engine_yantrikdb_class()`: a fast-path plain import first, and on failure it locates the real `yantrikdb` **distribution** (unambiguous — the plugin's distribution is `yantrikdb-hermes-plugin`) via `importlib.metadata`, loads its `_yantrikdb_rust` extension directly regardless of `sys.path` order, and caches it so later plain imports resolve the engine too. Errors are now truthful: "engine not installed" vs. "engine installed but shadowed — install via pip to avoid the collision."
+- **Layer 2 — no more silent success.** When init genuinely fails (`_client is None`), a dropped `memory add` mirror is now **loud and counted** (`ERROR` logged once, `_dropped_writes` tally) instead of a silent no-op — the reporter's agent had no in-band signal that persistence was broken and confabulated successful writes. `is_available()` now reports the truth under the shadow (locates the engine without importing the shadowed name), and the NOT-AVAILABLE system-prompt block explicitly instructs the model **not** to claim memories were saved and names the collision as a likely cause.
+- The permanent rename (`yantrikdb` → `yantrikdb_hermes_plugin`) that would eliminate the collision class entirely is deliberately deferred to a later minor: it changes the `hermes plugins install` registration path and is breaking for existing installs.
+- 8 new CI-safe tests (`tests/test_issue50_collision.py`) simulate the shadow without a native engine; suite 339 pass / 3 skip.
+
 ## [0.9.1] — 2026-07-19 — HTTP idempotency: capability-gated key forwarding
 
 Completes the idempotency story for the **optional HTTP backend**. (The default embedded/core path has had idempotent `remember` since v0.9.0 — this only affects `YANTRIKDB_MODE=http` against a `yantrikdb-server`.) Coordinated with yantrikdb-server, whose PR #67 shipped the endpoint with the conflict as **HTTP 200** so it stays byte-identical to the embedded surface.
