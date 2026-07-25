@@ -84,6 +84,7 @@ from .client import (
     YantrikDBError,
     YantrikDBServerError,
     YantrikDBTransientError,
+    truncate_text,
 )
 from .embedded import make_backend
 
@@ -920,6 +921,35 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
+# The `core` tool profile (v0.10.0) — what the model sees unless
+# YANTRIKDB_TOOL_PROFILE=full. Chosen as the tools an agent actually reaches
+# for mid-conversation, plus the two that make this substrate different from
+# a vector store (contradiction handling, and the tasks surface that closes
+# the self-directing loop the agenda opens).
+#
+# Deliberately NOT in core, and why none of them lose functionality:
+#   think            — runs automatically on session end
+#   conflicts        — unresolved ones are surfaced in the system prompt
+#   hygiene          — surfaced in the prompt when enabled
+#   knowledge_gaps   — surfaced in the agenda block
+#   recent_turns     — the buffer is written automatically; reading it back
+#                      by hand is a debugging affordance, not a turn action
+#   stats / observability / extraction_stats — operator diagnostics, not
+#                      things a model should spend a turn on
+#   pending_triggers / acknowledge / dismiss / act_on — the trigger queue is
+#                      drained automatically (auto_acknowledge_triggers) or by
+#                      an operator running the full profile
+CORE_TOOL_NAMES: frozenset[str] = frozenset({
+    "yantrikdb_remember",
+    "yantrikdb_recall",
+    "yantrikdb_forget",
+    "yantrikdb_relate",
+    "yantrikdb_conflicts",
+    "yantrikdb_resolve_conflict",
+    "yantrikdb_tasks",
+})
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1291,6 +1321,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # the model believe a memory was saved when it was not.
         self._dropped_writes: int = 0
         self._dropped_write_logged: bool = False
+        # v0.10.0 — runtime context from on_turn_start; None until a host
+        # tells us, which is the signal to behave exactly as pre-0.10.
+        self._turn_number: int = 0
+        self._remaining_tokens: int | None = None
 
         self._prefetch_results: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
@@ -1766,6 +1800,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
             if self._scope_metadata
             else ""
         )
+        # The prompt must only name tools the model can actually SEE this
+        # session. Naming a tool that isn't in the exposed surface invites the
+        # model to attempt a call it has no schema for — and `think` is hidden
+        # under the default `core` profile precisely because it runs
+        # automatically at session end, so instructing the agent to call it
+        # would be asking for redundant work it can't correctly perform.
+        exposed = {s["name"] for s in self.get_tool_schemas()}
         base = (
             "# YantrikDB Memory\n"
             f"Active. Namespace: `{self._namespace}`.\n"
@@ -1775,11 +1816,28 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "Use `yantrikdb_recall` before claiming facts about the user or "
             "past decisions — each result includes a why_retrieved reason list. "
             "When a new decision or relationship surfaces, call "
-            "`yantrikdb_remember` or `yantrikdb_relate`. Run `yantrikdb_think` "
-            "at natural break points to consolidate duplicates and surface "
-            "contradictions — then `yantrikdb_conflicts` lists what needs "
-            "resolving and `yantrikdb_resolve_conflict` closes each out."
+            "`yantrikdb_remember` or `yantrikdb_relate`."
         )
+        if "yantrikdb_think" in exposed:
+            base += (
+                " Run `yantrikdb_think` at natural break points to consolidate "
+                "duplicates and surface contradictions."
+            )
+        else:
+            base += (
+                " Consolidation runs automatically at the end of the session — "
+                "you don't need to trigger it."
+            )
+        if "yantrikdb_conflicts" in exposed:
+            base += (
+                " `yantrikdb_conflicts` lists what needs resolving and "
+                "`yantrikdb_resolve_conflict` closes each out."
+            )
+        if "yantrikdb_tasks" in exposed:
+            base += (
+                " Open items from your memory's agenda are managed with "
+                "`yantrikdb_tasks` — close one when you've learned the answer."
+            )
         return (
             base
             + self._format_recent_skills_block()
@@ -2088,13 +2146,28 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # circuits if skills are disabled at call time.
         if self._cron_skipped:
             return []
-        skills_enabled = bool(
-            self._config.skills_enabled if self._config else
-            YantrikDBConfig.load().skills_enabled
-        )
-        if skills_enabled:
-            return list(ALL_TOOL_SCHEMAS)
-        return [s for s in ALL_TOOL_SCHEMAS if not s["name"].startswith("yantrikdb_skill_")]
+        cfg = self._config or YantrikDBConfig.load()
+        schemas = list(ALL_TOOL_SCHEMAS)
+
+        # v0.10.0 — profile. Tool schemas are re-sent on every request, so a
+        # wide surface is a per-turn tax and a selection hazard, not a
+        # capability. `core` exposes what an agent reaches for; everything
+        # else stays reachable via YANTRIKDB_TOOL_PROFILE=full. Skills are
+        # orthogonal: if a user explicitly enabled them they are exposed in
+        # either profile, because that flag *is* the opt-in.
+        if (cfg.tool_profile or "core").strip().lower() != "full":
+            schemas = [
+                s for s in schemas
+                if s["name"] in CORE_TOOL_NAMES
+                or s["name"].startswith("yantrikdb_skill_")
+            ]
+
+        if not cfg.skills_enabled:
+            schemas = [
+                s for s in schemas
+                if not s["name"].startswith("yantrikdb_skill_")
+            ]
+        return schemas
 
     def handle_tool_call(
         self,
@@ -3368,7 +3441,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if not conflicts:
             return ""
         lines = ["", "## Pending contradictions in your memory"]
-        for c in conflicts[: self._config.pending_conflicts_max_surfaced]:
+        _cap = self._budgeted(self._config.pending_conflicts_max_surfaced)
+        if _cap <= 0:
+            return ""
+        for c in conflicts[:_cap]:
             cid = c.get("conflict_id") or c.get("rid") or "?"
             a = (c.get("text_a") or c.get("a") or "").strip()
             b = (c.get("text_b") or c.get("b") or "").strip()
@@ -3395,7 +3471,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
         """
         if self._config is None or not self._config.surface_hygiene:
             return ""
-        cap = max(self._config.hygiene_max_surfaced, 1)
+        cap = self._budgeted(max(self._config.hygiene_max_surfaced, 1))
+        if cap <= 0:
+            return ""
         low_use = self._low_usefulness_candidates(limit=cap)
         if not low_use:
             return ""
@@ -3424,7 +3502,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return ""
         if self._client is None or self._conversation_buffer_unavailable:
             return ""
-        limit = max(self._config.conversation_buffer_surface_limit, 1)
+        limit = self._budgeted(max(self._config.conversation_buffer_surface_limit, 1))
+        if limit <= 0:
+            return ""
         try:
             resp = self._client.recent_turns(
                 namespace=self._namespace, limit=limit,
@@ -3460,7 +3540,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return ""
         if self._client is None:
             return ""
-        cap = max(self._config.agenda_max_items, 1)
+        cap = self._budgeted(max(self._config.agenda_max_items, 1))
+        if cap <= 0:
+            return ""
         tasks: list[dict[str, Any]] = []
         gaps: list[dict[str, Any]] = []
         try:
@@ -3798,6 +3880,137 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 f"intent: {intent} | outcome: {outcome}"
             )
         return f"[compression-summary, {n} turns] intent: {intent}"
+
+    def on_turn_start(
+        self, turn_number: int, message: str, **kwargs: Any,
+    ) -> None:
+        """Per-turn tick carrying runtime context (v0.10.0).
+
+        Hermes passes `remaining_tokens`, `model`, `platform`, `tool_count`.
+        We keep `remaining_tokens` so `system_prompt_block` can scale what it
+        injects: memory competes with the conversation for one window, and it
+        is most expensive precisely when that window is nearly full.
+
+        Deliberately does no work of its own — this runs on every turn, and a
+        provider that spends the turn's first milliseconds on maintenance is a
+        provider people disable.
+        """
+        self._turn_number = turn_number
+        remaining = kwargs.get("remaining_tokens")
+        self._remaining_tokens = (
+            int(remaining) if isinstance(remaining, (int, float)) else None
+        )
+
+    def _budget_scale(self) -> float:
+        """How much of the optional prompt budget to use, in [0.0, 1.0].
+
+        1.0 when there is room (or the host didn't say), tapering to 0.0 under
+        the low watermark. Returning 1.0 on unknown is the important default:
+        absent information we behave exactly as before, so this can never make
+        an older host worse.
+        """
+        cfg = self._config
+        if not cfg or not cfg.adaptive_prompt_budget:
+            return 1.0
+        remaining = self._remaining_tokens
+        if remaining is None:
+            return 1.0
+        low = max(cfg.prompt_budget_low_watermark, 0)
+        high = max(cfg.prompt_budget_high_watermark, low + 1)
+        if remaining >= high:
+            return 1.0
+        if remaining <= low:
+            return 0.0
+        return (remaining - low) / (high - low)
+
+    def _budgeted(self, base: int) -> int:
+        """Scale a per-block item cap by the current budget.
+
+        Never rounds a non-zero allowance down to nothing: while any budget
+        remains at least one item survives, so a block that matters degrades
+        to its single most relevant entry rather than vanishing silently.
+        """
+        scale = self._budget_scale()
+        if scale >= 1.0:
+            return base
+        if scale <= 0.0:
+            return 0
+        return max(1, int(base * scale))
+
+    def on_delegation(
+        self,
+        task: str,
+        result: str,
+        *,
+        child_session_id: str = "",
+        **kwargs: Any,
+    ) -> None:
+        """Persist what a delegated sub-agent found (v0.10.0).
+
+        Hermes calls this when a child agent returns. Without it the child's
+        work exists only in the transcript: the sub-agent investigates, reports
+        back, its session ends, and the finding is unrecallable next session —
+        the parent "remembers" having delegated but not what came back.
+
+        Stored as an EPISODIC memory in the parent's namespace (an event that
+        happened, not a standing fact), stamped with the child session id so a
+        later reader can tell delegated findings from first-hand ones. Written
+        at slightly above-default importance because a delegation was, by
+        construction, work someone thought was worth spinning up an agent for.
+
+        Fail-soft and breaker-aware, like the other write hooks.
+        """
+        if self._cron_skipped:
+            return
+        if not self._config or not self._config.capture_delegations:
+            return
+
+        task = (task or "").strip()
+        result = (result or "").strip()
+        if not task or not result:
+            return
+
+        if self._client is None:
+            # Same honesty rule as on_memory_write: a write path that cannot
+            # observe failure must never fail silently (issue #50, layer 2).
+            self._warn_write_dropped()
+            return
+        if self._breaker_open():
+            return
+
+        cap = self._config.delegation_max_len
+        text = (
+            f"Delegated task: {truncate_text(task, cap)}\n"
+            f"Result: {truncate_text(result, cap)}"
+        )
+        client = self._client
+        namespace = self._namespace
+        session_id = self._session_id
+        metadata = {
+            "source": "hermes_delegation",
+            "session_id": session_id,
+            "child_session_id": child_session_id,
+            **self._write_scope_metadata(),
+        }
+
+        def _run() -> None:
+            try:
+                client.remember(
+                    text,
+                    namespace=namespace,
+                    importance=0.65,
+                    domain="work",
+                    memory_type="episodic",
+                    metadata=metadata,
+                )
+                self._record_success()
+            except YantrikDBError as e:
+                self._record_failure()
+                logger.debug("YantrikDB on_delegation failed: %s", e)
+
+        threading.Thread(
+            target=_run, daemon=True, name="yantrikdb-delegation",
+        ).start()
 
     def on_memory_write(self, action: str, target: str, content: str) -> None:
         """Mirror built-in MEMORY.md / USER.md additions into YantrikDB."""

@@ -3,6 +3,60 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.10.0] — 2026-07-25 — The install is the product
+
+What you get by running `pip install` should be what the plugin is actually *for*, it shouldn't cost more context than it's worth, and it should use what Hermes actually offers.
+
+### Delegated work is remembered (`on_delegation`)
+
+Hermes delegates to sub-agents and calls `on_delegation(task, result, child_session_id)` when one returns. **No Hermes memory provider implements that hook.** So today a sub-agent investigates something, reports back, its session ends — and the finding exists only in the transcript. The parent remembers *having delegated*; it can't recall what came back, and the next session has nothing.
+
+The plugin now stores the `(task, result)` pair as an **episodic** memory in the **parent's** namespace, written at importance 0.65 — a delegation is by construction work someone thought worth spinning up an agent for. Each field is bounded by `delegation_max_len` (default 4,000 chars) so a verbose sub-agent can't flood the substrate, and the hook is fail-soft and circuit-breaker aware. Disable with `YANTRIKDB_CAPTURE_DELEGATIONS=false`.
+
+Verified end-to-end on a live install against engine 0.10.1: the delegated finding is written and comes back through `yantrikdb_recall` on the parent. Provenance (`source=hermes_delegation`, `child_session_id`) is stamped in metadata and confirmed stored — though note that **`recall` results do not currently carry metadata** (it is readable via `list_records`), so within a recall the marker a reader actually sees is the record's own `Delegated task: … / Result: …` shape. Raised with the engine team as an API gap; the stamps are durable either way.
+
+Verified first-hand against a real **Hermes v0.15.1** install: the signature matches `MemoryProvider.on_delegation` exactly, and `MemoryManager` invokes it from `tools/delegate_tool.py` when a subagent completes. Hermes' own docstring confirms the design — *"Called on the PARENT agent when a subagent completes… The subagent itself has no provider session"* — so a finding nobody captures here is genuinely unrecoverable.
+
+Note for anyone reading our manifests: the `hooks:` list in `plugin.yaml` is **documentation only**. Hermes parses `provides_hooks` (a different key, for the separate plugin-hook system — `pre_tool_call`, `on_session_start`, …), and memory-provider lifecycle methods are called directly on the provider object regardless of what any manifest says. An earlier draft of these notes claimed the declaration was load-bearing; inspecting Hermes disproved it.
+
+### The self-directing loop is ON by default
+
+`YANTRIKDB_AUTO_GAP_TASKS` and `YANTRIKDB_SURFACE_AGENDA` now default to **true**. Through v0.9.x they shipped opt-in, which meant the capability this plugin is known for — memory that notices what it can't answer, queues the work, and opens the next session with its own agenda — never ran for anyone who installed it and didn't read the README. The default install was a competent memory store and nothing more.
+
+Both halves were already bounded, which is why turning them on is safe rather than merely bold: new tasks are capped per session (`gap_task_max`, default 3), the agenda block is capped in lines (`agenda_max_items`, default 5), and the gap gate is **demand-aggregated** — a query must recur *and* keep scoring poorly before it becomes a task, so a single low-confidence recall can never mint one. Set either env var to `false` to restore the pre-0.10 behaviour.
+
+### Adaptive prompt budget (`on_turn_start`)
+
+Hermes passes `remaining_tokens` on every turn, and no memory provider uses it. Everything this plugin injects — recall hits, skill bodies, conflicts, hygiene, the verbatim buffer, the agenda — competes with the conversation for one window, and memory is most expensive exactly when that window is nearly full. A fixed budget is wrong in both directions: wasteful early, harmful late.
+
+The optional blocks now taper between a high watermark (full injection) and a low one (essentials only). Measured on a live install:
+
+| host signal | scale | injected block |
+|---|---|---|
+| **none** (older Hermes / kwarg omitted) | 1.00 | **1,188 chars — byte-identical to pre-0.10** |
+| ~120k remaining | 1.00 | 1,188 chars |
+| ~20k remaining | 0.29 | 912 chars |
+| ~5k remaining | 0.00 | 716 chars |
+
+Two properties matter more than the taper. **Unknown means unchanged** — absent a signal we behave exactly as before, because guessing "probably tight" would silently degrade hosts that were working fine. And **a live budget never rounds down to zero**: while any budget remains a block keeps at least its most relevant entry, so it degrades visibly instead of vanishing unexplained.
+
+The hook does no backend work; it runs every turn, and a provider that spends the turn's first milliseconds on maintenance is one people disable. Opt out with `YANTRIKDB_ADAPTIVE_PROMPT_BUDGET=false`; tune via `YANTRIKDB_PROMPT_BUDGET_HIGH` / `_LOW`.
+
+### Tool profiles — half the per-turn context
+
+New `YANTRIKDB_TOOL_PROFILE`, defaulting to **`core`**:
+
+| profile | tools | schema bytes | ≈ tokens/turn |
+|---|---|---|---|
+| **`core`** (default) | **7** | 6,900 | **~1,725** |
+| `full` | 18 | 14,426 | ~3,606 |
+
+Tool schemas are re-sent on **every request**, so the surface is a running per-turn tax, not a one-off. At 18 tools this plugin billed ~3.6k tokens/turn — against 2–5 tools for every other Hermes memory provider — and a wide surface also degrades selection, since near-synonymous tools invite the wrong pick.
+
+`core` is `remember` / `recall` / `forget` / `relate` / `conflicts` / `resolve_conflict` / `tasks` — what an agent reaches for mid-conversation, plus the two surfaces that make this substrate different from a vector store. **Nothing is disabled.** The excluded tools cover work that already happens without the model spending a turn on it: `think()` runs automatically at session end, conflicts and hygiene surface in the system prompt, gaps surface in the agenda, and stats/observability/trigger tools are operator diagnostics. They remain fully dispatchable, and `YANTRIKDB_TOOL_PROFILE=full` exposes them all. Skills are orthogonal — `YANTRIKDB_SKILLS_ENABLED=true` surfaces them in either profile, because that flag is itself the opt-in.
+
+A test pins the ratio, so adding a tool to `core` later can't quietly undo the saving.
+
 ## [0.9.3] — 2026-07-25 — Share one embedded engine per database
 
 Cuts per-agent resource cost in embedded mode, and requires the engine release that fixes the idle-CPU defect behind a field report on a Ryzen 9950X3D (16C/32T), where an independent memory-dump audit measured the Hermes backend at **~55% of a 32-logical-processor machine while idle**, with ~600k read ops/sec inside compiled YantrikDB threads.

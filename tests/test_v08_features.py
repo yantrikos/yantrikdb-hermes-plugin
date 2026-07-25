@@ -78,10 +78,26 @@ class TestGapToTask:
         p.on_session_end([])
         assert mock_client.task_add.call_count == 1
 
-    def test_off_by_default(
+    def test_on_by_default(
         self, provider_module, mock_client, monkeypatch, tmp_path,
     ):
+        """v0.10.0 — the self-directing loop ships ON.
+
+        Through v0.9.x this was opt-in, which meant the capability the plugin
+        is *for* never ran for anyone who installed it and didn't read the
+        README. The gate is demand-aggregated and the output is capped, so
+        turning it on cannot mint junk tasks.
+        """
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.knowledge_gaps.return_value = {"gaps": [{"query": "x"}]}
+        p.on_session_end([])
+        mock_client.task_add.assert_called_once()
+
+    def test_explicit_opt_out_still_honoured(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
+                      YANTRIKDB_AUTO_GAP_TASKS="false")
         mock_client.knowledge_gaps.return_value = {"gaps": [{"query": "x"}]}
         p.on_session_end([])
         mock_client.task_add.assert_not_called()

@@ -250,7 +250,11 @@ EXPECTED_TOOL_NAMES = {
 
 
 class TestToolSchemas:
-    def test_all_tools_registered(self, provider):
+    def test_all_tools_registered(self, provider, monkeypatch):
+        # The full profile must still expose every schema — `core` narrows
+        # what the model SEES, it never removes a capability.
+        monkeypatch.setenv("YANTRIKDB_TOOL_PROFILE", "full")
+        provider._config = None  # force re-read from env
         names = {s["name"] for s in provider.get_tool_schemas()}
         assert names == EXPECTED_TOOL_NAMES
 
@@ -259,15 +263,45 @@ class TestToolSchemas:
         # initialize() runs, to index tool-name → provider for routing.
         # Returning [] here (pre-init) would make tool calls resolve as
         # "Unknown tool" at runtime.
-        # With v0.3.0's skill flag: pre-init reads env via Config.load();
-        # we don't set the flag here, so we expect base tools only (no skills).
         p = provider_module.YantrikDBMemoryProvider()
         names = {s["name"] for s in p.get_tool_schemas()}
-        base = EXPECTED_TOOL_NAMES - {
-            "yantrikdb_skill_search", "yantrikdb_skill_define", "yantrikdb_skill_outcome",
+        assert names, "pre-init must still expose tools for routing"
+        assert not any(n.startswith("yantrikdb_skill_") for n in names)
+
+    def test_default_profile_is_core(self, provider_module):
+        """v0.10.0 — tool schemas are re-sent every request, so the default
+        surface is the 7 an agent reaches for, not all 18."""
+        p = provider_module.YantrikDBMemoryProvider()
+        names = {s["name"] for s in p.get_tool_schemas()}
+        assert names == set(provider_module.CORE_TOOL_NAMES)
+
+    def test_full_profile_exposes_everything(self, provider_module, monkeypatch):
+        monkeypatch.setenv("YANTRIKDB_TOOL_PROFILE", "full")
+        p = provider_module.YantrikDBMemoryProvider()
+        names = {s["name"] for s in p.get_tool_schemas()}
+        assert names == EXPECTED_TOOL_NAMES - {
+            "yantrikdb_skill_search", "yantrikdb_skill_define",
+            "yantrikdb_skill_outcome",
         }
-        assert names == base
-        assert len(names) == 18  # +knowledge_gaps +recent_turns +tasks (v0.7)
+        assert len(names) == 18
+
+    def test_core_profile_is_materially_cheaper(self, provider_module, monkeypatch):
+        """The point of the profile is per-turn token cost — pin the win so a
+        future tool addition to `core` can't quietly undo it."""
+        import json
+        p = provider_module.YantrikDBMemoryProvider()
+        core = len(json.dumps(p.get_tool_schemas()))
+        monkeypatch.setenv("YANTRIKDB_TOOL_PROFILE", "full")
+        full = len(json.dumps(
+            provider_module.YantrikDBMemoryProvider().get_tool_schemas()))
+        assert core < full / 1.8, f"core={core}B full={full}B — profile lost its value"
+
+    def test_dropped_tools_still_dispatch(self, provider):
+        """A tool absent from `core` is hidden, not disabled: an explicit call
+        must still route (Hermes indexes routing from the full set at register
+        time, and operators may run the full profile)."""
+        out = provider.handle_tool_call("yantrikdb_stats", {})
+        assert "Unknown tool" not in out
 
     def test_no_tools_in_cron_context(self, provider_module, monkeypatch):
         monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_test")
@@ -1385,19 +1419,17 @@ class TestSkillsFeatureFlag:
         names = {s["name"] for s in p.get_tool_schemas()}
         skill_names = {n for n in names if n.startswith("yantrikdb_skill_")}
         assert skill_names == set(), f"skills should be hidden by default, got {skill_names}"
-        # 8 core + 4 trigger + extraction_stats + observability + hygiene = 15
-        assert len(names) == 18
 
     def test_enabled_includes_skill_tools(
         self, provider_module, mock_client, monkeypatch,
     ):
         p = self._provider_with_flag(provider_module, mock_client, monkeypatch, enabled=True)
         names = {s["name"] for s in p.get_tool_schemas()}
+        # Skills are orthogonal to the profile: enabling them is itself the
+        # explicit opt-in, so they surface in `core` too.
         assert "yantrikdb_skill_search" in names
         assert "yantrikdb_skill_define" in names
         assert "yantrikdb_skill_outcome" in names
-        # 15 core+trigger+stats+observability+hygiene + 3 skill tools = 18
-        assert len(names) == 21
 
     def test_disabled_skill_call_short_circuits(
         self, provider_module, mock_client, monkeypatch,

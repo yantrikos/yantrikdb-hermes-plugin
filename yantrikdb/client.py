@@ -72,6 +72,59 @@ class YantrikDBConfig:
     embedder_model2vec: str = ""    # HF model id for built-in Model2VecEmbedder loader (v0.4.2+); dim auto-probed
     embedder_huggingface: str = ""  # HF model id for built-in SentenceTransformerEmbedder loader (v0.4.2+); dim auto-probed
     embedding_dim: int = 0          # output dim; required for embedder_name and embedder_class paths, ignored for the two auto-probe paths above (bundled potion-2M is dim=64)
+    # adaptive_prompt_budget (v0.10.0): inject less when context is tight.
+    #
+    # Hermes calls on_turn_start(turn, message, **kwargs) every turn and passes
+    # runtime context including `remaining_tokens`. Everything this plugin adds
+    # to the system prompt — recall hits, skill bodies, conflicts, hygiene, the
+    # verbatim buffer, the agenda — competes for the same window as the
+    # conversation itself, and the cost of memory is worst exactly when the
+    # window is nearly full. A fixed budget is therefore wrong in both
+    # directions: wasteful early, harmful late.
+    #
+    # When the host tells us what's left, scale the optional blocks down as the
+    # window fills, and stop injecting extras entirely under the low watermark
+    # so the remaining space belongs to the conversation. When the host says
+    # nothing (older Hermes, or a caller that omits the kwarg) nothing changes —
+    # this is strictly additive, never a guess.
+    adaptive_prompt_budget: bool = True
+    prompt_budget_high_watermark: int = 40000   # above this: full injection
+    prompt_budget_low_watermark: int = 12000    # below this: essentials only
+    # capture_delegations (v0.10.0): record what sub-agents did.
+    #
+    # Hermes delegates work to child agents and calls on_delegation(task,
+    # result, child_session_id) when one returns. Nothing in the memory
+    # provider interface obliges anyone to use it, and no other provider
+    # does — so today a sub-agent investigates something, reports back, the
+    # child session ends, and everything it learned is gone. The parent's
+    # memory never sees it, and the next session cannot recall it, because
+    # only the conversation transcript ever held it.
+    #
+    # We store the (task, result) pair as an episodic memory in the PARENT's
+    # namespace, stamped with the child session id, so delegated findings
+    # become recallable exactly like anything else the agent learned.
+    # Bounded by delegation_max_len per field so a verbose sub-agent cannot
+    # flood the substrate.
+    capture_delegations: bool = True
+    delegation_max_len: int = 4000
+    # tool_profile (v0.10.0): how many tools the model sees every turn.
+    #
+    #   "core" (default) — the 7 tools an agent actually reaches for. ~1.1k
+    #       tokens of schema per request.
+    #   "full"           — all 18. Trigger consumers, observability,
+    #       extraction stats, hygiene, gaps, verbatim buffer.
+    #
+    # Tool schemas are re-sent on EVERY request, so the surface is a running
+    # per-turn cost, not a one-off. At 18 tools this plugin billed ~3.6k
+    # tokens/turn — 3.6x the largest of the other Hermes memory providers
+    # (2-5 tools) — and a wide surface also degrades selection: the more
+    # near-synonymous tools a model sees, the more often it picks the wrong
+    # one. The dropped tools are not deleted, and nothing about them is
+    # disabled: the maintenance they cover runs automatically (`think()` on
+    # session end) or surfaces in the system prompt (conflicts, hygiene,
+    # agenda) without the model having to call anything.
+    # Set YANTRIKDB_TOOL_PROFILE=full to expose everything.
+    tool_profile: str = "core"
     # share_engine (v0.9.3): reuse ONE in-process engine per (db_path +
     # embedder config) instead of constructing a fresh one per provider.
     # Hermes builds a provider per agent/session and they all resolve to the
@@ -246,12 +299,22 @@ class YantrikDBConfig:
     # v0.8.0+ — the self-directing substrate. Turns the discrete v0.7
     # primitives (knowledge_gaps + tasks + hygiene + conflicts) into a loop:
     # the memory notices what it doesn't know, queues the work, and hands the
-    # agent its own agenda. All OPT-IN (default off) — zero behaviour change.
+    # agent its own agenda.
+    #
+    # ON BY DEFAULT since v0.10.0. Through v0.9.x this shipped opt-in, which
+    # meant the capability the plugin is *for* was invisible to anyone who
+    # installed it and didn't read the README — the default install was a
+    # competent memory store and nothing more. Both halves are bounded
+    # (`gap_task_max` new tasks per session, `agenda_max_items` lines of
+    # prompt) and the gap gate is demand-aggregated, so a single
+    # low-confidence recall can never mint a task. Set
+    # YANTRIKDB_AUTO_GAP_TASKS=false / YANTRIKDB_SURFACE_AGENDA=false to
+    # restore the pre-0.10 behaviour.
     #
     # auto_gap_tasks: on session end, run knowledge_gaps() and create a task
     # for each recurring gap that doesn't already have one — so the agent's
     # unanswered questions become durable, actionable to-dos.
-    auto_gap_tasks: bool = False
+    auto_gap_tasks: bool = True
     gap_task_max: int = 3            # cap new gap-tasks created per session
     gap_task_min_count: int = 3      # a gap must recur >= this to become a task
     # Max average top recall score for a query to count as a "gap". The
@@ -263,7 +326,7 @@ class YantrikDBConfig:
     # surface_agenda: prepend a compact "## Your memory's agenda" block to
     # system_prompt_block — top open tasks + unresolved knowledge gaps — so
     # every session opens with what the memory still needs.
-    surface_agenda: bool = False
+    surface_agenda: bool = True
     agenda_max_items: int = 5
 
     @classmethod
@@ -280,6 +343,25 @@ class YantrikDBConfig:
             embedding_dim=_parse_int(os.environ.get("YANTRIKDB_EMBEDDING_DIM"), 0),
             share_engine=_parse_bool(
                 os.environ.get("YANTRIKDB_SHARE_ENGINE"), default=True,
+            ),
+            tool_profile=(
+                os.environ.get("YANTRIKDB_TOOL_PROFILE", "core").strip().lower()
+                or "core"
+            ),
+            capture_delegations=_parse_bool(
+                os.environ.get("YANTRIKDB_CAPTURE_DELEGATIONS"), default=True,
+            ),
+            adaptive_prompt_budget=_parse_bool(
+                os.environ.get("YANTRIKDB_ADAPTIVE_PROMPT_BUDGET"), default=True,
+            ),
+            prompt_budget_high_watermark=_parse_int(
+                os.environ.get("YANTRIKDB_PROMPT_BUDGET_HIGH"), 40000,
+            ),
+            prompt_budget_low_watermark=_parse_int(
+                os.environ.get("YANTRIKDB_PROMPT_BUDGET_LOW"), 12000,
+            ),
+            delegation_max_len=_parse_int(
+                os.environ.get("YANTRIKDB_DELEGATION_MAX_LEN"), 4000,
             ),
             skills_enabled=_parse_bool(
                 os.environ.get("YANTRIKDB_SKILLS_ENABLED"), default=False,
@@ -361,7 +443,7 @@ class YantrikDBConfig:
                 os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_SURFACE_LIMIT"), 6,
             ),
             auto_gap_tasks=_parse_bool(
-                os.environ.get("YANTRIKDB_AUTO_GAP_TASKS"), default=False,
+                os.environ.get("YANTRIKDB_AUTO_GAP_TASKS"), default=True,
             ),
             gap_task_max=_parse_int(
                 os.environ.get("YANTRIKDB_GAP_TASK_MAX"), 3,
@@ -373,7 +455,7 @@ class YantrikDBConfig:
                 os.environ.get("YANTRIKDB_GAP_MAX_AVG_TOP_SCORE"), 0.5,
             ),
             surface_agenda=_parse_bool(
-                os.environ.get("YANTRIKDB_SURFACE_AGENDA"), default=False,
+                os.environ.get("YANTRIKDB_SURFACE_AGENDA"), default=True,
             ),
             agenda_max_items=_parse_int(
                 os.environ.get("YANTRIKDB_AGENDA_MAX_ITEMS"), 5,
