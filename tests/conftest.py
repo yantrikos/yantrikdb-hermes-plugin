@@ -159,6 +159,26 @@ def client_module(plugin):
 
 
 @pytest.fixture(autouse=True)
+def _reset_engine_cache():
+    """Isolate the v0.9.3 process-global engine cache between tests.
+
+    The cache is deliberately process-lifetime in production (see
+    ``embedded._ENGINE_CACHE``), so without this a client built in one test
+    would hand its engine to the next one — masking per-test mock engines.
+    Looked up via ``sys.modules`` so this never forces the plugin to import.
+    """
+    def _clear() -> None:
+        mod = sys.modules.get(f"{_PKG}.embedded")
+        reset = getattr(mod, "reset_engine_cache", None)
+        if reset is not None:
+            reset()
+
+    _clear()
+    yield
+    _clear()
+
+
+@pytest.fixture(autouse=True)
 def _clean_yantrikdb_env(monkeypatch):
     for var in (
         "YANTRIKDB_URL",

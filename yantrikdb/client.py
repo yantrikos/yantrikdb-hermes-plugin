@@ -72,6 +72,16 @@ class YantrikDBConfig:
     embedder_model2vec: str = ""    # HF model id for built-in Model2VecEmbedder loader (v0.4.2+); dim auto-probed
     embedder_huggingface: str = ""  # HF model id for built-in SentenceTransformerEmbedder loader (v0.4.2+); dim auto-probed
     embedding_dim: int = 0          # output dim; required for embedder_name and embedder_class paths, ignored for the two auto-probe paths above (bundled potion-2M is dim=64)
+    # share_engine (v0.9.3): reuse ONE in-process engine per (db_path +
+    # embedder config) instead of constructing a fresh one per provider.
+    # Hermes builds a provider per agent/session and they all resolve to the
+    # same $HERMES_HOME/yantrikdb-memory.db, so without this a host running N
+    # agents opens the same database N times — each engine spawning its own
+    # materializer workers + compactor. Measured on a 32-logical-CPU box with
+    # 4k records: 6 engines idled at 15.3% of the machine (135 OS threads) vs
+    # 3.7% (52 threads) for one shared engine — a 4.13x idle-CPU reduction.
+    # Set YANTRIKDB_SHARE_ENGINE=false to restore per-provider engines.
+    share_engine: bool = True
     # Shared fields
     namespace: str = DEFAULT_NAMESPACE
     top_k: int = DEFAULT_TOP_K
@@ -268,6 +278,9 @@ class YantrikDBConfig:
             embedder_model2vec=os.environ.get("YANTRIKDB_EMBEDDER_MODEL2VEC", ""),
             embedder_huggingface=os.environ.get("YANTRIKDB_EMBEDDER_HF", ""),
             embedding_dim=_parse_int(os.environ.get("YANTRIKDB_EMBEDDING_DIM"), 0),
+            share_engine=_parse_bool(
+                os.environ.get("YANTRIKDB_SHARE_ENGINE"), default=True,
+            ),
             skills_enabled=_parse_bool(
                 os.environ.get("YANTRIKDB_SKILLS_ENABLED"), default=False,
             ),

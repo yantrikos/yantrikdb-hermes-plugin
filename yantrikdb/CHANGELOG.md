@@ -3,6 +3,25 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.9.3] — 2026-07-24 — Share one embedded engine per database (idle-CPU fix)
+
+Fixes pathological idle CPU on hosts running several agents in embedded mode, reported from the field on a Ryzen 9950X3D (16C/32T) where an independent memory-dump audit measured the Hermes backend at **~55% of a 32-logical-processor machine while idle**, with ~600k read ops/sec inside compiled YantrikDB threads.
+
+Hermes constructs a memory provider per agent/session, and every one resolves to the same database (`$HERMES_HOME/yantrikdb-memory.db` unless `YANTRIKDB_DB_PATH` says otherwise). Before this release each provider opened its **own** engine over that same file, and every engine spawns its own materializer workers plus a compactor — so a host running N agents paid N times for background work on one database, and those workers poll whether or not anything is happening.
+
+- **One engine per (database + embedder), process-wide.** `EmbeddedYantrikDBClient` now reuses an already-open engine instead of constructing a fresh one. The cache key includes the full embedder selection, because the embedder fixes vector dimensionality — configurations that disagree never share a handle. A cache hit is checked *before* embedder materialization, so it also skips re-loading the model on the `model2vec` / `sentence-transformers` paths.
+- **Measured** on a 32-logical-CPU box, 4,000 records, 6 providers, idle (no requests in flight), through the real plugin path against the real engine:
+
+  | | OS threads | idle CPU |
+  |---|---|---|
+  | 6 providers, shared (this release) | **52** | **4.5% of machine** |
+  | 6 providers, engine each (≤0.9.2) | 152 | 31.9% of machine |
+
+- **Opt out** with `YANTRIKDB_SHARE_ENGINE=false` to restore per-provider engines.
+- Cached engines are intentionally never evicted — they mirror process lifetime, matching the previous behaviour where each provider held its engine until interpreter shutdown.
+
+**This is a mitigation, not the root cause.** The dominant term is engine-side: the materializer polls every 100 ms for unapplied operations without an index supporting that query, so each *empty* check scans history — idle cost therefore grows superlinearly with operation count (measured with worker count held constant: 500 records → 1.2% of machine, 2,000 → 4.0%, 6,000 → 35.3%). At sufficient depth it also starves real ingest (`Backpressure: ingest queue full`). Reported upstream to the engine team with the reproduction harness; a single shared engine reduces the multiplier but cannot remove the per-poll scan.
+
 ## [0.9.2] — 2026-07-19 — Fix embedded package-name collision (issue #50)
 
 Fixes a real, high-severity bug reported by [@AtheIIa](https://github.com/AtheIIa) in [#50](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/50): embedded mode could silently fail to initialize because this plugin's own top-level package is named `yantrikdb` — identical to the engine it depends on. When the plugin directory wins `sys.path` resolution (the `hermes plugins install` layout, or any run from a source checkout), `from yantrikdb._yantrikdb_rust import YantrikDB` bound to the plugin (which has no `_yantrikdb_rust`) and raised `ModuleNotFoundError`, surfaced misleadingly as "requires yantrikdb >= 0.7.4" even though the engine was installed and importable on its own. The `pip install yantrikdb-hermes-plugin` path was never affected (setuptools imports it as `yantrikdb_hermes_plugin`).

@@ -230,6 +230,17 @@ EOF
 
 Same plugin, same 8 tools, same hooks, same provider contract — just talks HTTP to a separately-managed server instead of running the engine in-process.
 
+### Running several agents on one host
+
+Hermes builds a memory provider per agent/session, and in embedded mode they all resolve to the same database. Since **v0.9.3** they also share **one engine** per `(db_path, embedder)` inside a process, instead of each opening its own — which matters because every engine runs its own background materializer workers and compactor. Measured on a 32-logical-CPU box with 4,000 records, 6 providers, idle:
+
+| | OS threads | idle CPU |
+|---|---|---|
+| shared engine (v0.9.3 default) | **52** | **4.5% of machine** |
+| engine per provider (≤ v0.9.2) | 152 | 31.9% of machine |
+
+Sharing is on by default; set `YANTRIKDB_SHARE_ENGINE=false` to restore per-provider engines. If your agents run in **separate processes** (not just separate sessions), the cache can't span them — point them at one `yantrikdb-server` in HTTP mode instead, which gives the same single-engine benefit across process boundaries.
+
 Full config, tool reference, troubleshooting: **[yantrikdb/README.md](yantrikdb/README.md)**.
 
 ## What it does
