@@ -1,4 +1,42 @@
-# Recall benchmark
+# Benchmarks
+
+Two instruments: **recall quality** (`run_recall_bench.py`) and **idle CPU**
+(`idle_cpu_bench.py`). Both run locally against an embedded YantrikDB.
+
+## Idle-CPU benchmark
+
+```bash
+python benchmarks/idle_cpu_bench.py curve      # idle CPU vs history depth
+python benchmarks/idle_cpu_bench.py compare    # 1 engine vs N, same history
+python benchmarks/idle_cpu_bench.py gate       # committed thresholds; exits 1 on fail
+```
+
+Requires `psutil`. Written to diagnose a field report of the backend burning
+~55% of a 32-logical-processor machine **while idle** — the engine's
+materializer was polling for unapplied operations using an index that existed
+only in a schema migration and never in the base schema, so every database
+*created* after that migration walked the whole oplog on every tick
+([engine #113](https://github.com/yantrikos/yantrikdb/issues/113)).
+
+Shared instrument: the engine team runs this same code, so neither side
+maintains a private measuring stick. Two rules are enforced by the harness
+rather than left to whoever runs it:
+
+- **Quiesce on state, not on time.** Sampling blocks until
+  `oplog WHERE applied = 0` reads zero. A fixed sleep silently measures the
+  materializer *draining* and reports it as idle — that mistake produced a
+  12.4%-of-machine reading that was pure artifact, and in another run made 6
+  engines look 15× cheaper than 1.
+- **Stamp the world.** Every run prints engine version, schema version, and
+  host CPU count, so a number that has expired is legible as expired. The
+  plugin's own "31.9% → 4.5%" figure stayed reproducible while quietly
+  becoming a claim about an engine revision nobody would run again.
+
+The gates: **A** — `cpu(10k) ≤ 1.25 × cpu(1k)` (shape, hardware-independent,
+the one that catches the defect returning; pre-fix ≈27×, post-fix ≈1.0×).
+**B** — under 5% of one core, median of three.
+
+## Recall benchmark
 
 A reproducible measurement of the YantrikDB Hermes plugin's recall quality —
 and of the v0.6 self-tuning lift — against a curated, MIT-clean memory-QA set.
