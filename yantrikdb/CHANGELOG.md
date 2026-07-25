@@ -3,6 +3,31 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.9.3] — 2026-07-25 — Share one embedded engine per database
+
+Cuts per-agent resource cost in embedded mode, and requires the engine release that fixes the idle-CPU defect behind a field report on a Ryzen 9950X3D (16C/32T), where an independent memory-dump audit measured the Hermes backend at **~55% of a 32-logical-processor machine while idle**, with ~600k read ops/sec inside compiled YantrikDB threads.
+
+- **Engine requirement raised to `yantrikdb>=0.10.1`.** The root cause of that report was engine-side ([#113](https://github.com/yantrikos/yantrikdb/issues/113), fixed in 0.10.1), so the pin moves rather than leaving users able to install an engine that still carries it.
+
+Hermes constructs a memory provider per agent/session, and every one resolves to the same database (`$HERMES_HOME/yantrikdb-memory.db` unless `YANTRIKDB_DB_PATH` says otherwise). Before this release each provider opened its **own** engine over that same file, and every engine spawns its own materializer workers plus a compactor — so a host running N agents paid N times for background work on one database, and those workers poll whether or not anything is happening.
+
+- **One engine per (database + embedder), process-wide.** `EmbeddedYantrikDBClient` now reuses an already-open engine instead of constructing a fresh one. The cache key includes the full embedder selection, because the embedder fixes vector dimensionality — configurations that disagree never share a handle. A cache hit is checked *before* embedder materialization, so it also skips re-loading the model on the `model2vec` / `sentence-transformers` paths.
+- **Opt out** with `YANTRIKDB_SHARE_ENGINE=false` to restore per-provider engines.
+- Cached engines are intentionally never evicted — they mirror process lifetime, matching the previous behaviour where each provider held its engine until interpreter shutdown.
+
+**On the required engine (0.10.1), this is a resource fix, not a CPU fix** — and that distinction is deliberate. Measured on a 32-logical-CPU box, 6,000 records, 6 providers, idle, sampling gated on the materializer having drained (`oplog WHERE applied = 0` at zero) rather than on a fixed sleep:
+
+| engine | 6 providers, engine each (≤0.9.2) | 6 providers, shared (this release) |
+|---|---|---|
+| **0.10.1+** (required; #113 fixed) | 137 threads, 0.16% of machine | 52 threads, **0.05% of machine** |
+| 0.10.0 (pre-#113, no longer supported) | 152 threads, 31.9% of machine | 52 threads, 3.7% of machine |
+
+The bottom row is why the pin moved: sharing an engine looked like a large CPU win only because each extra engine multiplied an engine-side defect. With that fixed the CPU difference is near the noise floor, and the benefits that remain are the resource ones — **~85 fewer OS threads**, N× fewer SQLite connections and file handles, and no duplicate embedding-model load per agent (costly on the `sentence-transformers` path). Those are worth shipping on their own terms; the headline was rewritten rather than kept.
+
+**On the engine defect itself.** The materializer polled every 100 ms for unapplied operations using an index declared only in a schema migration and never in the base schema — so every database *created* after that migration never had it, and each poll fell back to walking the whole oplog. Idle cost grew superlinearly with operation count (worker count held constant: 500 records → 1.25% of machine, 2,000 → 4.65%, 6,000 → **34.41%**), and at depth it starved real ingest (`Backpressure: ingest queue full`). Reported upstream with a reproduction harness; fixed in engine 0.10.1 and verified here at **246× lower idle CPU** at 6,000 records with backpressure events going 7 → 0.
+
+The harness that measured all of this ships in [`benchmarks/idle_cpu_bench.py`](../benchmarks/idle_cpu_bench.py) and is run by the engine team too, so a regression is caught by the same instrument on both sides.
+
 ## [0.9.2] — 2026-07-19 — Fix embedded package-name collision (issue #50)
 
 Fixes a real, high-severity bug reported by [@AtheIIa](https://github.com/AtheIIa) in [#50](https://github.com/yantrikos/yantrikdb-hermes-plugin/issues/50): embedded mode could silently fail to initialize because this plugin's own top-level package is named `yantrikdb` — identical to the engine it depends on. When the plugin directory wins `sys.path` resolution (the `hermes plugins install` layout, or any run from a source checkout), `from yantrikdb._yantrikdb_rust import YantrikDB` bound to the plugin (which has no `_yantrikdb_rust`) and raised `ModuleNotFoundError`, surfaced misleadingly as "requires yantrikdb >= 0.7.4" even though the engine was installed and importable on its own. The `pip install yantrikdb-hermes-plugin` path was never affected (setuptools imports it as `yantrikdb_hermes_plugin`).

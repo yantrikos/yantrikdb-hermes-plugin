@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -335,6 +336,50 @@ def load_engine_yantrikdb_class() -> Any:
         ) from e
 
 
+# ---------------------------------------------------------------------------
+# Process-global engine cache (v0.9.3)
+#
+# Hermes constructs a memory provider per agent/session, and every one of them
+# resolves to the SAME database ($HERMES_HOME/yantrikdb-memory.db unless
+# YANTRIKDB_DB_PATH says otherwise). Before this cache each provider opened its
+# own engine over that same file, and each engine spawns its own materializer
+# workers + compactor — so a host running N agents paid N times for background
+# work on one database, and those workers poll whether or not anything is
+# happening.
+#
+# Measured on a 32-logical-CPU box, 4,000 records, idle (no requests):
+#   1 shared engine :  52 OS threads,  3.7% of the machine
+#   6 engines       : 135 OS threads, 15.3% of the machine   (4.13x)
+#
+# Engines are keyed by database path + the full embedder selection, because the
+# embedder determines vector dimensionality — two configs that disagree must
+# never share one handle. Entries are intentionally never evicted: they mirror
+# process lifetime, exactly like the pre-cache behaviour where each provider
+# held its engine until interpreter shutdown.
+# ---------------------------------------------------------------------------
+
+_ENGINE_CACHE: dict[tuple[Any, ...], Any] = {}
+_ENGINE_CACHE_LOCK = threading.Lock()
+
+
+def _engine_cache_key(db_path: str, config: YantrikDBConfig) -> tuple[Any, ...]:
+    """Identity of an engine handle: same key ⇒ safe to share."""
+    return (
+        os.path.abspath(db_path),
+        (config.embedder_class or "").strip(),
+        (config.embedder_model2vec or "").strip(),
+        (config.embedder_huggingface or "").strip(),
+        (config.embedder_name or "").strip(),
+        int(config.embedding_dim or 0),
+    )
+
+
+def reset_engine_cache() -> None:
+    """Drop all cached engines (tests; not part of the provider surface)."""
+    with _ENGINE_CACHE_LOCK:
+        _ENGINE_CACHE.clear()
+
+
 class EmbeddedYantrikDBClient:
     """Adapter wrapping ``yantrikdb._yantrikdb_rust.YantrikDB`` to the
     same surface as ``YantrikDBClient`` (HTTP).
@@ -351,6 +396,23 @@ class EmbeddedYantrikDBClient:
 
         db_path = config.db_path or _default_db_path()
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
+        # Reuse an already-open engine for this database + embedder when one
+        # exists in this process (see the cache notes above). Checked BEFORE
+        # embedder materialisation so a hit also skips re-loading the model —
+        # the expensive part of the model2vec / sentence-transformers paths.
+        cache_key = _engine_cache_key(db_path, config)
+        if config.share_engine:
+            with _ENGINE_CACHE_LOCK:
+                cached = _ENGINE_CACHE.get(cache_key)
+            if cached is not None:
+                self._db = cached
+                logger.info(
+                    "YantrikDB embedded backend ready (shared engine): "
+                    "db=%s namespace=%s",
+                    db_path, config.namespace,
+                )
+                return
 
         # Embedder selection — five paths, evaluated in order:
         #   1. YANTRIKDB_EMBEDDER_CLASS (most flexible escape hatch)
@@ -503,6 +565,16 @@ class EmbeddedYantrikDBClient:
                 "yantrikdb` ships the bundled embedder; slim builds "
                 "(--no-default-features) require an explicit embedder."
             )
+
+        if config.share_engine:
+            # Publish for reuse. Construction happens outside the lock (it can
+            # load an embedding model), so two providers racing on a cold cache
+            # may both build one — first writer wins and the loser adopts it,
+            # so at most one engine per key survives to be used.
+            with _ENGINE_CACHE_LOCK:
+                winner = _ENGINE_CACHE.setdefault(cache_key, self._db)
+            if winner is not self._db:
+                self._db = winner
 
         logger.info(
             "YantrikDB embedded backend ready: db=%s namespace=%s",
