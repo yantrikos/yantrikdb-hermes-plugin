@@ -72,6 +72,23 @@ class YantrikDBConfig:
     embedder_model2vec: str = ""    # HF model id for built-in Model2VecEmbedder loader (v0.4.2+); dim auto-probed
     embedder_huggingface: str = ""  # HF model id for built-in SentenceTransformerEmbedder loader (v0.4.2+); dim auto-probed
     embedding_dim: int = 0          # output dim; required for embedder_name and embedder_class paths, ignored for the two auto-probe paths above (bundled potion-2M is dim=64)
+    # capture_delegations (v0.10.0): record what sub-agents did.
+    #
+    # Hermes delegates work to child agents and calls on_delegation(task,
+    # result, child_session_id) when one returns. Nothing in the memory
+    # provider interface obliges anyone to use it, and no other provider
+    # does — so today a sub-agent investigates something, reports back, the
+    # child session ends, and everything it learned is gone. The parent's
+    # memory never sees it, and the next session cannot recall it, because
+    # only the conversation transcript ever held it.
+    #
+    # We store the (task, result) pair as an episodic memory in the PARENT's
+    # namespace, stamped with the child session id, so delegated findings
+    # become recallable exactly like anything else the agent learned.
+    # Bounded by delegation_max_len per field so a verbose sub-agent cannot
+    # flood the substrate.
+    capture_delegations: bool = True
+    delegation_max_len: int = 4000
     # tool_profile (v0.10.0): how many tools the model sees every turn.
     #
     #   "core" (default) — the 7 tools an agent actually reaches for. ~1.1k
@@ -312,6 +329,12 @@ class YantrikDBConfig:
             tool_profile=(
                 os.environ.get("YANTRIKDB_TOOL_PROFILE", "core").strip().lower()
                 or "core"
+            ),
+            capture_delegations=_parse_bool(
+                os.environ.get("YANTRIKDB_CAPTURE_DELEGATIONS"), default=True,
+            ),
+            delegation_max_len=_parse_int(
+                os.environ.get("YANTRIKDB_DELEGATION_MAX_LEN"), 4000,
             ),
             skills_enabled=_parse_bool(
                 os.environ.get("YANTRIKDB_SKILLS_ENABLED"), default=False,

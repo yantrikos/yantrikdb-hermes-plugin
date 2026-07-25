@@ -5,7 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semanti
 
 ## [0.10.0] — 2026-07-25 — The install is the product
 
-Two changes, one theme: what you get by running `pip install` should be what the plugin is actually *for*, and it shouldn't cost more context than it's worth.
+What you get by running `pip install` should be what the plugin is actually *for*, it shouldn't cost more context than it's worth, and it should use what Hermes actually offers.
+
+### Delegated work is remembered (`on_delegation`)
+
+Hermes delegates to sub-agents and calls `on_delegation(task, result, child_session_id)` when one returns. **No Hermes memory provider implements that hook.** So today a sub-agent investigates something, reports back, its session ends — and the finding exists only in the transcript. The parent remembers *having delegated*; it can't recall what came back, and the next session has nothing.
+
+The plugin now stores the `(task, result)` pair as an **episodic** memory in the **parent's** namespace, stamped `source=hermes_delegation` with the `child_session_id`, so a later reader can tell delegated findings from first-hand ones. Written at importance 0.65 — a delegation is by construction work someone thought worth spinning up an agent for. Each field is bounded by `delegation_max_len` (default 4,000 chars) so a verbose sub-agent can't flood the substrate, and the hook is fail-soft and circuit-breaker aware. Disable with `YANTRIKDB_CAPTURE_DELEGATIONS=false`.
+
+Declared in **both** `plugin.yaml` manifests — an implemented-but-undeclared hook never fires, and there's a test pinning that.
 
 ### The self-directing loop is ON by default
 

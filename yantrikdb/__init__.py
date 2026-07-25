@@ -84,6 +84,7 @@ from .client import (
     YantrikDBError,
     YantrikDBServerError,
     YantrikDBTransientError,
+    truncate_text,
 )
 from .embedded import make_backend
 
@@ -3842,6 +3843,81 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 f"intent: {intent} | outcome: {outcome}"
             )
         return f"[compression-summary, {n} turns] intent: {intent}"
+
+    def on_delegation(
+        self,
+        task: str,
+        result: str,
+        *,
+        child_session_id: str = "",
+        **kwargs: Any,
+    ) -> None:
+        """Persist what a delegated sub-agent found (v0.10.0).
+
+        Hermes calls this when a child agent returns. Without it the child's
+        work exists only in the transcript: the sub-agent investigates, reports
+        back, its session ends, and the finding is unrecallable next session —
+        the parent "remembers" having delegated but not what came back.
+
+        Stored as an EPISODIC memory in the parent's namespace (an event that
+        happened, not a standing fact), stamped with the child session id so a
+        later reader can tell delegated findings from first-hand ones. Written
+        at slightly above-default importance because a delegation was, by
+        construction, work someone thought was worth spinning up an agent for.
+
+        Fail-soft and breaker-aware, like the other write hooks.
+        """
+        if self._cron_skipped:
+            return
+        if not self._config or not self._config.capture_delegations:
+            return
+
+        task = (task or "").strip()
+        result = (result or "").strip()
+        if not task or not result:
+            return
+
+        if self._client is None:
+            # Same honesty rule as on_memory_write: a write path that cannot
+            # observe failure must never fail silently (issue #50, layer 2).
+            self._warn_write_dropped()
+            return
+        if self._breaker_open():
+            return
+
+        cap = self._config.delegation_max_len
+        text = (
+            f"Delegated task: {truncate_text(task, cap)}\n"
+            f"Result: {truncate_text(result, cap)}"
+        )
+        client = self._client
+        namespace = self._namespace
+        session_id = self._session_id
+        metadata = {
+            "source": "hermes_delegation",
+            "session_id": session_id,
+            "child_session_id": child_session_id,
+            **self._write_scope_metadata(),
+        }
+
+        def _run() -> None:
+            try:
+                client.remember(
+                    text,
+                    namespace=namespace,
+                    importance=0.65,
+                    domain="work",
+                    memory_type="episodic",
+                    metadata=metadata,
+                )
+                self._record_success()
+            except YantrikDBError as e:
+                self._record_failure()
+                logger.debug("YantrikDB on_delegation failed: %s", e)
+
+        threading.Thread(
+            target=_run, daemon=True, name="yantrikdb-delegation",
+        ).start()
 
     def on_memory_write(self, action: str, target: str, content: str) -> None:
         """Mirror built-in MEMORY.md / USER.md additions into YantrikDB."""

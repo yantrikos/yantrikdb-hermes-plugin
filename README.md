@@ -334,7 +334,7 @@ Each row in the table below is backed by [`tests/comparison/findings_scale_lxc/<
 
 **How to re-run it** — clone the repo, `scp tests/comparison/` to a Hermes-installed machine, `python3 runner_scale.py --all`. The harness will skip-with-honest-reason for any provider whose `is_available()` returns False (e.g. missing API key); for the ones that initialise, it produces a fresh `findings_scale.yaml`. Pull requests welcomed when accounts unlock more rows.
 
-Three optional lifecycle hooks: `on_session_end` auto-consolidates, `on_pre_compress` preserves high-salience memories through context compression, `on_memory_write` mirrors built-in `MEMORY.md` / `USER.md` additions.
+Four lifecycle hooks: `on_session_end` auto-consolidates, `on_pre_compress` preserves high-salience memories through context compression, `on_memory_write` mirrors built-in `MEMORY.md` / `USER.md` additions, and **`on_delegation` (v0.10.0) persists what sub-agents found** — Hermes calls it when a delegated child returns, and no other memory provider implements it, so elsewhere a sub-agent's finding dies with its session. Stored as an episodic memory in the parent's namespace, stamped with the child session id; bounded, fail-soft, disable with `YANTRIKDB_CAPTURE_DELEGATIONS=false`.
 
 ## Skills (opt-in, v0.3.0+)
 
