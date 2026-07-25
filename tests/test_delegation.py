@@ -137,11 +137,38 @@ class TestDelegationGuards:
         _wait(p)
 
 
-class TestManifestDeclaresHook:
-    def test_hook_declared_in_both_manifests(self):
-        """Hermes reads plugin.yaml to know which hooks to call — an
-        implemented-but-undeclared hook never fires."""
-        from pathlib import Path
-        root = Path(__file__).resolve().parent.parent
-        for manifest in (root / "plugin.yaml", root / "yantrikdb" / "plugin.yaml"):
-            assert "on_delegation" in manifest.read_text(encoding="utf-8"), manifest
+class TestHookIsActuallyCallable:
+    """What makes the hook fire is the SIGNATURE, not the manifest.
+
+    Verified against a real Hermes v0.15.1 install: `MemoryManager` invokes
+    `provider.on_delegation(task, result, child_session_id=...)` directly, and
+    wraps it in a try/except that only logs at debug. So a signature mismatch
+    doesn't raise — it disappears into a debug line and the feature is silently
+    dead. That makes this test the one that matters.
+
+    (The `hooks:` list in plugin.yaml is documentation: Hermes parses
+    `provides_hooks`, a different key belonging to the separate plugin-hook
+    system, and never consults either for memory-provider methods.)
+    """
+
+    def test_signature_matches_hermes_call_shape(self, provider_module):
+        import inspect
+        sig = inspect.signature(
+            provider_module.YantrikDBMemoryProvider.on_delegation)
+        params = sig.parameters
+        assert list(params)[1:3] == ["task", "result"], "positional order"
+        assert params["child_session_id"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert params["child_session_id"].default == ""
+        # Hermes documents that extra kwargs may be added over time; absorbing
+        # them is what keeps a future Hermes release from silently killing this.
+        assert any(p.kind is inspect.Parameter.VAR_KEYWORD
+                   for p in params.values()), "must accept **kwargs"
+
+    def test_call_in_hermes_shape_records(
+        self, provider_module, mock_client, monkeypatch,
+    ):
+        """Exactly how MemoryManager calls it, including an unknown kwarg."""
+        p = _provider(provider_module, mock_client, monkeypatch)
+        p.on_delegation("t", "r", child_session_id="c", some_future_kwarg=1)
+        _wait(p)
+        assert mock_client.remember.called

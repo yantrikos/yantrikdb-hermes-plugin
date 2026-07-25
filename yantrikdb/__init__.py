@@ -1796,6 +1796,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
             if self._scope_metadata
             else ""
         )
+        # The prompt must only name tools the model can actually SEE this
+        # session. Naming a tool that isn't in the exposed surface invites the
+        # model to attempt a call it has no schema for — and `think` is hidden
+        # under the default `core` profile precisely because it runs
+        # automatically at session end, so instructing the agent to call it
+        # would be asking for redundant work it can't correctly perform.
+        exposed = {s["name"] for s in self.get_tool_schemas()}
         base = (
             "# YantrikDB Memory\n"
             f"Active. Namespace: `{self._namespace}`.\n"
@@ -1805,11 +1812,28 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "Use `yantrikdb_recall` before claiming facts about the user or "
             "past decisions — each result includes a why_retrieved reason list. "
             "When a new decision or relationship surfaces, call "
-            "`yantrikdb_remember` or `yantrikdb_relate`. Run `yantrikdb_think` "
-            "at natural break points to consolidate duplicates and surface "
-            "contradictions — then `yantrikdb_conflicts` lists what needs "
-            "resolving and `yantrikdb_resolve_conflict` closes each out."
+            "`yantrikdb_remember` or `yantrikdb_relate`."
         )
+        if "yantrikdb_think" in exposed:
+            base += (
+                " Run `yantrikdb_think` at natural break points to consolidate "
+                "duplicates and surface contradictions."
+            )
+        else:
+            base += (
+                " Consolidation runs automatically at the end of the session — "
+                "you don't need to trigger it."
+            )
+        if "yantrikdb_conflicts" in exposed:
+            base += (
+                " `yantrikdb_conflicts` lists what needs resolving and "
+                "`yantrikdb_resolve_conflict` closes each out."
+            )
+        if "yantrikdb_tasks" in exposed:
+            base += (
+                " Open items from your memory's agenda are managed with "
+                "`yantrikdb_tasks` — close one when you've learned the answer."
+            )
         return (
             base
             + self._format_recent_skills_block()

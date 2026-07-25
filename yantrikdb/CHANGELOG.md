@@ -11,9 +11,13 @@ What you get by running `pip install` should be what the plugin is actually *for
 
 Hermes delegates to sub-agents and calls `on_delegation(task, result, child_session_id)` when one returns. **No Hermes memory provider implements that hook.** So today a sub-agent investigates something, reports back, its session ends — and the finding exists only in the transcript. The parent remembers *having delegated*; it can't recall what came back, and the next session has nothing.
 
-The plugin now stores the `(task, result)` pair as an **episodic** memory in the **parent's** namespace, stamped `source=hermes_delegation` with the `child_session_id`, so a later reader can tell delegated findings from first-hand ones. Written at importance 0.65 — a delegation is by construction work someone thought worth spinning up an agent for. Each field is bounded by `delegation_max_len` (default 4,000 chars) so a verbose sub-agent can't flood the substrate, and the hook is fail-soft and circuit-breaker aware. Disable with `YANTRIKDB_CAPTURE_DELEGATIONS=false`.
+The plugin now stores the `(task, result)` pair as an **episodic** memory in the **parent's** namespace, written at importance 0.65 — a delegation is by construction work someone thought worth spinning up an agent for. Each field is bounded by `delegation_max_len` (default 4,000 chars) so a verbose sub-agent can't flood the substrate, and the hook is fail-soft and circuit-breaker aware. Disable with `YANTRIKDB_CAPTURE_DELEGATIONS=false`.
 
-Declared in **both** `plugin.yaml` manifests — an implemented-but-undeclared hook never fires, and there's a test pinning that.
+Verified end-to-end on a live install against engine 0.10.1: the delegated finding is written and comes back through `yantrikdb_recall` on the parent. Provenance (`source=hermes_delegation`, `child_session_id`) is stamped in metadata and confirmed stored — though note that **`recall` results do not currently carry metadata** (it is readable via `list_records`), so within a recall the marker a reader actually sees is the record's own `Delegated task: … / Result: …` shape. Raised with the engine team as an API gap; the stamps are durable either way.
+
+Verified first-hand against a real **Hermes v0.15.1** install: the signature matches `MemoryProvider.on_delegation` exactly, and `MemoryManager` invokes it from `tools/delegate_tool.py` when a subagent completes. Hermes' own docstring confirms the design — *"Called on the PARENT agent when a subagent completes… The subagent itself has no provider session"* — so a finding nobody captures here is genuinely unrecoverable.
+
+Note for anyone reading our manifests: the `hooks:` list in `plugin.yaml` is **documentation only**. Hermes parses `provides_hooks` (a different key, for the separate plugin-hook system — `pre_tool_call`, `on_session_start`, …), and memory-provider lifecycle methods are called directly on the provider object regardless of what any manifest says. An earlier draft of these notes claimed the declaration was load-bearing; inspecting Hermes disproved it.
 
 ### The self-directing loop is ON by default
 
