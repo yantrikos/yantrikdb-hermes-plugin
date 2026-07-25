@@ -3,9 +3,11 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
-## [0.9.3] — 2026-07-24 — Share one embedded engine per database (idle-CPU fix)
+## [0.9.3] — 2026-07-25 — Share one embedded engine per database
 
-Fixes pathological idle CPU on hosts running several agents in embedded mode, reported from the field on a Ryzen 9950X3D (16C/32T) where an independent memory-dump audit measured the Hermes backend at **~55% of a 32-logical-processor machine while idle**, with ~600k read ops/sec inside compiled YantrikDB threads.
+Cuts per-agent resource cost in embedded mode, and requires the engine release that fixes the idle-CPU defect behind a field report on a Ryzen 9950X3D (16C/32T), where an independent memory-dump audit measured the Hermes backend at **~55% of a 32-logical-processor machine while idle**, with ~600k read ops/sec inside compiled YantrikDB threads.
+
+- **Engine requirement raised to `yantrikdb>=0.10.1`.** The root cause of that report was engine-side ([#113](https://github.com/yantrikos/yantrikdb/issues/113), fixed in 0.10.1), so the pin moves rather than leaving users able to install an engine that still carries it.
 
 Hermes constructs a memory provider per agent/session, and every one resolves to the same database (`$HERMES_HOME/yantrikdb-memory.db` unless `YANTRIKDB_DB_PATH` says otherwise). Before this release each provider opened its **own** engine over that same file, and every engine spawns its own materializer workers plus a compactor — so a host running N agents paid N times for background work on one database, and those workers poll whether or not anything is happening.
 
@@ -13,16 +15,18 @@ Hermes constructs a memory provider per agent/session, and every one resolves to
 - **Opt out** with `YANTRIKDB_SHARE_ENGINE=false` to restore per-provider engines.
 - Cached engines are intentionally never evicted — they mirror process lifetime, matching the previous behaviour where each provider held its engine until interpreter shutdown.
 
-**Measured** on a 32-logical-CPU box, 6,000 records, 6 providers, idle, sampling gated on the materializer having drained (`oplog WHERE applied = 0` at zero) rather than on a fixed sleep. **The engine revision is part of the result**, because the benefit depends on a defect being fixed upstream:
+**On the required engine (0.10.1), this is a resource fix, not a CPU fix** — and that distinction is deliberate. Measured on a 32-logical-CPU box, 6,000 records, 6 providers, idle, sampling gated on the materializer having drained (`oplog WHERE applied = 0` at zero) rather than on a fixed sleep:
 
 | engine | 6 providers, engine each (≤0.9.2) | 6 providers, shared (this release) |
 |---|---|---|
-| **0.10.0 (current release)** | 152 threads, 31.9% of machine | 52 threads, **3.7% of machine** |
-| **with [#113](https://github.com/yantrikos/yantrikdb/issues/113) fixed** | 137 threads, 0.16% of machine | 52 threads, **0.05% of machine** |
+| **0.10.1+** (required; #113 fixed) | 137 threads, 0.16% of machine | 52 threads, **0.05% of machine** |
+| 0.10.0 (pre-#113, no longer supported) | 152 threads, 31.9% of machine | 52 threads, 3.7% of machine |
 
-So on the engine you have **today**, this is a large CPU fix. Once #113 ships it stops being one — the cost it deduplicates becomes nearly free — and the durable benefits are the resource ones: **~85–100 fewer OS threads**, N× fewer SQLite connections and file handles, and no duplicate embedding-model load per agent (the expensive one on the `sentence-transformers` path).
+The bottom row is why the pin moved: sharing an engine looked like a large CPU win only because each extra engine multiplied an engine-side defect. With that fixed the CPU difference is near the noise floor, and the benefits that remain are the resource ones — **~85 fewer OS threads**, N× fewer SQLite connections and file handles, and no duplicate embedding-model load per agent (costly on the `sentence-transformers` path). Those are worth shipping on their own terms; the headline was rewritten rather than kept.
 
-**The CPU symptom is not ours to fix.** The engine's materializer polled every 100 ms for unapplied operations using an index that was declared only in a schema migration and never in the base schema — so every database *created* after that migration never had it, and each poll fell back to walking the whole oplog. Idle cost therefore grew superlinearly with operation count (worker count held constant: 500 records → 1.25% of machine, 2,000 → 4.65%, 6,000 → 34.41%), and at depth it starved real ingest (`Backpressure: ingest queue full`). Reported upstream with a reproduction harness and fixed in engine #113; verified on the patch at 246× lower idle CPU at 6,000 records with backpressure eliminated. A shared engine reduces the multiplier but never removed the per-poll scan.
+**On the engine defect itself.** The materializer polled every 100 ms for unapplied operations using an index declared only in a schema migration and never in the base schema — so every database *created* after that migration never had it, and each poll fell back to walking the whole oplog. Idle cost grew superlinearly with operation count (worker count held constant: 500 records → 1.25% of machine, 2,000 → 4.65%, 6,000 → **34.41%**), and at depth it starved real ingest (`Backpressure: ingest queue full`). Reported upstream with a reproduction harness; fixed in engine 0.10.1 and verified here at **246× lower idle CPU** at 6,000 records with backpressure events going 7 → 0.
+
+The harness that measured all of this ships in [`benchmarks/idle_cpu_bench.py`](../benchmarks/idle_cpu_bench.py) and is run by the engine team too, so a regression is caught by the same instrument on both sides.
 
 ## [0.9.2] — 2026-07-19 — Fix embedded package-name collision (issue #50)
 

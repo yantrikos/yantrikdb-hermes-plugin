@@ -4,7 +4,7 @@
 [![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.10.0-orange)](https://github.com/yantrikos/yantrikdb-server)
+[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.10.1-orange)](https://github.com/yantrikos/yantrikdb-server)
 [![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)
@@ -234,14 +234,14 @@ Same plugin, same 8 tools, same hooks, same provider contract — just talks HTT
 
 Hermes builds a memory provider per agent/session, and in embedded mode they all resolve to the same database. Since **v0.9.3** they also share **one engine** per `(db_path, embedder)` inside a process, instead of each opening its own — which matters because every engine runs its own background materializer workers and compactor.
 
-Measured on a 32-logical-CPU box, 6,000 records, 6 providers, idle (sampled only once the materializer had drained). The **engine version matters**, because most of the CPU saving came from working around an engine defect that is now fixed upstream:
+Measured on a 32-logical-CPU box, 6,000 records, 6 providers, idle (sampled only once the materializer had drained, not after a fixed sleep):
 
 | engine | engine per provider (≤ v0.9.2) | shared engine (v0.9.3) |
 |---|---|---|
-| **0.10.0 (current release)** | 152 threads, 31.9% of machine | 52 threads, **3.7% of machine** |
-| **with [engine #113](https://github.com/yantrikos/yantrikdb/issues/113) fixed** | 137 threads, 0.16% of machine | 52 threads, **0.05% of machine** |
+| **0.10.1+** (required) | 137 threads, 0.16% of machine | 52 threads, **0.05% of machine** |
+| 0.10.0 (pre-[#113](https://github.com/yantrikos/yantrikdb/issues/113)) | 152 threads, 31.9% of machine | 52 threads, 3.7% of machine |
 
-On today's engine that's a large CPU win. Once #113 ships the CPU difference largely disappears, and what remains — still worth having — is **~85–100 fewer OS threads**, N× fewer SQLite connections and file handles, and no duplicate embedding-model load per agent (costly on the `sentence-transformers` path).
+On the required engine this is a **resource** win, not a CPU one: **~85 fewer OS threads**, N× fewer SQLite connections and file handles, and no duplicate embedding-model load per agent (costly on the `sentence-transformers` path). The large CPU numbers in the bottom row came from each extra engine multiplying an engine-side defect, fixed in 0.10.1 — which is why v0.9.3 requires it.
 
 Sharing is on by default; set `YANTRIKDB_SHARE_ENGINE=false` to restore per-provider engines. If your agents run in **separate processes** (not just separate sessions), the cache can't span them — point them at one `yantrikdb-server` in HTTP mode instead, which gives the same single-engine benefit across process boundaries.
 
