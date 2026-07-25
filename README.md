@@ -232,12 +232,16 @@ Same plugin, same 8 tools, same hooks, same provider contract — just talks HTT
 
 ### Running several agents on one host
 
-Hermes builds a memory provider per agent/session, and in embedded mode they all resolve to the same database. Since **v0.9.3** they also share **one engine** per `(db_path, embedder)` inside a process, instead of each opening its own — which matters because every engine runs its own background materializer workers and compactor. Measured on a 32-logical-CPU box with 4,000 records, 6 providers, idle:
+Hermes builds a memory provider per agent/session, and in embedded mode they all resolve to the same database. Since **v0.9.3** they also share **one engine** per `(db_path, embedder)` inside a process, instead of each opening its own — which matters because every engine runs its own background materializer workers and compactor.
 
-| | OS threads | idle CPU |
+Measured on a 32-logical-CPU box, 6,000 records, 6 providers, idle (sampled only once the materializer had drained). The **engine version matters**, because most of the CPU saving came from working around an engine defect that is now fixed upstream:
+
+| engine | engine per provider (≤ v0.9.2) | shared engine (v0.9.3) |
 |---|---|---|
-| shared engine (v0.9.3 default) | **52** | **4.5% of machine** |
-| engine per provider (≤ v0.9.2) | 152 | 31.9% of machine |
+| **0.10.0 (current release)** | 152 threads, 31.9% of machine | 52 threads, **3.7% of machine** |
+| **with [engine #113](https://github.com/yantrikos/yantrikdb/issues/113) fixed** | 137 threads, 0.16% of machine | 52 threads, **0.05% of machine** |
+
+On today's engine that's a large CPU win. Once #113 ships the CPU difference largely disappears, and what remains — still worth having — is **~85–100 fewer OS threads**, N× fewer SQLite connections and file handles, and no duplicate embedding-model load per agent (costly on the `sentence-transformers` path).
 
 Sharing is on by default; set `YANTRIKDB_SHARE_ENGINE=false` to restore per-provider engines. If your agents run in **separate processes** (not just separate sessions), the cache can't span them — point them at one `yantrikdb-server` in HTTP mode instead, which gives the same single-engine benefit across process boundaries.
 

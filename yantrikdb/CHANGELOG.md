@@ -10,17 +10,19 @@ Fixes pathological idle CPU on hosts running several agents in embedded mode, re
 Hermes constructs a memory provider per agent/session, and every one resolves to the same database (`$HERMES_HOME/yantrikdb-memory.db` unless `YANTRIKDB_DB_PATH` says otherwise). Before this release each provider opened its **own** engine over that same file, and every engine spawns its own materializer workers plus a compactor — so a host running N agents paid N times for background work on one database, and those workers poll whether or not anything is happening.
 
 - **One engine per (database + embedder), process-wide.** `EmbeddedYantrikDBClient` now reuses an already-open engine instead of constructing a fresh one. The cache key includes the full embedder selection, because the embedder fixes vector dimensionality — configurations that disagree never share a handle. A cache hit is checked *before* embedder materialization, so it also skips re-loading the model on the `model2vec` / `sentence-transformers` paths.
-- **Measured** on a 32-logical-CPU box, 4,000 records, 6 providers, idle (no requests in flight), through the real plugin path against the real engine:
-
-  | | OS threads | idle CPU |
-  |---|---|---|
-  | 6 providers, shared (this release) | **52** | **4.5% of machine** |
-  | 6 providers, engine each (≤0.9.2) | 152 | 31.9% of machine |
-
 - **Opt out** with `YANTRIKDB_SHARE_ENGINE=false` to restore per-provider engines.
 - Cached engines are intentionally never evicted — they mirror process lifetime, matching the previous behaviour where each provider held its engine until interpreter shutdown.
 
-**This is a mitigation, not the root cause.** The dominant term is engine-side: the materializer polls every 100 ms for unapplied operations without an index supporting that query, so each *empty* check scans history — idle cost therefore grows superlinearly with operation count (measured with worker count held constant: 500 records → 1.2% of machine, 2,000 → 4.0%, 6,000 → 35.3%). At sufficient depth it also starves real ingest (`Backpressure: ingest queue full`). Reported upstream to the engine team with the reproduction harness; a single shared engine reduces the multiplier but cannot remove the per-poll scan.
+**Measured** on a 32-logical-CPU box, 6,000 records, 6 providers, idle, sampling gated on the materializer having drained (`oplog WHERE applied = 0` at zero) rather than on a fixed sleep. **The engine revision is part of the result**, because the benefit depends on a defect being fixed upstream:
+
+| engine | 6 providers, engine each (≤0.9.2) | 6 providers, shared (this release) |
+|---|---|---|
+| **0.10.0 (current release)** | 152 threads, 31.9% of machine | 52 threads, **3.7% of machine** |
+| **with [#113](https://github.com/yantrikos/yantrikdb/issues/113) fixed** | 137 threads, 0.16% of machine | 52 threads, **0.05% of machine** |
+
+So on the engine you have **today**, this is a large CPU fix. Once #113 ships it stops being one — the cost it deduplicates becomes nearly free — and the durable benefits are the resource ones: **~85–100 fewer OS threads**, N× fewer SQLite connections and file handles, and no duplicate embedding-model load per agent (the expensive one on the `sentence-transformers` path).
+
+**The CPU symptom is not ours to fix.** The engine's materializer polled every 100 ms for unapplied operations using an index that was declared only in a schema migration and never in the base schema — so every database *created* after that migration never had it, and each poll fell back to walking the whole oplog. Idle cost therefore grew superlinearly with operation count (worker count held constant: 500 records → 1.25% of machine, 2,000 → 4.65%, 6,000 → 34.41%), and at depth it starved real ingest (`Backpressure: ingest queue full`). Reported upstream with a reproduction harness and fixed in engine #113; verified on the patch at 246× lower idle CPU at 6,000 records with backpressure eliminated. A shared engine reduces the multiplier but never removed the per-poll scan.
 
 ## [0.9.2] — 2026-07-19 — Fix embedded package-name collision (issue #50)
 
