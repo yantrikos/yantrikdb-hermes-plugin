@@ -3,6 +3,31 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.10.0] — 2026-07-25 — The install is the product
+
+Two changes, one theme: what you get by running `pip install` should be what the plugin is actually *for*, and it shouldn't cost more context than it's worth.
+
+### The self-directing loop is ON by default
+
+`YANTRIKDB_AUTO_GAP_TASKS` and `YANTRIKDB_SURFACE_AGENDA` now default to **true**. Through v0.9.x they shipped opt-in, which meant the capability this plugin is known for — memory that notices what it can't answer, queues the work, and opens the next session with its own agenda — never ran for anyone who installed it and didn't read the README. The default install was a competent memory store and nothing more.
+
+Both halves were already bounded, which is why turning them on is safe rather than merely bold: new tasks are capped per session (`gap_task_max`, default 3), the agenda block is capped in lines (`agenda_max_items`, default 5), and the gap gate is **demand-aggregated** — a query must recur *and* keep scoring poorly before it becomes a task, so a single low-confidence recall can never mint one. Set either env var to `false` to restore the pre-0.10 behaviour.
+
+### Tool profiles — half the per-turn context
+
+New `YANTRIKDB_TOOL_PROFILE`, defaulting to **`core`**:
+
+| profile | tools | schema bytes | ≈ tokens/turn |
+|---|---|---|---|
+| **`core`** (default) | **7** | 6,900 | **~1,725** |
+| `full` | 18 | 14,426 | ~3,606 |
+
+Tool schemas are re-sent on **every request**, so the surface is a running per-turn tax, not a one-off. At 18 tools this plugin billed ~3.6k tokens/turn — against 2–5 tools for every other Hermes memory provider — and a wide surface also degrades selection, since near-synonymous tools invite the wrong pick.
+
+`core` is `remember` / `recall` / `forget` / `relate` / `conflicts` / `resolve_conflict` / `tasks` — what an agent reaches for mid-conversation, plus the two surfaces that make this substrate different from a vector store. **Nothing is disabled.** The excluded tools cover work that already happens without the model spending a turn on it: `think()` runs automatically at session end, conflicts and hygiene surface in the system prompt, gaps surface in the agenda, and stats/observability/trigger tools are operator diagnostics. They remain fully dispatchable, and `YANTRIKDB_TOOL_PROFILE=full` exposes them all. Skills are orthogonal — `YANTRIKDB_SKILLS_ENABLED=true` surfaces them in either profile, because that flag is itself the opt-in.
+
+A test pins the ratio, so adding a tool to `core` later can't quietly undo the saving.
+
 ## [0.9.3] — 2026-07-25 — Share one embedded engine per database
 
 Cuts per-agent resource cost in embedded mode, and requires the engine release that fixes the idle-CPU defect behind a field report on a Ryzen 9950X3D (16C/32T), where an independent memory-dump audit measured the Hermes backend at **~55% of a 32-logical-processor machine while idle**, with ~600k read ops/sec inside compiled YantrikDB threads.

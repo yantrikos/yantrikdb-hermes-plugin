@@ -920,6 +920,35 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
+# The `core` tool profile (v0.10.0) — what the model sees unless
+# YANTRIKDB_TOOL_PROFILE=full. Chosen as the tools an agent actually reaches
+# for mid-conversation, plus the two that make this substrate different from
+# a vector store (contradiction handling, and the tasks surface that closes
+# the self-directing loop the agenda opens).
+#
+# Deliberately NOT in core, and why none of them lose functionality:
+#   think            — runs automatically on session end
+#   conflicts        — unresolved ones are surfaced in the system prompt
+#   hygiene          — surfaced in the prompt when enabled
+#   knowledge_gaps   — surfaced in the agenda block
+#   recent_turns     — the buffer is written automatically; reading it back
+#                      by hand is a debugging affordance, not a turn action
+#   stats / observability / extraction_stats — operator diagnostics, not
+#                      things a model should spend a turn on
+#   pending_triggers / acknowledge / dismiss / act_on — the trigger queue is
+#                      drained automatically (auto_acknowledge_triggers) or by
+#                      an operator running the full profile
+CORE_TOOL_NAMES: frozenset[str] = frozenset({
+    "yantrikdb_remember",
+    "yantrikdb_recall",
+    "yantrikdb_forget",
+    "yantrikdb_relate",
+    "yantrikdb_conflicts",
+    "yantrikdb_resolve_conflict",
+    "yantrikdb_tasks",
+})
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -2088,13 +2117,28 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # circuits if skills are disabled at call time.
         if self._cron_skipped:
             return []
-        skills_enabled = bool(
-            self._config.skills_enabled if self._config else
-            YantrikDBConfig.load().skills_enabled
-        )
-        if skills_enabled:
-            return list(ALL_TOOL_SCHEMAS)
-        return [s for s in ALL_TOOL_SCHEMAS if not s["name"].startswith("yantrikdb_skill_")]
+        cfg = self._config or YantrikDBConfig.load()
+        schemas = list(ALL_TOOL_SCHEMAS)
+
+        # v0.10.0 — profile. Tool schemas are re-sent on every request, so a
+        # wide surface is a per-turn tax and a selection hazard, not a
+        # capability. `core` exposes what an agent reaches for; everything
+        # else stays reachable via YANTRIKDB_TOOL_PROFILE=full. Skills are
+        # orthogonal: if a user explicitly enabled them they are exposed in
+        # either profile, because that flag *is* the opt-in.
+        if (cfg.tool_profile or "core").strip().lower() != "full":
+            schemas = [
+                s for s in schemas
+                if s["name"] in CORE_TOOL_NAMES
+                or s["name"].startswith("yantrikdb_skill_")
+            ]
+
+        if not cfg.skills_enabled:
+            schemas = [
+                s for s in schemas
+                if not s["name"].startswith("yantrikdb_skill_")
+            ]
+        return schemas
 
     def handle_tool_call(
         self,

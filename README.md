@@ -49,7 +49,18 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 
 ![Self-directing memory loop: gap → task → agenda → learn → close](./assets/demos/self-directing/demo.gif)
 
-The loop no other Hermes memory provider can do — the memory **notices what it doesn't know, queues the work, hands the agent its own agenda, and closes the loop** when the gap is answered. Opt-in (`YANTRIKDB_AUTO_GAP_TASKS`, `YANTRIKDB_SURFACE_AGENDA`); runnable via `python demos/self_directing_memory.py`. Details: **[assets/demos/self-directing/](./assets/demos/self-directing/)**.
+The loop no other Hermes memory provider can do — the memory **notices what it doesn't know, queues the work, hands the agent its own agenda, and closes the loop** when the gap is answered. **On by default since v0.10.0** (it was opt-in through v0.9.x, which meant most installs never saw it); bounded to `gap_task_max` new tasks per session and `agenda_max_items` prompt lines, and gated on *recurring* poorly-answered queries so one weak recall can't mint a task. Disable with `YANTRIKDB_AUTO_GAP_TASKS=false` / `YANTRIKDB_SURFACE_AGENDA=false`. Runnable via `python demos/self_directing_memory.py`. Details: **[assets/demos/self-directing/](./assets/demos/self-directing/)**.
+
+### Context cost
+
+Tool schemas are re-sent on every request, so the tool surface is a per-turn cost. Since v0.10.0 the default profile is `core` — 7 tools, ~1.7k tokens — instead of all 18 (~3.6k):
+
+| `YANTRIKDB_TOOL_PROFILE` | tools | ≈ tokens/turn |
+|---|---|---|
+| `core` (default) | 7 | ~1,725 |
+| `full` | 18 | ~3,606 |
+
+Nothing is disabled by `core`: `think()` runs automatically at session end, conflicts/hygiene/gaps surface in the system prompt, and the remaining tools are operator diagnostics that stay fully callable. Set `full` to expose them to the model.
 
 ## End-to-end demo — substrate growing through the skill lifecycle
 
