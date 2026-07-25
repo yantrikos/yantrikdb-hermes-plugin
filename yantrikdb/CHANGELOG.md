@@ -25,6 +25,23 @@ Note for anyone reading our manifests: the `hooks:` list in `plugin.yaml` is **d
 
 Both halves were already bounded, which is why turning them on is safe rather than merely bold: new tasks are capped per session (`gap_task_max`, default 3), the agenda block is capped in lines (`agenda_max_items`, default 5), and the gap gate is **demand-aggregated** — a query must recur *and* keep scoring poorly before it becomes a task, so a single low-confidence recall can never mint one. Set either env var to `false` to restore the pre-0.10 behaviour.
 
+### Adaptive prompt budget (`on_turn_start`)
+
+Hermes passes `remaining_tokens` on every turn, and no memory provider uses it. Everything this plugin injects — recall hits, skill bodies, conflicts, hygiene, the verbatim buffer, the agenda — competes with the conversation for one window, and memory is most expensive exactly when that window is nearly full. A fixed budget is wrong in both directions: wasteful early, harmful late.
+
+The optional blocks now taper between a high watermark (full injection) and a low one (essentials only). Measured on a live install:
+
+| host signal | scale | injected block |
+|---|---|---|
+| **none** (older Hermes / kwarg omitted) | 1.00 | **1,188 chars — byte-identical to pre-0.10** |
+| ~120k remaining | 1.00 | 1,188 chars |
+| ~20k remaining | 0.29 | 912 chars |
+| ~5k remaining | 0.00 | 716 chars |
+
+Two properties matter more than the taper. **Unknown means unchanged** — absent a signal we behave exactly as before, because guessing "probably tight" would silently degrade hosts that were working fine. And **a live budget never rounds down to zero**: while any budget remains a block keeps at least its most relevant entry, so it degrades visibly instead of vanishing unexplained.
+
+The hook does no backend work; it runs every turn, and a provider that spends the turn's first milliseconds on maintenance is one people disable. Opt out with `YANTRIKDB_ADAPTIVE_PROMPT_BUDGET=false`; tune via `YANTRIKDB_PROMPT_BUDGET_HIGH` / `_LOW`.
+
 ### Tool profiles — half the per-turn context
 
 New `YANTRIKDB_TOOL_PROFILE`, defaulting to **`core`**:
