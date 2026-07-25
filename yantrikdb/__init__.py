@@ -1321,6 +1321,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # the model believe a memory was saved when it was not.
         self._dropped_writes: int = 0
         self._dropped_write_logged: bool = False
+        # v0.10.0 — runtime context from on_turn_start; None until a host
+        # tells us, which is the signal to behave exactly as pre-0.10.
+        self._turn_number: int = 0
+        self._remaining_tokens: int | None = None
 
         self._prefetch_results: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
@@ -3437,7 +3441,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if not conflicts:
             return ""
         lines = ["", "## Pending contradictions in your memory"]
-        for c in conflicts[: self._config.pending_conflicts_max_surfaced]:
+        _cap = self._budgeted(self._config.pending_conflicts_max_surfaced)
+        if _cap <= 0:
+            return ""
+        for c in conflicts[:_cap]:
             cid = c.get("conflict_id") or c.get("rid") or "?"
             a = (c.get("text_a") or c.get("a") or "").strip()
             b = (c.get("text_b") or c.get("b") or "").strip()
@@ -3464,7 +3471,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
         """
         if self._config is None or not self._config.surface_hygiene:
             return ""
-        cap = max(self._config.hygiene_max_surfaced, 1)
+        cap = self._budgeted(max(self._config.hygiene_max_surfaced, 1))
+        if cap <= 0:
+            return ""
         low_use = self._low_usefulness_candidates(limit=cap)
         if not low_use:
             return ""
@@ -3493,7 +3502,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return ""
         if self._client is None or self._conversation_buffer_unavailable:
             return ""
-        limit = max(self._config.conversation_buffer_surface_limit, 1)
+        limit = self._budgeted(max(self._config.conversation_buffer_surface_limit, 1))
+        if limit <= 0:
+            return ""
         try:
             resp = self._client.recent_turns(
                 namespace=self._namespace, limit=limit,
@@ -3529,7 +3540,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return ""
         if self._client is None:
             return ""
-        cap = max(self._config.agenda_max_items, 1)
+        cap = self._budgeted(max(self._config.agenda_max_items, 1))
+        if cap <= 0:
+            return ""
         tasks: list[dict[str, Any]] = []
         gaps: list[dict[str, Any]] = []
         try:
@@ -3867,6 +3880,62 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 f"intent: {intent} | outcome: {outcome}"
             )
         return f"[compression-summary, {n} turns] intent: {intent}"
+
+    def on_turn_start(
+        self, turn_number: int, message: str, **kwargs: Any,
+    ) -> None:
+        """Per-turn tick carrying runtime context (v0.10.0).
+
+        Hermes passes `remaining_tokens`, `model`, `platform`, `tool_count`.
+        We keep `remaining_tokens` so `system_prompt_block` can scale what it
+        injects: memory competes with the conversation for one window, and it
+        is most expensive precisely when that window is nearly full.
+
+        Deliberately does no work of its own — this runs on every turn, and a
+        provider that spends the turn's first milliseconds on maintenance is a
+        provider people disable.
+        """
+        self._turn_number = turn_number
+        remaining = kwargs.get("remaining_tokens")
+        self._remaining_tokens = (
+            int(remaining) if isinstance(remaining, (int, float)) else None
+        )
+
+    def _budget_scale(self) -> float:
+        """How much of the optional prompt budget to use, in [0.0, 1.0].
+
+        1.0 when there is room (or the host didn't say), tapering to 0.0 under
+        the low watermark. Returning 1.0 on unknown is the important default:
+        absent information we behave exactly as before, so this can never make
+        an older host worse.
+        """
+        cfg = self._config
+        if not cfg or not cfg.adaptive_prompt_budget:
+            return 1.0
+        remaining = self._remaining_tokens
+        if remaining is None:
+            return 1.0
+        low = max(cfg.prompt_budget_low_watermark, 0)
+        high = max(cfg.prompt_budget_high_watermark, low + 1)
+        if remaining >= high:
+            return 1.0
+        if remaining <= low:
+            return 0.0
+        return (remaining - low) / (high - low)
+
+    def _budgeted(self, base: int) -> int:
+        """Scale a per-block item cap by the current budget.
+
+        Never rounds a non-zero allowance down to nothing: while any budget
+        remains at least one item survives, so a block that matters degrades
+        to its single most relevant entry rather than vanishing silently.
+        """
+        scale = self._budget_scale()
+        if scale >= 1.0:
+            return base
+        if scale <= 0.0:
+            return 0
+        return max(1, int(base * scale))
 
     def on_delegation(
         self,

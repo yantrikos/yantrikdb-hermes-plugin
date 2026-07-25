@@ -72,6 +72,24 @@ class YantrikDBConfig:
     embedder_model2vec: str = ""    # HF model id for built-in Model2VecEmbedder loader (v0.4.2+); dim auto-probed
     embedder_huggingface: str = ""  # HF model id for built-in SentenceTransformerEmbedder loader (v0.4.2+); dim auto-probed
     embedding_dim: int = 0          # output dim; required for embedder_name and embedder_class paths, ignored for the two auto-probe paths above (bundled potion-2M is dim=64)
+    # adaptive_prompt_budget (v0.10.0): inject less when context is tight.
+    #
+    # Hermes calls on_turn_start(turn, message, **kwargs) every turn and passes
+    # runtime context including `remaining_tokens`. Everything this plugin adds
+    # to the system prompt — recall hits, skill bodies, conflicts, hygiene, the
+    # verbatim buffer, the agenda — competes for the same window as the
+    # conversation itself, and the cost of memory is worst exactly when the
+    # window is nearly full. A fixed budget is therefore wrong in both
+    # directions: wasteful early, harmful late.
+    #
+    # When the host tells us what's left, scale the optional blocks down as the
+    # window fills, and stop injecting extras entirely under the low watermark
+    # so the remaining space belongs to the conversation. When the host says
+    # nothing (older Hermes, or a caller that omits the kwarg) nothing changes —
+    # this is strictly additive, never a guess.
+    adaptive_prompt_budget: bool = True
+    prompt_budget_high_watermark: int = 40000   # above this: full injection
+    prompt_budget_low_watermark: int = 12000    # below this: essentials only
     # capture_delegations (v0.10.0): record what sub-agents did.
     #
     # Hermes delegates work to child agents and calls on_delegation(task,
@@ -332,6 +350,15 @@ class YantrikDBConfig:
             ),
             capture_delegations=_parse_bool(
                 os.environ.get("YANTRIKDB_CAPTURE_DELEGATIONS"), default=True,
+            ),
+            adaptive_prompt_budget=_parse_bool(
+                os.environ.get("YANTRIKDB_ADAPTIVE_PROMPT_BUDGET"), default=True,
+            ),
+            prompt_budget_high_watermark=_parse_int(
+                os.environ.get("YANTRIKDB_PROMPT_BUDGET_HIGH"), 40000,
+            ),
+            prompt_budget_low_watermark=_parse_int(
+                os.environ.get("YANTRIKDB_PROMPT_BUDGET_LOW"), 12000,
             ),
             delegation_max_len=_parse_int(
                 os.environ.get("YANTRIKDB_DELEGATION_MAX_LEN"), 4000,
