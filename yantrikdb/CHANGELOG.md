@@ -3,6 +3,16 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.10.1] — 2026-08-01 — Require the engine release that can't lose recall
+
+Pin raised to **`yantrikdb>=0.11.3`**. No plugin behaviour changes; the full suite passes unmodified against 0.11.3 (376 pass / 3 skip) and every engine method this plugin calls is unchanged.
+
+The floor moves because engine 0.11.3 fixes a defect in the vector index that could **accept a write and then make the record unreachable by every possible query — including a search for its own exact text**. The victim changed on each index build (graph construction seeds from entropy), so the same database could serve a different subset each time it opened. Upstream's summary is blunt about the blast radius: *"Any deployment on an earlier version can be holding memories it cannot return."*
+
+Our previous floor (`>=0.10.1`) allowed a fresh install to resolve to an affected engine, which meant a user could store a memory successfully and later fail to recall it, with nothing anywhere reporting a problem. Raising the floor closes that window rather than documenting it.
+
+**No migration.** The index rebuilds from SQLite on open and the repair runs there, so an affected database heals itself the first time it is opened on 0.11.3. If yours was affected you'll see `vec index rebuild reconnected unreachable nodes` in the logs, and the count is how many records were rescued.
+
 ## [0.10.0] — 2026-07-25 — The install is the product
 
 What you get by running `pip install` should be what the plugin is actually *for*, it shouldn't cost more context than it's worth, and it should use what Hermes actually offers.
