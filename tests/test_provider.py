@@ -246,6 +246,7 @@ EXPECTED_TOOL_NAMES = {
     "yantrikdb_knowledge_gaps",
     "yantrikdb_recent_turns",
     "yantrikdb_tasks",
+    "yantrikdb_packs",
 }
 
 
@@ -254,6 +255,8 @@ class TestToolSchemas:
         # The full profile must still expose every schema — `core` narrows
         # what the model SEES, it never removes a capability.
         monkeypatch.setenv("YANTRIKDB_TOOL_PROFILE", "full")
+        monkeypatch.setenv("YANTRIKDB_SKILLS_ENABLED", "true")
+        monkeypatch.setenv("YANTRIKDB_PACKS_ENABLED", "true")
         provider._config = None  # force re-read from env
         names = {s["name"] for s in provider.get_tool_schemas()}
         assert names == EXPECTED_TOOL_NAMES
@@ -279,9 +282,10 @@ class TestToolSchemas:
         monkeypatch.setenv("YANTRIKDB_TOOL_PROFILE", "full")
         p = provider_module.YantrikDBMemoryProvider()
         names = {s["name"] for s in p.get_tool_schemas()}
+        # Skills and packs follow their own flags, not the profile.
         assert names == EXPECTED_TOOL_NAMES - {
             "yantrikdb_skill_search", "yantrikdb_skill_define",
-            "yantrikdb_skill_outcome",
+            "yantrikdb_skill_outcome", "yantrikdb_packs",
         }
         assert len(names) == 18
 

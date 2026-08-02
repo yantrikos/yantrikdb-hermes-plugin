@@ -888,6 +888,169 @@ class EmbeddedYantrikDBClient:
 
     # -- Knowledge gaps (engine 0.9+) ---------------------------------
 
+    # -- Packs (v0.11.0, engine 0.11.0+) ----------------------------------
+
+    def pack_action(
+        self,
+        action: str,
+        *,
+        path: str | None = None,
+        pack_id: str | None = None,
+        allow_unverified_embedder: bool = False,
+    ) -> dict[str, Any]:
+        """Mount / install / unmount / inspect sealed knowledge packs.
+
+        One method rather than nine because the provider dispatches a single
+        action-based tool, and because these operations share one failure
+        mode worth handling in exactly one place: an engine older than 0.11.0
+        has none of them, which must read as "upgrade" and not as a crash.
+        """
+        db = self._db
+        try:
+            if action == "list":
+                mounted = list(db.mounted_packs() or [])
+                installed = list(db.installed_packs() or [])
+                mounted_ids = {
+                    (p.get("pack_id") if isinstance(p, dict) else str(p))
+                    for p in mounted
+                }
+                # An installed pack missing from `mounted` failed to re-mount
+                # this session — the engine documents this comparison as the
+                # way to notice, so surface it rather than making callers
+                # diff two lists themselves.
+                failed = [
+                    p for p in installed
+                    if (p.get("pack_id") if isinstance(p, dict) else str(p))
+                    not in mounted_ids
+                ]
+                return {
+                    "mounted": mounted,
+                    "installed": installed,
+                    "failed_to_mount": failed,
+                    "pack_dir": db.pack_dir(),
+                }
+            if action == "inspect":
+                if not path:
+                    raise YantrikDBClientError("pack inspect requires `path`")
+                from yantrikdb._yantrikdb_rust import (  # noqa: PLC0415
+                    YantrikDB as _Engine,
+                )
+                return {
+                    "manifest": _Engine.read_pack_manifest(
+                        self._resolve_pack_path(path),
+                    ),
+                }
+            if action in ("mount", "install"):
+                if not path:
+                    raise YantrikDBClientError(f"pack {action} requires `path`")
+                resolved = self._resolve_pack_path(path)
+                if action == "install":
+                    pid = db.install_pack(resolved)
+                else:
+                    pid = db.mount_pack(
+                        resolved,
+                        allow_unverified_embedder=allow_unverified_embedder,
+                    )
+                return {"pack_id": pid, "action": action, "path": resolved}
+            if action in ("unmount", "uninstall"):
+                if not pack_id:
+                    raise YantrikDBClientError(f"pack {action} requires `pack_id`")
+                fn = db.unmount_pack if action == "unmount" else db.uninstall_pack
+                return {"pack_id": pack_id, "action": action, "ok": bool(fn(pack_id))}
+            if action == "unmount_all":
+                return {"unmounted": int(db.unmount_all_packs() or 0)}
+            raise YantrikDBClientError(
+                f"unknown pack action {action!r}; expected list, inspect, mount, "
+                "install, unmount, uninstall, unmount_all",
+            )
+        except AttributeError as e:
+            raise YantrikDBClientError(
+                "packs need yantrikdb>=0.11.0 (embedded). "
+                "Upgrade with: pip install --upgrade 'yantrikdb>=0.11.3'",
+            ) from e
+        except YantrikDBError:
+            raise
+        except Exception as e:  # noqa: BLE001 — engine typed excs vary by version
+            # PackEmbedderMismatch is a REFUSAL, not a failure: the pack's
+            # vectors are provably in a different embedding space, so mounting
+            # it would return confidently wrong results. Keep the engine's own
+            # wording, which explains why forcing it is the wrong instinct.
+            if type(e).__name__ == "PackEmbedderMismatch":
+                raise YantrikDBClientError(f"pack refused: {e}") from e
+            raise _map_engine_error(f"pack {action}", e) from e
+
+    def _resolve_pack_path(self, path: str) -> str:
+        """Absolute path for a pack given a path or a bare filename.
+
+        A bare name is resolved against the engine's pack directory so an
+        agent can say `wordpress-expert-0.2.0.ydbpack` without knowing where
+        the host keeps packs.
+        """
+        p = Path(path).expanduser()
+        if p.is_absolute() or p.exists():
+            return str(p)
+        try:
+            pack_dir = self._db.pack_dir()
+        except AttributeError:
+            pack_dir = None
+        if pack_dir:
+            candidate = Path(pack_dir) / path
+            if candidate.exists():
+                return str(candidate)
+        return str(p)
+
+    def pack_namespaces(self) -> list[str]:
+        """Namespaces holding the records of currently-mounted packs.
+
+        Mounting brings a pack's rules in via ``pack_context()``, but its
+        *records* land in the namespace the author sealed them under — so an
+        agent recalling within its own namespace gets the pack's constitution
+        and none of its knowledge, which is the least useful half. Recall has
+        to be widened to these namespaces for a mount to mean anything.
+
+        ``mounted_packs()`` does not report the namespace, but it does report
+        each pack's ``path``, and the manifest does — so resolve it there
+        rather than recalling unscoped, which would also expose every other
+        namespace in the database.
+        """
+        try:
+            mounted = list(self._db.mounted_packs() or [])
+        except AttributeError:
+            return []
+        except Exception:  # noqa: BLE001 — never break recall over a pack probe
+            return []
+        from yantrikdb._yantrikdb_rust import YantrikDB as _Engine  # noqa: PLC0415
+
+        out: list[str] = []
+        for entry in mounted:
+            if not isinstance(entry, dict):
+                continue
+            path = entry.get("path")
+            if not path:
+                continue
+            try:
+                manifest = _Engine.read_pack_manifest(str(path)) or {}
+            except Exception:  # noqa: BLE001
+                continue
+            ns = manifest.get("namespace")
+            if ns and ns not in out:
+                out.append(str(ns))
+        return out
+
+    def pack_context(self) -> dict[str, Any]:
+        """The engine-assembled context block for all mounted packs.
+
+        Assembled engine-side deliberately so every consumer injects the same
+        text and a pack behaves identically wherever it is mounted; we pass it
+        through verbatim rather than reformatting it.
+        """
+        try:
+            return {"context": self._db.pack_context()}
+        except AttributeError:
+            return {"context": None}
+        except Exception as e:  # noqa: BLE001
+            raise _map_engine_error("pack_context", e) from e
+
     def knowledge_gaps(
         self,
         *,
