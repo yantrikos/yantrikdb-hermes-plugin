@@ -72,6 +72,29 @@ class YantrikDBConfig:
     embedder_model2vec: str = ""    # HF model id for built-in Model2VecEmbedder loader (v0.4.2+); dim auto-probed
     embedder_huggingface: str = ""  # HF model id for built-in SentenceTransformerEmbedder loader (v0.4.2+); dim auto-probed
     embedding_dim: int = 0          # output dim; required for embedder_name and embedder_class paths, ignored for the two auto-probe paths above (bundled potion-2M is dim=64)
+    # packs (v0.11.0): attachable expertise. Engine 0.11.0+.
+    #
+    # A pack is a sealed, signed database of knowledge and rules that a host
+    # mounts to gain and unmounts to give back, leaving the host byte-for-byte
+    # as it was. `mount_pack` is deliberately transient — merely mounting never
+    # writes to your database — while `install_pack` copies it beside the db
+    # and re-mounts on every open.
+    #
+    # OFF by default. This is a new capability that changes what the agent
+    # knows, and mounting somebody else's knowledge is a decision an operator
+    # makes, not a default they discover. Same precedent as skills_enabled.
+    packs_enabled: bool = False
+    # Packs to mount on initialize, comma-separated paths or bare filenames
+    # resolved against the engine's pack directory. Mounted transiently and
+    # unmounted on shutdown, so a session that ends leaves nothing behind.
+    auto_mount_packs: str = ""
+    # `pack_context()` returns each mounted pack's coverage index and
+    # constitution rules — the block the engine wants every consumer to inject
+    # verbatim so packs behave identically everywhere. It goes in the system
+    # prompt, which means it competes with the conversation: cap it, and let
+    # the adaptive budget scale it like every other optional block.
+    surface_pack_context: bool = True
+    pack_context_max_chars: int = 2000
     # adaptive_prompt_budget (v0.10.0): inject less when context is tight.
     #
     # Hermes calls on_turn_start(turn, message, **kwargs) every turn and passes
@@ -350,6 +373,16 @@ class YantrikDBConfig:
             ),
             capture_delegations=_parse_bool(
                 os.environ.get("YANTRIKDB_CAPTURE_DELEGATIONS"), default=True,
+            ),
+            packs_enabled=_parse_bool(
+                os.environ.get("YANTRIKDB_PACKS_ENABLED"), default=False,
+            ),
+            auto_mount_packs=os.environ.get("YANTRIKDB_AUTO_MOUNT_PACKS", ""),
+            surface_pack_context=_parse_bool(
+                os.environ.get("YANTRIKDB_SURFACE_PACK_CONTEXT"), default=True,
+            ),
+            pack_context_max_chars=_parse_int(
+                os.environ.get("YANTRIKDB_PACK_CONTEXT_MAX_CHARS"), 2000,
             ),
             adaptive_prompt_budget=_parse_bool(
                 os.environ.get("YANTRIKDB_ADAPTIVE_PROMPT_BUDGET"), default=True,
@@ -964,6 +997,38 @@ class YantrikDBClient:
     # but answered poorly (avg top score <= max_avg_top_score). Engine-
     # global (not namespace-scoped). HTTP mode depends on yantrikdb-server
     # exposing /v1/knowledge_gaps; older servers 404 → "not available."
+
+    def pack_action(
+        self,
+        action: str,
+        *,
+        path: str | None = None,
+        pack_id: str | None = None,
+        allow_unverified_embedder: bool = False,
+    ) -> dict[str, Any]:
+        """Packs are an embedded-mode capability (v0.11.0).
+
+        A pack is a file mounted into a local database. In http mode the
+        database lives on the server, so mounting is an operator action there,
+        not something a client can do down the wire — yantrikdb-server has no
+        pack endpoints. Refuse clearly instead of pretending: silently
+        returning empty would read as "no packs are mounted", which is a
+        different and misleading claim.
+        """
+        raise YantrikDBClientError(
+            "packs are only available in embedded mode; this session is in "
+            "http mode, where packs are mounted on the server by its operator "
+            "(yantrikdb-server exposes no pack endpoints).",
+        )
+
+    def pack_context(self) -> dict[str, Any]:
+        """No packs over HTTP — see ``pack_action``. ``None`` is honest here:
+        this client has no mounted packs and cannot mount any."""
+        return {"context": None}
+
+    def pack_namespaces(self) -> list[str]:
+        """No packs over HTTP, so nothing to widen recall into."""
+        return []
 
     def knowledge_gaps(
         self,

@@ -844,6 +844,57 @@ RECENT_TURNS_SCHEMA = {
     },
 }
 
+PACKS_SCHEMA = {
+    "name": "yantrikdb_packs",
+    "description": (
+        "v0.11 — attachable expertise. A pack is a sealed, signed knowledge "
+        "file: mount it to gain its knowledge and rules for this session, "
+        "unmount to give them back leaving your own memory byte-for-byte "
+        "unchanged. Use when a task needs domain knowledge you don't have "
+        "(e.g. a framework's conventions) rather than guessing. "
+        "`action=\"list\"` (default) shows mounted + installed packs, and "
+        "flags any installed pack that failed to mount; `inspect` reads a "
+        "pack's manifest WITHOUT mounting it — do this before mounting "
+        "something you haven't used before; `mount` attaches it for this "
+        "session only (never writes to your memory); `install` also copies "
+        "it beside the database so it re-mounts on every future open; "
+        "`unmount` / `uninstall` reverse those. Mounting can be refused when "
+        "a pack's vectors were built in a different embedding space — that "
+        "refusal prevents confidently wrong answers, so report it rather "
+        "than retrying with allow_unverified_embedder."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["list", "inspect", "mount", "install", "unmount",
+                         "uninstall", "unmount_all"],
+                "description": "Defaults to 'list'.",
+            },
+            "path": {
+                "type": "string",
+                "description": (
+                    "Pack file for inspect/mount/install. A bare filename is "
+                    "resolved against the host's pack directory."
+                ),
+            },
+            "pack_id": {
+                "type": "string",
+                "description": "Pack id (`origin@version`) for unmount/uninstall.",
+            },
+            "allow_unverified_embedder": {
+                "type": "boolean",
+                "description": (
+                    "Only for packs whose embedder compatibility is UNPROVEN. "
+                    "Never use it to force past a proven mismatch."
+                ),
+            },
+        },
+        "required": [],
+    },
+}
+
 TASKS_SCHEMA = {
     "name": "yantrikdb_tasks",
     "description": (
@@ -918,6 +969,7 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     KNOWLEDGE_GAPS_SCHEMA,
     RECENT_TURNS_SCHEMA,
     TASKS_SCHEMA,
+    PACKS_SCHEMA,
 ]
 
 
@@ -1325,6 +1377,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # tells us, which is the signal to behave exactly as pre-0.10.
         self._turn_number: int = 0
         self._remaining_tokens: int | None = None
+        # v0.11 — cached pack_context(); invalidated whenever the mounted set
+        # changes, since the block is assembled from it.
+        self._pack_context_cache: str | None = None
+        self._mounted_pack_ids: list[str] = []
+        self._pack_namespace_cache: list[str] | None = None
 
         self._prefetch_results: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
@@ -1621,7 +1678,53 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "YantrikDB health check failed (%s) — will retry on demand.", e,
             )
 
+        self._auto_mount_packs()
+
+    def _auto_mount_packs(self) -> None:
+        """Mount the operator's declared packs for this session (v0.11).
+
+        Uses `mount` rather than `install` on purpose: mounting is transient
+        and never writes to the database, so a session that opens with packs
+        leaves nothing behind when it ends. An operator who wants a pack to
+        persist installs it once, deliberately, via the tool.
+
+        Fail-soft per pack — one unreadable or embedder-mismatched pack must
+        not take down memory for the whole session, and the reason is logged
+        at warning because a pack that silently didn't mount would leave the
+        agent confidently missing knowledge it believes it has.
+        """
+        cfg = self._config
+        if not cfg or not cfg.packs_enabled or not cfg.auto_mount_packs:
+            return
+        if self._client is None:
+            return
+        wanted = [p.strip() for p in cfg.auto_mount_packs.split(",") if p.strip()]
+        for path in wanted:
+            try:
+                resp = self._client.pack_action("mount", path=path)
+                self._mounted_pack_ids.append(str(resp.get("pack_id") or path))
+                logger.info("YantrikDB mounted pack %s", resp.get("pack_id") or path)
+            except YantrikDBError as e:
+                logger.warning("YantrikDB could not mount pack %s: %s", path, e)
+        if self._mounted_pack_ids:
+            self._pack_context_cache = None
+            self._pack_namespace_cache = None
+
     def shutdown(self) -> None:
+        # Give back anything this session mounted, before the client closes.
+        # `unmount` leaves the host database byte-for-byte unchanged, which is
+        # the whole promise of a transient mount — so honouring it on the way
+        # out is not cleanup, it's the contract.
+        if self._mounted_pack_ids and self._client is not None:
+            for pack_id in self._mounted_pack_ids:
+                try:
+                    self._client.pack_action("unmount", pack_id=pack_id)
+                except YantrikDBError as e:
+                    logger.debug("YantrikDB unmount %s failed: %s", pack_id, e)
+            self._mounted_pack_ids = []
+            self._pack_context_cache = None
+            self._pack_namespace_cache = None
+
         for t in (self._prefetch_thread, self._sync_thread):
             if t and t.is_alive():
                 t.join(timeout=_SYNC_JOIN_SECS)
@@ -1735,7 +1838,28 @@ class YantrikDBMemoryProvider(MemoryProvider):
         shared = self._shared_brain_namespace()
         if shared and shared != self._namespace and shared not in namespaces:
             namespaces.append(shared)
+        # v0.11 — a mounted pack's records live in the namespace its author
+        # sealed them under, so without this a mount delivers the pack's rules
+        # and none of its knowledge. Cached because it costs a manifest read
+        # per pack and only changes when the mounted set does.
+        for namespace in self._pack_namespaces():
+            if namespace != self._namespace and namespace not in namespaces:
+                namespaces.append(namespace)
         return namespaces
+
+    def _pack_namespaces(self) -> list[str]:
+        if not (self._config and self._config.packs_enabled):
+            return []
+        if self._client is None:
+            return []
+        if self._pack_namespace_cache is None:
+            try:
+                self._pack_namespace_cache = list(
+                    self._client.pack_namespaces() or [],
+                )
+            except (YantrikDBError, AttributeError):
+                self._pack_namespace_cache = []
+        return self._pack_namespace_cache
 
     def _recall_with_base_fallback(
         self,
@@ -1845,6 +1969,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             + self._format_pending_conflicts_block()
             + self._format_hygiene_block()
             + self._format_conversation_block()
+            + self._format_pack_block()
             + self._format_agenda_block()
         )
 
@@ -2160,13 +2285,20 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 s for s in schemas
                 if s["name"] in CORE_TOOL_NAMES
                 or s["name"].startswith("yantrikdb_skill_")
+                or s["name"] == "yantrikdb_packs"
             ]
 
+        # Skills and packs are orthogonal to the profile: turning either on is
+        # itself the explicit opt-in, so the tool follows the flag rather than
+        # the profile. Enabling packs and then not being able to reach them
+        # because the profile is `core` would be a trap.
         if not cfg.skills_enabled:
             schemas = [
                 s for s in schemas
                 if not s["name"].startswith("yantrikdb_skill_")
             ]
+        if not cfg.packs_enabled:
+            schemas = [s for s in schemas if s["name"] != "yantrikdb_packs"]
         return schemas
 
     def handle_tool_call(
@@ -2218,6 +2350,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_observability(args)
             elif tool_name == "yantrikdb_hygiene":
                 raw = self._do_hygiene(args)
+            elif tool_name == "yantrikdb_packs":
+                raw = self._do_packs(args)
             elif tool_name == "yantrikdb_knowledge_gaps":
                 raw = self._do_knowledge_gaps(args)
             elif tool_name == "yantrikdb_recent_turns":
@@ -2968,6 +3102,58 @@ class YantrikDBMemoryProvider(MemoryProvider):
         "tasks need yantrikdb>=0.9.0 (embedded) or a yantrikdb-server "
         "exposing /v1/tasks — not available in this mode/version."
     )
+
+    def _do_packs(self, args: dict[str, Any]) -> str:
+        """Mount / inspect / install sealed knowledge packs (v0.11)."""
+        client = self._require_client()
+        if not (self._config and self._config.packs_enabled):
+            return tool_error(
+                "packs are disabled. Set YANTRIKDB_PACKS_ENABLED=true to let "
+                "this agent mount knowledge packs.",
+            )
+        action = (args.get("action") or "list").strip().lower()
+        resp = client.pack_action(
+            action,
+            path=(args.get("path") or None),
+            pack_id=(args.get("pack_id") or None),
+            allow_unverified_embedder=bool(
+                args.get("allow_unverified_embedder", False),
+            ),
+        )
+        if action in ("mount", "install", "unmount", "uninstall", "unmount_all"):
+            # The prompt block is built from mounted packs, so it is stale the
+            # moment the set changes.
+            self._pack_context_cache = None
+            self._pack_namespace_cache = None
+        return json.dumps(resp)
+
+    def _format_pack_block(self) -> str:
+        """Inject the engine-assembled context for mounted packs.
+
+        The engine assembles this so every consumer injects identical text and
+        a pack behaves the same wherever it is mounted — so it is passed
+        through verbatim, only truncated. Subject to the adaptive budget like
+        every other optional block: attached expertise is worth nothing if it
+        crowds out the conversation that needed it.
+        """
+        if not (self._config and self._config.packs_enabled
+                and self._config.surface_pack_context):
+            return ""
+        if self._client is None:
+            return ""
+        ctx = self._pack_context_cache
+        if ctx is None:
+            try:
+                ctx = (self._client.pack_context() or {}).get("context")
+            except YantrikDBError:
+                return ""
+            self._pack_context_cache = ctx or ""
+        if not ctx:
+            return ""
+        cap = self._budgeted(max(self._config.pack_context_max_chars, 1))
+        if cap <= 0:
+            return ""
+        return "\n\n## Mounted knowledge packs\n" + truncate_text(str(ctx), cap)
 
     def _do_tasks(self, args: dict[str, Any]) -> str:
         """Durable namespace-scoped task store (action-dispatched)."""

@@ -3,6 +3,21 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.11.0] — 2026-08-02 — Attachable expertise (knowledge packs)
+
+A **pack** is a sealed, signed knowledge file: mount it to gain its knowledge and rules, unmount to give them back leaving your own memory byte-for-byte as it was. Engine 0.11.0 added the primitive; this release makes a Hermes agent able to use it. No other Hermes memory provider can attach expertise.
+
+- **New tool `yantrikdb_packs`** — `list` (mounted + installed, and flags any installed pack that failed to re-mount), `inspect` (read a pack's manifest **without** mounting it), `mount` / `install`, `unmount` / `uninstall` / `unmount_all`. A bare filename resolves against the engine's pack directory, so an agent needn't know where the host keeps packs.
+- **Rules injected into the system prompt.** `pack_context()` — each mounted pack's coverage index and constitution — is assembled *by the engine* so every consumer injects identical text; we pass it through verbatim, capped by `pack_context_max_chars` and scaled by the v0.10 adaptive budget. Attached expertise is worth nothing if it crowds out the conversation that needed it.
+- **Knowledge actually reachable.** A pack's records live in the namespace its author sealed them under, while recall is scoped to the agent's own namespace — so a naive implementation delivers the pack's *rules* and none of its *knowledge*, with every surface still looking healthy. Recall is now widened into the namespaces of mounted packs, resolved precisely from each pack's manifest rather than by recalling unscoped (which would also expose every other namespace in the database).
+- **Auto-mount is transient.** `YANTRIKDB_AUTO_MOUNT_PACKS` mounts on `initialize` and unmounts on `shutdown`, because `mount` never writes to the database and a session that opens with packs should leave nothing behind. `install` — the durable counterpart — stays an explicit, deliberate action. One unreadable or embedder-mismatched pack is logged and skipped rather than taking memory down for the session.
+- **Refusals are reported, not forced.** Mounting is refused when a pack's vectors are provably from a different embedding space; the tool description tells the agent to report that rather than retry with `allow_unverified_embedder`, because the refusal is what prevents confidently wrong answers.
+- **HTTP mode refuses honestly.** Packs are an embedded capability — the database lives on the server there, and `yantrikdb-server` exposes no pack endpoints. The client says so instead of returning an empty list, which would read as "no packs are mounted" — a different and misleading claim.
+
+**Off by default** (`YANTRIKDB_PACKS_ENABLED=true`): mounting somebody else's knowledge is a decision an operator makes, not one they discover. Like skills, the flag is orthogonal to `tool_profile` — enabling packs and then being unable to reach them because the profile is `core` would be a trap.
+
+Verified end-to-end against engine 0.11.3 with a real sealed pack: recall for a pack topic returned **0 hits → mount → 3 hits** with the constitution injected → **unmount → 0 hits** and the block gone. 20 new tests; 396 pass / 3 skip.
+
 ## [0.10.1] — 2026-08-01 — Require the engine release that can't lose recall
 
 Pin raised to **`yantrikdb>=0.11.3`**. No plugin behaviour changes; the full suite passes unmodified against 0.11.3 (376 pass / 3 skip) and every engine method this plugin calls is unchanged.

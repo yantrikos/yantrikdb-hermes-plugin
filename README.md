@@ -51,6 +51,20 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 
 The loop no other Hermes memory provider can do — the memory **notices what it doesn't know, queues the work, hands the agent its own agenda, and closes the loop** when the gap is answered. **On by default since v0.10.0** (it was opt-in through v0.9.x, which meant most installs never saw it); bounded to `gap_task_max` new tasks per session and `agenda_max_items` prompt lines, and gated on *recurring* poorly-answered queries so one weak recall can't mint a task. Disable with `YANTRIKDB_AUTO_GAP_TASKS=false` / `YANTRIKDB_SURFACE_AGENDA=false`. Runnable via `python demos/self_directing_memory.py`. Details: **[assets/demos/self-directing/](./assets/demos/self-directing/)**.
 
+### Attachable expertise — knowledge packs (v0.11.0)
+
+A **pack** is a sealed, signed knowledge file. Mount it to gain its knowledge and rules for a task; unmount to give them back, leaving your own memory byte-for-byte unchanged. No other Hermes memory provider can do this.
+
+```bash
+echo "YANTRIKDB_PACKS_ENABLED=true" >> ~/.hermes/.env
+# optional: mount packs for every session (transient - unmounted on shutdown)
+echo "YANTRIKDB_AUTO_MOUNT_PACKS=wordpress-expert-0.2.0.ydbpack" >> ~/.hermes/.env
+```
+
+The agent drives it with `yantrikdb_packs`: `inspect` a pack's manifest before trusting it, `mount` for the session, `install` to keep it across restarts, `unmount` / `uninstall` to reverse. While mounted, the pack's constitution and coverage are injected into the system prompt (capped, and scaled by the adaptive budget) and **recall reaches the pack's records**, not just its rules.
+
+Mounting is refused when a pack's vectors come from a different embedding space — that refusal is what stops confidently wrong answers, so it's reported rather than forced. Packs are embedded-mode only; in HTTP mode the database lives on the server and packs are the operator's business there.
+
 ### Context cost
 
 Tool schemas are re-sent on every request, so the tool surface is a per-turn cost. Since v0.10.0 the default profile is `core` — 7 tools, ~1.7k tokens — instead of all 18 (~3.6k):
