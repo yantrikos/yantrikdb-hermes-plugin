@@ -3,6 +3,34 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.12.0] — 2026-08-03 — What always-on agents actually needed
+
+Three fixes from researching how Hermes is really used — its community story set (237 entries, 45 of which mention memory), its issue tracker, and the v0.15.1 source. Each closes a gap that looked fine from inside this repo.
+
+### Memory now consolidates mid-session
+
+Consolidation *and* the self-directing gap→task loop both hung off `on_session_end` — which Hermes fires only at **real session boundaries**: CLI exit, `/reset`, gateway session expiry. Never per turn; the source says so explicitly.
+
+The community runs agents continuously: a Raspberry Pi on 24/7, Telegram and Discord gateways, always-on assistants. Those sessions can go hours or days without a boundary — so the substrate's background work **never ran for exactly the deployments accumulating the most to consolidate**, and the self-directing loop we turned on by default in v0.10 sat idle for them. Upstream has asked for this twice under the name "dreaming" ([#10771](https://github.com/NousResearch/hermes-agent/issues/10771), [#25309](https://github.com/NousResearch/hermes-agent/issues/25309)).
+
+The same pass now also runs on a cadence: after `maintenance_cadence_turns` turns (default 40), provided `maintenance_min_interval_seconds` (default 1800) have elapsed. **Both conditions are required** — turns alone would fire during a burst of rapid messages, which is the moment least worth interrupting; elapsed time alone would fire on an idle session with nothing new. It runs in a background thread, never two at once, and never on the turn's critical path. Set `YANTRIKDB_MAINTENANCE_CADENCE_TURNS=0` for the old session-end-only behaviour.
+
+Verified on a live install: with the session never ending, `periodic think` fired at turns 5 and 10 and the gap→task loop ran with it.
+
+### Recalled memory no longer arrives wearing the user's authority
+
+Hermes injects prefetch output into the **current turn's `role: user` message** ([#31584](https://github.com/NousResearch/hermes-agent/issues/31584)), so unlabelled recall is indistinguishable from what the person just typed. That is a correctness problem — the agent "remembers" the user saying things they never said — and a prompt-injection surface, since anything that ever reached memory arrives carrying the user's authority. v0.11's packs sharpened it: third-party pack content could reach the prompt the same way.
+
+Recall is now framed as background reference rather than user speech. The label is deliberately one line — **83 characters, ~20 tokens** — because it is fixed overhead on every turn and v0.10 was spent cutting exactly that kind of cost.
+
+### Per-user isolation is findable by the people who need it
+
+Four upstream issues describe the same pain, [#11430](https://github.com/NousResearch/hermes-agent/issues/11430) most sharply: in group chats a shared memory makes the agent attribute one user's facts and preferences to another, which *"breaks user trust"*.
+
+The plugin has had the fix since v0.4 — `owner_scoping` gives each resolved owner its own namespace — but `hermes memory setup` described it as *"append a stable resolved-owner shard to the namespace… without requiring YantrikDB core provenance columns"*, which is unsearchable by someone whose actual problem is "my agent thinks my wife is me". The setup description now names the symptom, the situations it applies to, and what switching it on changes. (Still off by default: it changes where new memories are written. Existing ones stay readable via `include_base_namespace_recall`.)
+
+12 new tests; 408 pass / 3 skip.
+
 ## [0.11.0] — 2026-08-02 — Attachable expertise (knowledge packs)
 
 A **pack** is a sealed, signed knowledge file: mount it to gain its knowledge and rules, unmount to give them back leaving your own memory byte-for-byte as it was. Engine 0.11.0 added the primitive; this release makes a Hermes agent able to use it. No other Hermes memory provider can attach expertise.

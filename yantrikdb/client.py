@@ -72,6 +72,27 @@ class YantrikDBConfig:
     embedder_model2vec: str = ""    # HF model id for built-in Model2VecEmbedder loader (v0.4.2+); dim auto-probed
     embedder_huggingface: str = ""  # HF model id for built-in SentenceTransformerEmbedder loader (v0.4.2+); dim auto-probed
     embedding_dim: int = 0          # output dim; required for embedder_name and embedder_class paths, ignored for the two auto-probe paths above (bundled potion-2M is dim=64)
+    # maintenance_cadence (v0.12.0): consolidate during long-running sessions.
+    #
+    # Consolidation and the gap→task loop both hang off `on_session_end`, and
+    # Hermes fires that only at REAL session boundaries — CLI exit, `/reset`,
+    # gateway session expiry — explicitly never per turn. For an agent that
+    # runs continuously (a Pi on 24/7, a Telegram or Discord gateway) those
+    # boundaries can be hours or days apart, so the substrate's background work
+    # simply never ran for exactly the deployments that accumulate the most to
+    # consolidate.
+    #
+    # So run the same pass on a cadence too: after `maintenance_cadence_turns`
+    # turns, provided at least `maintenance_min_interval_seconds` have passed.
+    # Both conditions matter — turns alone would fire during a burst of rapid
+    # messages, and time alone would fire on an idle session with nothing new.
+    # Runs in the background, one at a time, and never on the turn's critical
+    # path.
+    #
+    # Set maintenance_cadence_turns=0 to restore pre-0.12 behaviour
+    # (session-end only).
+    maintenance_cadence_turns: int = 40
+    maintenance_min_interval_seconds: int = 1800
     # packs (v0.11.0): attachable expertise. Engine 0.11.0+.
     #
     # A pack is a sealed, signed database of knowledge and rules that a host
@@ -373,6 +394,12 @@ class YantrikDBConfig:
             ),
             capture_delegations=_parse_bool(
                 os.environ.get("YANTRIKDB_CAPTURE_DELEGATIONS"), default=True,
+            ),
+            maintenance_cadence_turns=_parse_int(
+                os.environ.get("YANTRIKDB_MAINTENANCE_CADENCE_TURNS"), 40,
+            ),
+            maintenance_min_interval_seconds=_parse_int(
+                os.environ.get("YANTRIKDB_MAINTENANCE_MIN_INTERVAL_SECONDS"), 1800,
             ),
             packs_enabled=_parse_bool(
                 os.environ.get("YANTRIKDB_PACKS_ENABLED"), default=False,
