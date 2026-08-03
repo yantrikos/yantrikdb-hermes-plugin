@@ -51,6 +51,20 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 
 The loop no other Hermes memory provider can do — the memory **notices what it doesn't know, queues the work, hands the agent its own agenda, and closes the loop** when the gap is answered. **On by default since v0.10.0** (it was opt-in through v0.9.x, which meant most installs never saw it); bounded to `gap_task_max` new tasks per session and `agenda_max_items` prompt lines, and gated on *recurring* poorly-answered queries so one weak recall can't mint a task. Disable with `YANTRIKDB_AUTO_GAP_TASKS=false` / `YANTRIKDB_SURFACE_AGENDA=false`. Runnable via `python demos/self_directing_memory.py`. Details: **[assets/demos/self-directing/](./assets/demos/self-directing/)**.
 
+### Running an agent 24/7
+
+Hermes fires `on_session_end` only at real session boundaries — CLI exit, `/reset`, gateway session expiry. An always-on deployment (a Pi, a Telegram or Discord gateway) can go a long time without one, so since **v0.12.0** consolidation and the self-directing gap-to-task loop also run on a cadence: every `YANTRIKDB_MAINTENANCE_CADENCE_TURNS` turns (default 40) once `YANTRIKDB_MAINTENANCE_MIN_INTERVAL_SECONDS` (default 1800) have passed. Both conditions must hold, it runs in the background, and never two at once. Set the cadence to `0` for session-end only.
+
+### More than one person talking to the agent?
+
+If several people share one agent — a group chat, a family or team bot, a shared gateway — turn on owner scoping so each person gets their own memory namespace and the agent stops attributing one user's facts to another:
+
+```bash
+echo "YANTRIKDB_OWNER_SCOPING=true" >> ~/.hermes/.env
+```
+
+Off by default because it changes where new memories are written; existing ones stay readable (`YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL`, default on).
+
 ### Attachable expertise — knowledge packs (v0.11.0)
 
 A **pack** is a sealed, signed knowledge file. Mount it to gain its knowledge and rules for a task; unmount to give them back, leaving your own memory byte-for-byte unchanged. No other Hermes memory provider can do this.
