@@ -3,6 +3,28 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.12.1] — 2026-08-04 — Bounded dependencies, and engine 0.12.0
+
+### Every dependency now has a ceiling
+
+Both runtime dependencies were unbounded (`yantrikdb>=0.11.3`, `requests>=2.31`), as were the embedder extras. An unbounded `>=` lets a future major **break releases that are already published**: nothing in this repo changes, upstream cuts a new major, a fresh `pip install` resolves into it, and the failure looks like our bug. There is no signal — no CI run, no diff, no notification — because from our side nothing happened.
+
+Not hypothetical. `yantrikdb-mcp` lost their published v0.10.0 exactly this way when the MCP SDK shipped 2.0.0 against `mcp[cli]>=1.2.0`; the release re-shipped itself broken and they flagged it ecosystem-wide. This plugin has also moved its engine floor twice for defects a ceiling would have contained.
+
+Now: `yantrikdb>=0.11.3,<0.13.0`, `requests>=2.31,<3.0.0`, `model2vec>=0.3,<1.0.0`, `sentence-transformers>=2.7,<6.0.0`. New `tests/test_dependency_pins.py` enforces it — including that both `plugin.yaml` manifests match `pyproject.toml`, since a ceiling present in one install path and absent in the other protects only half the users. **A ceiling is a claim about tested ground**; raise one only after running the suite against the new major, which is what happened here.
+
+**On the MCP SDK specifically:** this plugin does not use it. Verified by grep across all shipped code and both manifests — the plugin talks to Hermes through its `MemoryProvider` interface, not MCP, so the 2.0.0 breakage cannot reach it.
+
+### Engine 0.12.0 verified, ceiling set to admit it
+
+Full suite passes **unmodified** against 0.12.0 (417 pass / 3 skip), and recall still returns every field the plugin reads.
+
+0.12.0 also **closes an API gap this plugin reported**: recall results now carry `metadata` (plus `namespace`, `source`, `current_status`, `superseded_by`). Provenance stamps were previously write-only on the path agents actually use — readable via `list_records`, absent from `recall`.
+
+### Knowledge-pack hits are marked in recalled memory
+
+Now that recall reports `namespace`, a hit that came from a mounted pack is labelled *"from a knowledge pack — third-party, not your memory"*. Since v0.11 a pack's records are recallable alongside the agent's own, and rendered as identical bullets the agent could not tell a stranger's claim from something the user told it — the same conflation v0.12.0 fixed at the block level, one layer deeper. Nothing is labelled when no pack is mounted, so the distinction costs no tokens where it cannot apply.
+
 ## [0.12.0] — 2026-08-03 — What always-on agents actually needed
 
 Three fixes from researching how Hermes is really used — its community story set (237 entries, 45 of which mention memory), its issue tracker, and the v0.15.1 source. Each closes a gap that looked fine from inside this repo.

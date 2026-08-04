@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yantrikdb-hermes-plugin"
-version = "0.12.0"
+version = "0.12.1"
 description = "Self-maintaining memory plugin for Hermes Agent — embedded YantrikDB engine, ~10 MB, no server, no token, no GPU. Canonicalizes duplicates, surfaces contradictions, ranks with recency awareness, and explains recall."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -34,9 +34,16 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+# Every runtime dependency carries an UPPER BOUND. An unbounded `>=` lets a
+# future major silently break releases that are already published: nothing in
+# this repo changes, upstream cuts a new major, and a fresh `pip install`
+# resolves into it. The failure looks like our bug and arrives without warning.
+# yantrikdb-mcp lost their published v0.10.0 exactly this way when the MCP SDK
+# shipped 2.0.0 against an unbounded pin. tests/test_dependency_pins.py enforces
+# this; raise a ceiling only after testing against the new major.
 dependencies = [
-  "yantrikdb>=0.11.3",
-  "requests>=2.31",
+  "yantrikdb>=0.11.3,<0.13.0",
+  "requests>=2.31,<3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -53,10 +60,10 @@ dev = [
 # for the broader HF ecosystem). Both can be installed together if you
 # want to A/B different embedders without uninstalling.
 model2vec = [
-  "model2vec>=0.3",
+  "model2vec>=0.3,<1.0.0",
 ]
 sentence-transformers = [
-  "sentence-transformers>=2.7",
+  "sentence-transformers>=2.7,<6.0.0",
 ]
 
 [project.urls]

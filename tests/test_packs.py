@@ -238,3 +238,34 @@ class TestHttpModeIsHonest:
         with pytest.raises(client_module.YantrikDBClientError, match="embedded"):
             c.pack_action("list")
         assert c.pack_context()["context"] is None
+
+
+class TestPackHitsAreMarkedInRecall:
+    """A pack's records are recallable alongside the agent's own memories
+    (v0.11). Rendered as identical bullets, the agent cannot tell a stranger's
+    claim from something the user told it — the same conflation v0.12 fixed at
+    the block level, one layer deeper. Engine 0.12.0 returning `namespace` on
+    recall hits is what makes the distinction possible.
+    """
+
+    def test_pack_sourced_hit_is_labelled(self, provider_module):
+        block = provider_module._format_recall_block(
+            [{"text": "Prefer block themes.", "score": 0.9, "namespace": "wp"}],
+            third_party_namespaces=("wp",),
+        )
+        assert "third-party" in block.lower()
+
+    def test_own_memory_is_not_labelled(self, provider_module):
+        block = provider_module._format_recall_block(
+            [{"text": "The user prefers dark mode.", "score": 0.9,
+              "namespace": "hermes:ws:coder"}],
+            third_party_namespaces=("wp",),
+        )
+        assert "third-party" not in block.lower()
+
+    def test_no_labelling_without_mounted_packs(self, provider_module):
+        """Never spend prompt tokens on a distinction that cannot apply."""
+        block = provider_module._format_recall_block(
+            [{"text": "x", "score": 0.9, "namespace": "wp"}],
+        )
+        assert "third-party" not in block.lower()

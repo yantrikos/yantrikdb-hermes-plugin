@@ -4,7 +4,7 @@
 [![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.11.3-orange)](https://github.com/yantrikos/yantrikdb-server)
+[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.11.3,%3C0.13-orange)](https://github.com/yantrikos/yantrikdb-server)
 [![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)
