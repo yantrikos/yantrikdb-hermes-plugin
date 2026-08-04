@@ -6,6 +6,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+venv*/   # stray probe venvs (venv113x etc) must never be committed
 env/
 *.egg-info/
 dist/

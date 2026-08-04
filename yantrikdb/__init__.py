@@ -1201,8 +1201,22 @@ def _derive_namespace(base: str, kwargs: dict[str, Any]) -> str:
     return ":".join(parts)
 
 
-def _format_recall_block(results: list[dict[str, Any]], limit: int = 8) -> str:
-    """Markdown bullet list of recalled memories for prompt injection."""
+def _format_recall_block(
+    results: list[dict[str, Any]],
+    limit: int = 8,
+    *,
+    third_party_namespaces: tuple[str, ...] = (),
+) -> str:
+    """Markdown bullet list of recalled memories for prompt injection.
+
+    Hits that came from a mounted knowledge pack are marked. Since v0.11 a
+    pack's records are recallable alongside the agent's own memories, and once
+    both are rendered as plain bullets the agent cannot tell a stranger's
+    claim from something the user told it — which is the same conflation
+    v0.12 fixed at the block level, one layer further in. Engine 0.12.0
+    returning `namespace` on recall hits is what makes the distinction
+    available at all.
+    """
     if not results:
         return ""
     lines: list[str] = []
@@ -1212,7 +1226,10 @@ def _format_recall_block(results: list[dict[str, Any]], limit: int = 8) -> str:
             continue
         score = r.get("score")
         tag = f" _(score {score:.2f})_" if isinstance(score, (int, float)) else ""
-        lines.append(f"- {text}{tag}")
+        origin = ""
+        if third_party_namespaces and r.get("namespace") in third_party_namespaces:
+            origin = " _(from a knowledge pack — third-party, not your memory)_"
+        lines.append(f"- {text}{tag}{origin}")
     return "\n".join(lines)
 
 
@@ -2037,7 +2054,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
                         r for r in results
                         if (r.get("score") or 0.0) >= cfg.auto_recall_min_score
                     ]
-                block = _format_recall_block(results, limit=5)
+                block = _format_recall_block(
+                    results, limit=5,
+                    third_party_namespaces=tuple(self._pack_namespaces()),
+                )
                 if block and cfg is not None:
                     # Rough token cap: ~4 chars per token.
                     char_cap = cfg.auto_recall_token_budget * 4
