@@ -220,6 +220,8 @@ def _clean_yantrikdb_env(monkeypatch):
         "YANTRIKDB_SURFACE_AGENDA",
         "YANTRIKDB_AGENDA_MAX_ITEMS",
         "YANTRIKDB_TOOL_PROFILE",
+        "YANTRIKDB_FLEET_VIEW",
+        "YANTRIKDB_PACKS_ENABLED",
         "YANTRIKDB_SHARE_ENGINE",
     ):
         monkeypatch.delenv(var, raising=False)

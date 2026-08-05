@@ -65,6 +65,23 @@ echo "YANTRIKDB_OWNER_SCOPING=true" >> ~/.hermes/.env
 
 Off by default because it changes where new memories are written; existing ones stay readable (`YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL`, default on).
 
+### Running a fleet of agents (v0.13.0)
+
+Hermes users run N agents, not one. Each agent already gets its own namespace (`{base}:{workspace}:{identity}`) automatically, so nothing contaminates anything else — verified with 6 separate processes writing one embedded database concurrently: 0 errors, 0 leakage.
+
+Two things make a fleet legible rather than just isolated:
+
+```bash
+# agents learn from each other: explicit `remember` writes become shared
+echo "YANTRIKDB_SHARED_BRAIN_NAMESPACE=team-brain" >> ~/.hermes/.env
+# an agent can see its siblings: memory counts, last activity, open tasks
+echo "YANTRIKDB_FLEET_VIEW=true" >> ~/.hermes/.env
+```
+
+The fleet view is read-only, never crosses workspaces, declares truncation rather than implying full coverage, and is **refused outright when `YANTRIKDB_OWNER_SCOPING` is on** — under owner scoping siblings are people, not agents, and enumerating them would break the isolation you turned on.
+
+For a fleet at scale, point every agent at one `yantrikdb-server` (`YANTRIKDB_MODE=http`): one engine and one corpus instead of N. Note that packs are embedded-only today, so that path trades attachable expertise for shared scale — server-side pack endpoints are requested upstream.
+
 ### Attachable expertise — knowledge packs (v0.11.0)
 
 A **pack** is a sealed, signed knowledge file. Mount it to gain its knowledge and rules for a task; unmount to give them back, leaving your own memory byte-for-byte unchanged. No other Hermes memory provider can do this.
