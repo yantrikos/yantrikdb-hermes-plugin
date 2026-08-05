@@ -247,6 +247,7 @@ EXPECTED_TOOL_NAMES = {
     "yantrikdb_recent_turns",
     "yantrikdb_tasks",
     "yantrikdb_packs",
+    "yantrikdb_fleet",
 }
 
 
@@ -257,6 +258,7 @@ class TestToolSchemas:
         monkeypatch.setenv("YANTRIKDB_TOOL_PROFILE", "full")
         monkeypatch.setenv("YANTRIKDB_SKILLS_ENABLED", "true")
         monkeypatch.setenv("YANTRIKDB_PACKS_ENABLED", "true")
+        monkeypatch.setenv("YANTRIKDB_FLEET_VIEW", "true")
         provider._config = None  # force re-read from env
         names = {s["name"] for s in provider.get_tool_schemas()}
         assert names == EXPECTED_TOOL_NAMES
@@ -285,7 +287,7 @@ class TestToolSchemas:
         # Skills and packs follow their own flags, not the profile.
         assert names == EXPECTED_TOOL_NAMES - {
             "yantrikdb_skill_search", "yantrikdb_skill_define",
-            "yantrikdb_skill_outcome", "yantrikdb_packs",
+            "yantrikdb_skill_outcome", "yantrikdb_packs", "yantrikdb_fleet",
         }
         assert len(names) == 18
 

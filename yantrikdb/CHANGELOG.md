@@ -3,6 +3,34 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.13.0] — 2026-08-05 — Built for fleets, not single agents
+
+Hermes users run **N agents**, not one. This release makes the plugin legible to an operator running twenty of them.
+
+### The fleet was already isolated — and invisible
+
+Each agent gets `{base}:{workspace}:{identity}` automatically, so nothing contaminates anything else. Verified under real load: **6 separate processes writing one embedded database, 720 concurrent writes — 0 errors, 0 backpressure, 0 namespace leakage**, each agent reading only its own memories.
+
+But that isolation meant every surface here was single-agent. An operator could not ask *"what is my fleet working on"*, *"which agent is stuck"*, or *"has another agent already learned this"*.
+
+**New `yantrikdb_fleet` tool** (opt-in, `YANTRIKDB_FLEET_VIEW=true`) reports each sibling agent's memory count, last activity, and open task count — read-only.
+
+Its boundaries matter more than its output, so they are the tests:
+- **Refused entirely when `owner_scoping` is on.** Under owner scoping sibling namespaces are *people*, not agents; a "fleet overview" that quietly enumerated a user's family would be the exact identity-contamination failure that scoping exists to prevent.
+- **Never crosses workspaces** — siblings are agents of the same `{base}:{workspace}`, not everything sharing a tenant prefix.
+- **Truncation is declared.** A capped scan reporting itself as complete would be a silent lie about coverage.
+- **An unreachable sibling reads as unknown, never as zero open tasks.**
+
+### Cross-agent learning is findable now
+
+`shared_brain_namespace` has existed since v0.5 — set it and what one agent is explicitly told to remember becomes recallable by all of them, tagged with which agent contributed. It was in no config schema at all, so `hermes memory setup` never mentioned it and an operator running a fleet would never discover it existed. Both it and the fleet view are now described in `hermes memory setup` by the problem they solve.
+
+### Known gap, raised upstream
+
+Packs are embedded-only, so the fleet's best deployment (one shared `yantrikdb-server`, agents isolated by namespace) currently **cannot mount a pack** — an operator picks isolation-and-scale or attachable expertise, never both. That needs pack endpoints on the server; requested from the engine team with the surface and the two design constraints that matter.
+
+8 new tests; 427 pass / 3 skip.
+
 ## [0.12.2] — 2026-08-04 — Recalibrate the gap threshold for engine 0.12.1
 
 Engine 0.12.1 changed how recall scores are composed, and one of our defaults silently inverted because of it. Nothing crashed, no test failed, and the whole suite stayed green — every test asserted *behaviour*, none asserted *calibration*.

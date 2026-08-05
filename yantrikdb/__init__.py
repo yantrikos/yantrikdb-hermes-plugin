@@ -844,6 +844,20 @@ RECENT_TURNS_SCHEMA = {
     },
 }
 
+FLEET_SCHEMA = {
+    "name": "yantrikdb_fleet",
+    "description": (
+        "v0.13 — see the OTHER agents sharing this workspace, not just "
+        "yourself. Each agent owns its own memory namespace, so nothing here "
+        "is visible by default; this reports, per sibling agent, how many "
+        "memories it holds, when it was last active, and how many open tasks "
+        "it has. Use it to answer 'has another agent already worked on this?' "
+        "or 'which of my agents is stuck?' before duplicating effort. Read-"
+        "only, and never available when per-user scoping is on."
+    ),
+    "input_schema": {"type": "object", "properties": {}, "required": []},
+}
+
 PACKS_SCHEMA = {
     "name": "yantrikdb_packs",
     "description": (
@@ -970,6 +984,7 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     RECENT_TURNS_SCHEMA,
     TASKS_SCHEMA,
     PACKS_SCHEMA,
+    FLEET_SCHEMA,
 ]
 
 
@@ -1561,6 +1576,34 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "description": "Default max results for recall.",
                 "default": "10",
                 "env_var": "YANTRIKDB_TOP_K",
+            },
+            {
+                "key": "shared_brain_namespace",
+                "description": (
+                    "Running SEVERAL AGENTS? Set this to a shared namespace "
+                    "(e.g. 'team-brain') and what one agent is explicitly told "
+                    "to remember becomes recallable by all of them — your "
+                    "coding agent learns a preference, your chat agent knows "
+                    "it. Each agent keeps its own private memory as well; only "
+                    "explicit `remember` writes are shared, tagged with which "
+                    "agent contributed. Empty (default) = every agent is an "
+                    "island."
+                ),
+                "default": "",
+                "env_var": "YANTRIKDB_SHARED_BRAIN_NAMESPACE",
+            },
+            {
+                "key": "fleet_view",
+                "description": (
+                    "Running several agents and want to SEE across them? Adds "
+                    "a read-only `yantrikdb_fleet` tool reporting each sibling "
+                    "agent's memory count, last activity and open tasks — so "
+                    "an agent can check whether another already did the work. "
+                    "Off by default, and refused entirely when owner_scoping "
+                    "is on, since siblings are people there rather than agents."
+                ),
+                "default": "false",
+                "env_var": "YANTRIKDB_FLEET_VIEW",
             },
             {
                 "key": "owner_scoping",
@@ -2329,7 +2372,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 s for s in schemas
                 if s["name"] in CORE_TOOL_NAMES
                 or s["name"].startswith("yantrikdb_skill_")
-                or s["name"] == "yantrikdb_packs"
+                or s["name"] in ("yantrikdb_packs", "yantrikdb_fleet")
             ]
 
         # Skills and packs are orthogonal to the profile: turning either on is
@@ -2343,6 +2386,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
             ]
         if not cfg.packs_enabled:
             schemas = [s for s in schemas if s["name"] != "yantrikdb_packs"]
+        if not cfg.fleet_view_enabled:
+            schemas = [s for s in schemas if s["name"] != "yantrikdb_fleet"]
         return schemas
 
     def handle_tool_call(
@@ -2396,6 +2441,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_hygiene(args)
             elif tool_name == "yantrikdb_packs":
                 raw = self._do_packs(args)
+            elif tool_name == "yantrikdb_fleet":
+                raw = self._do_fleet(args)
             elif tool_name == "yantrikdb_knowledge_gaps":
                 raw = self._do_knowledge_gaps(args)
             elif tool_name == "yantrikdb_recent_turns":
@@ -3146,6 +3193,84 @@ class YantrikDBMemoryProvider(MemoryProvider):
         "tasks need yantrikdb>=0.9.0 (embedded) or a yantrikdb-server "
         "exposing /v1/tasks — not available in this mode/version."
     )
+
+    def _do_fleet(self, args: dict[str, Any]) -> str:
+        """What the whole fleet knows and is stuck on (v0.13).
+
+        Every other surface here is single-agent by design — each agent owns
+        `{base}:{workspace}:{identity}`. That isolation is right, but it leaves
+        an operator running twenty agents with no way to see across them.
+        """
+        client = self._require_client()
+        cfg = self._config
+        if not cfg or not cfg.fleet_view_enabled:
+            return tool_error(
+                "fleet view is disabled. Set YANTRIKDB_FLEET_VIEW=true to let "
+                "this agent see its sibling agents' namespaces.",
+            )
+        if cfg.owner_scoping:
+            # Under owner scoping, siblings are PEOPLE. Enumerating them would
+            # be the identity-contamination failure that scoping exists to
+            # prevent — refuse rather than quietly hand one user a summary of
+            # everyone else's memory.
+            return tool_error(
+                "fleet view is unavailable while owner_scoping is on: sibling "
+                "namespaces are other people there, not other agents, and "
+                "listing them would break the isolation you enabled.",
+            )
+
+        prefix = self._fleet_prefix()
+        if not prefix:
+            return tool_error(
+                "cannot determine this agent's fleet: no workspace in the "
+                "namespace. Pass agent_workspace when initializing.",
+            )
+        resp = client.list_records(limit=max(cfg.fleet_scan_limit, 1))
+        records = (resp.get("records") if isinstance(resp, dict) else resp) or []
+
+        agents: dict[str, dict[str, Any]] = {}
+        for r in records:
+            ns = (r.get("namespace") or "").strip()
+            if not ns.startswith(prefix) or ns == self._namespace:
+                continue
+            entry = agents.setdefault(ns, {"namespace": ns, "memories": 0,
+                                           "last_seen": None, "open_tasks": None})
+            entry["memories"] += 1
+            ts = r.get("created_at")
+            if ts and (entry["last_seen"] is None or ts > entry["last_seen"]):
+                entry["last_seen"] = ts
+
+        # Open tasks are the "what is it stuck on" half, and they live per
+        # namespace — so they need one call each rather than falling out of the
+        # scan. Fail-soft per agent: one unreachable sibling must not blank the
+        # whole overview.
+        for ns, entry in agents.items():
+            try:
+                listed = client.task_list(namespace=ns, status="open")
+                tasks = (listed.get("tasks") if isinstance(listed, dict) else listed) or []
+                entry["open_tasks"] = len(tasks)
+            except (YantrikDBError, AttributeError):
+                entry["open_tasks"] = None
+
+        return json.dumps({
+            "fleet_prefix": prefix,
+            "this_agent": self._namespace,
+            "sibling_agents": sorted(agents.values(),
+                                     key=lambda a: -(a["memories"] or 0)),
+            "scanned_records": len(records),
+            "truncated": len(records) >= max(cfg.fleet_scan_limit, 1),
+        })
+
+    def _fleet_prefix(self) -> str:
+        """`{base}:{workspace}:` — siblings are agents of the same workspace.
+
+        Deliberately not `{base}:`, which would reach across workspaces into
+        deployments that merely share a tenant prefix.
+        """
+        parts = (self._namespace or "").split(":")
+        if len(parts) < 2 or not parts[1]:
+            return ""
+        return f"{parts[0]}:{parts[1]}:"
 
     def _do_packs(self, args: dict[str, Any]) -> str:
         """Mount / inspect / install sealed knowledge packs (v0.11)."""

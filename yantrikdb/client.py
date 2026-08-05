@@ -93,6 +93,24 @@ class YantrikDBConfig:
     # (session-end only).
     maintenance_cadence_turns: int = 40
     maintenance_min_interval_seconds: int = 1800
+    # fleet_view (v0.13.0): see the whole fleet, not just this agent.
+    #
+    # Hermes users run N agents, not one. Each gets its own namespace
+    # ({base}:{workspace}:{identity}) so nothing contaminates anything else —
+    # but that also means every surface this plugin offers is single-agent.
+    # An operator running twenty agents has no way to ask "what is my fleet
+    # working on", "which agent is stuck", or "has anyone already learned
+    # this". The isolation is right; the missing thing is a view ACROSS it.
+    #
+    # OFF by default, and deliberately: reading sibling namespaces crosses the
+    # boundary this plugin otherwise defends, so it is an operator's decision.
+    # It also REFUSES to run when owner_scoping is on — under owner scoping
+    # sibling namespaces are other PEOPLE, not other agents, and a "fleet
+    # overview" that quietly enumerates a user's family members would be the
+    # exact identity-contamination failure the scoping exists to prevent.
+    fleet_view_enabled: bool = False
+    # Records scanned per overview. The scan is the cost, so bound it.
+    fleet_scan_limit: int = 400
     # packs (v0.11.0): attachable expertise. Engine 0.11.0+.
     #
     # A pack is a sealed, signed database of knowledge and rules that a host
@@ -417,6 +435,12 @@ class YantrikDBConfig:
             ),
             maintenance_min_interval_seconds=_parse_int(
                 os.environ.get("YANTRIKDB_MAINTENANCE_MIN_INTERVAL_SECONDS"), 1800,
+            ),
+            fleet_view_enabled=_parse_bool(
+                os.environ.get("YANTRIKDB_FLEET_VIEW"), default=False,
+            ),
+            fleet_scan_limit=_parse_int(
+                os.environ.get("YANTRIKDB_FLEET_SCAN_LIMIT"), 400,
             ),
             packs_enabled=_parse_bool(
                 os.environ.get("YANTRIKDB_PACKS_ENABLED"), default=False,
