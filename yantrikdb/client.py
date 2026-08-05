@@ -361,12 +361,29 @@ class YantrikDBConfig:
     auto_gap_tasks: bool = True
     gap_task_max: int = 3            # cap new gap-tasks created per session
     gap_task_min_count: int = 3      # a gap must recur >= this to become a task
-    # Max average top recall score for a query to count as a "gap". The
-    # engine default is 0.4; that's strict for the bundled dim-64 potion-2M
-    # (unanswered queries still score ~0.5-0.6), so the plugin default is a
-    # touch more lenient. Tune per embedder: larger models separate better,
-    # so a lower value avoids false-positive gaps.
-    gap_max_avg_top_score: float = 0.5
+    # Max average top recall score for a query to count as a "gap".
+    #
+    # RECALIBRATED in v0.12.2 for engine 0.12.1, which changed how scores are
+    # composed: recency used to ADD up to +0.5 to every fresh record, and now
+    # MULTIPLIES relevance bounded to +12.5%. Retrieval got better (benchmark
+    # MRR 0.928 -> 0.946) but absolute scores roughly halved — avg-top3 median
+    # 1.138 -> 0.510 on the same corpus. The old 0.5 default flagged 0/37
+    # benchmark queries as gaps on 0.11.3 and **17/37 on 0.12.1**, so the
+    # self-directing loop (on by default since v0.10) would have minted tasks
+    # for questions the memory answers correctly at rank 1.
+    #
+    # 0.30 is measured, not guessed: on 0.12.1 it flags 0/37 well-answered
+    # queries while still catching genuinely unanswerable ones. The two
+    # distributions overlap (answered min 0.320, unanswerable max 0.441), so
+    # no threshold separates them cleanly — this errs toward missing a gap
+    # rather than inventing one, because a missed gap costs nothing visible
+    # while a false task costs the user's attention and trust. The recurrence
+    # requirement (gap_task_min_count) is the second filter behind it.
+    #
+    # tests/test_gap_calibration.py re-measures this against the benchmark
+    # corpus, so the next scoring change fails loudly instead of silently
+    # filling somebody's agenda.
+    gap_max_avg_top_score: float = 0.30
     # surface_agenda: prepend a compact "## Your memory's agenda" block to
     # system_prompt_block — top open tasks + unresolved knowledge gaps — so
     # every session opens with what the memory still needs.
@@ -512,7 +529,7 @@ class YantrikDBConfig:
                 os.environ.get("YANTRIKDB_GAP_TASK_MIN_COUNT"), 3,
             ),
             gap_max_avg_top_score=_parse_float(
-                os.environ.get("YANTRIKDB_GAP_MAX_AVG_TOP_SCORE"), 0.5,
+                os.environ.get("YANTRIKDB_GAP_MAX_AVG_TOP_SCORE"), 0.30,
             ),
             surface_agenda=_parse_bool(
                 os.environ.get("YANTRIKDB_SURFACE_AGENDA"), default=True,

@@ -3,6 +3,22 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.12.2] — 2026-08-04 — Recalibrate the gap threshold for engine 0.12.1
+
+Engine 0.12.1 changed how recall scores are composed, and one of our defaults silently inverted because of it. Nothing crashed, no test failed, and the whole suite stayed green — every test asserted *behaviour*, none asserted *calibration*.
+
+**What changed upstream.** Recency used to **add** up to +0.5 to every fresh record; it now **multiplies** relevance, bounded to +12.5%. Retrieval got better — on our benchmark corpus MRR rose 0.928 → 0.946 and recall@1 0.865 → 0.892 — but absolute scores roughly halved: avg-top-3 median **1.138 → 0.510**.
+
+**Why that mattered here.** `gap_max_avg_top_score` is an absolute score, so it only means what it meant while the engine composes scores the same way. Measured on the same corpus, the old 0.5 default flagged **0/37 queries as knowledge gaps on 0.11.3 and 17/37 on 0.12.1** — and the self-directing loop has been on by default since v0.10. A user upgrading their engine would have found an agenda filling up with "resolve knowledge gap" tasks for questions their memory answers correctly at rank 1.
+
+**The new default is measured, not guessed.** 0.30 flags 0/37 well-answered queries while still catching genuinely unanswerable ones. The distributions overlap (answered min 0.320, unanswerable max 0.441), so no threshold separates them cleanly; this errs toward missing a gap rather than inventing one, because a missed gap costs nothing visible while a false task costs the user's attention. The recurrence requirement (`gap_task_min_count`, default 3) remains the second filter behind it.
+
+**`auto_recall_min_score` was left at 0.4** — deliberately. The obvious move was to scale it down with everything else, but measuring said no: at 0.4 it drops 0/37 relevant hits, and lowering it only admits more noise.
+
+**Engine floor raised to `>=0.12.1`.** One absolute threshold cannot serve both scoring scales — 0.30 would go nearly silent on 0.11.3, and 0.5 mints junk on 0.12.1. Rather than ship a default that is wrong on one of them, the floor moves to the line the calibration was measured against.
+
+New `tests/test_gap_calibration.py` re-measures the default against the benchmark corpus and fails if it starts flagging answerable questions as gaps. Verified it rejects the old value (46% → FAIL) and accepts the new one (0% → pass), because a guard that cannot fail is not a guard.
+
 ## [0.12.1] — 2026-08-04 — Bounded dependencies, and engine 0.12.0
 
 ### Every dependency now has a ceiling
