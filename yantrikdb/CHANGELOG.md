@@ -3,6 +3,36 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.14.0] — 2026-08-05 — Standing rules that belong to the operator
+
+Until now exactly one channel in this plugin carried always-injected **rules** rather than facts: a knowledge pack's constitution. Which meant **a third party could install standing rules into someone's agent and the person who owns it could not.** That asymmetry was the wrong way round.
+
+### `yantrikdb-constitution.md`
+
+Write your rules in a markdown file — `$HERMES_HOME/yantrikdb-constitution.md`, or set `YANTRIKDB_CONSTITUTION_PATH`:
+
+```markdown
+- Never run destructive commands without asking.
+- Answer in British English.
+- Never reveal internal hostnames.
+```
+
+They are injected **first**, and stated to outrank recalled memory, mounted packs, and everything else in the prompt.
+
+### Four properties that make it a guardrail rather than another block
+
+- **It never yields to the adaptive budget.** Every other injected block scales down as the context window fills; this one is bounded but never shrunk. A nearly-full window is exactly when an agent starts cutting corners, and a rule that disappears under pressure was never a rule.
+- **It survives an unavailable backend.** Writing the tests caught a real bug here: the memory-unavailable path returned early, so rules vanished precisely when memory was broken. Fixed — rules are prepended to every return path. Guardrails stored inside the thing they constrain are not guardrails.
+- **The agent cannot edit it.** There is deliberately no tool. A tool to rewrite standing rules is exactly the capability an agent must not have; the file is the interface and the operator is the editor. A test asserts no tool mentions it.
+- **Truncation is loud.** An oversize file is capped and logs a warning naming what was dropped — silently trimming rules would leave an operator believing rules are in force that are not.
+
+### Also
+`constitution_path` now appears in `hermes memory setup`, described by what it is for.
+
+**Not** included: the engine's personality/persona surface (`derive_personality`, `set_personality_trait`) is still deliberately unused — `think()` continues to pass `run_personality=False`. Exposing it is a separate decision about whether an agent's manner should drift from a transcript, and it deserves its own opt-in rather than arriving inside a guardrails release.
+
+10 new tests; 437 pass / 3 skip.
+
 ## [0.13.0] — 2026-08-05 — Built for fleets, not single agents
 
 Hermes users run **N agents**, not one. This release makes the plugin legible to an operator running twenty of them.
