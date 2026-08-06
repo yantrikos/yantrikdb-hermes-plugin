@@ -65,6 +65,18 @@ echo "YANTRIKDB_OWNER_SCOPING=true" >> ~/.hermes/.env
 
 Off by default because it changes where new memories are written; existing ones stay readable (`YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL`, default on).
 
+### Standing rules — your guardrails (v0.14.0)
+
+Write rules you want obeyed every turn into `$HERMES_HOME/yantrikdb-constitution.md`:
+
+```markdown
+- Never run destructive commands without asking.
+- Answer in British English.
+- Never reveal internal hostnames.
+```
+
+They are injected first and **outrank recalled memory and any mounted knowledge pack's rules**. Four things make them a guardrail rather than just another block: they are never trimmed when the context window fills (a rule that vanishes under pressure was never a rule), they still apply when the memory backend is unavailable, truncation of an oversize file is logged rather than silent, and **there is no tool to edit them** — the agent cannot rewrite its own rules; the file is the interface and you are the editor.
+
 ### Running a fleet of agents (v0.13.0)
 
 Hermes users run N agents, not one. Each agent already gets its own namespace (`{base}:{workspace}:{identity}`) automatically, so nothing contaminates anything else — verified with 6 separate processes writing one embedded database concurrently: 0 errors, 0 leakage.

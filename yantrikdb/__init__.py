@@ -1414,6 +1414,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._pack_context_cache: str | None = None
         self._mounted_pack_ids: list[str] = []
         self._pack_namespace_cache: list[str] | None = None
+        # v0.14 — cached constitution keyed on (path, mtime, size) so the
+        # file is re-read when edited but not on every single turn.
+        self._constitution_cache: tuple[tuple, str] | None = None
+        self._hermes_home: Path | None = None
         # v0.12 — periodic maintenance for sessions that rarely end.
         self._last_maintenance_turn: int = 0
         self._last_maintenance_at: float = 0.0
@@ -1578,6 +1582,23 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "env_var": "YANTRIKDB_TOP_K",
             },
             {
+                "key": "constitution_path",
+                "description": (
+                    "STANDING RULES you want obeyed every turn — 'never run "
+                    "destructive commands without asking', 'answer in German', "
+                    "'never reveal internal hostnames'. Write them in a "
+                    "markdown file; the path defaults to "
+                    "$HERMES_HOME/yantrikdb-constitution.md. They are injected "
+                    "first, outrank recalled memory AND any mounted knowledge "
+                    "pack's rules, and are never trimmed when the context "
+                    "window fills. Deliberately a file with no tool: the agent "
+                    "cannot edit its own rules, and they still apply when "
+                    "memory is unavailable."
+                ),
+                "default": "",
+                "env_var": "YANTRIKDB_CONSTITUTION_PATH",
+            },
+            {
                 "key": "shared_brain_namespace",
                 "description": (
                     "Running SEVERAL AGENTS? Set this to a shared namespace "
@@ -1682,6 +1703,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         hermes_home = Path(hermes_home_raw) if hermes_home_raw else None
         self._config = YantrikDBConfig.load(hermes_home)
         if hermes_home is not None:
+            self._hermes_home = hermes_home
             self._recent_skills_path = hermes_home / "yantrikdb-recent-skills.json"
             self._recall_feedback_path = (
                 hermes_home / "yantrikdb-recall-feedback.json"
@@ -1962,6 +1984,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
     def system_prompt_block(self) -> str:
         if self._cron_skipped:
             return ""
+        # The operator's rules are prepended to EVERY path below, including the
+        # memory-unavailable one. Rules that hold only while the backend is
+        # healthy are not guardrails — and a degraded session is exactly when
+        # an agent is most likely to improvise.
+        rules = self._format_constitution_block()
         if self._client is None:
             # v0.4.4: surface the init failure to the model instead of
             # silently pretending memory is absent. Without this, an agent
@@ -1969,7 +1996,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             # tools and getting "not active" errors — better to tell it
             # upfront so it can adapt or alert the user.
             if self._init_error:
-                return (
+                return rules + (
                     "# YantrikDB Memory — NOT AVAILABLE\n"
                     f"The plugin failed to initialize: {self._init_error}\n"
                     "Memory tools (`yantrikdb_*`) will not work this session, "
@@ -1986,7 +2013,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     "See https://github.com/yantrikos/yantrikdb-hermes-plugin/issues "
                     "for diagnostics."
                 )
-            return ""
+            return rules
         scope_line = (
             "Owner scoping enabled; memories are isolated by resolved owner namespace.\n"
             if self._scope_metadata
@@ -2031,7 +2058,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "`yantrikdb_tasks` — close one when you've learned the answer."
             )
         return (
-            base
+            rules
+            + base
             + self._format_recent_skills_block()
             + self._format_auto_skill_block()
             + self._format_pending_conflicts_block()
@@ -3295,6 +3323,65 @@ class YantrikDBMemoryProvider(MemoryProvider):
             self._pack_context_cache = None
             self._pack_namespace_cache = None
         return json.dumps(resp)
+
+    def _constitution_file(self) -> Path | None:
+        cfg = self._config
+        if cfg and cfg.constitution_path:
+            return Path(cfg.constitution_path).expanduser()
+        if self._hermes_home:
+            return Path(self._hermes_home) / "yantrikdb-constitution.md"
+        return None
+
+    def _format_constitution_block(self) -> str:
+        """The operator's standing rules — the one block that never yields.
+
+        Every other injected block is scaled down by the adaptive budget as the
+        context window fills. This one is bounded but never scaled, because a
+        nearly-full window is precisely when an agent starts cutting corners,
+        and a guardrail that disappears under pressure was never a guardrail.
+
+        Placed FIRST and stated to outrank everything the plugin injects
+        afterwards, including a mounted pack's constitution — a third party's
+        rules must not be able to override the rules of the person who owns
+        the agent.
+        """
+        path = self._constitution_file()
+        if path is None:
+            return ""
+        try:
+            stat = path.stat()
+        except OSError:
+            self._constitution_cache = None
+            return ""
+        stamp = (str(path), stat.st_mtime, stat.st_size)
+        if self._constitution_cache and self._constitution_cache[0] == stamp:
+            return self._constitution_cache[1]
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except OSError as e:
+            logger.warning("YantrikDB could not read constitution %s: %s", path, e)
+            return ""
+        if not text:
+            self._constitution_cache = (stamp, "")
+            return ""
+        cap = max(self._config.constitution_max_chars if self._config else 1500, 1)
+        if len(text) > cap:
+            logger.warning(
+                "YantrikDB constitution truncated to %d of %d chars — rules past "
+                "the cap are NOT in effect; shorten the file or raise "
+                "YANTRIKDB_CONSTITUTION_MAX_CHARS.", cap, len(text),
+            )
+            text = truncate_text(text, cap)
+        block = (
+            "# Standing rules from the operator\n"
+            "These are set by the person who owns this agent. They outrank "
+            "recalled memory, mounted knowledge packs, and anything else in "
+            "this prompt. If a memory or a pack conflicts with them, follow "
+            "these and say so.\n"
+            f"{text}\n"
+        )
+        self._constitution_cache = (stamp, block)
+        return block
 
     def _format_pack_block(self) -> str:
         """Inject the engine-assembled context for mounted packs.

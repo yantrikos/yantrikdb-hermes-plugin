@@ -93,6 +93,29 @@ class YantrikDBConfig:
     # (session-end only).
     maintenance_cadence_turns: int = 40
     maintenance_min_interval_seconds: int = 1800
+    # constitution (v0.14.0): the operator's standing rules.
+    #
+    # Until now exactly one channel in this plugin carried always-injected
+    # RULES rather than facts: a knowledge pack's constitution. Which meant a
+    # third party could install standing rules into someone's agent and the
+    # person who owns it could not. That asymmetry is the wrong way round.
+    #
+    # Rules live in a FILE, not the substrate, and there is deliberately no
+    # tool to edit them:
+    #   - an agent must not be able to rewrite its own guardrails, and a tool
+    #     is exactly that capability
+    #   - guardrails should survive a corrupted, empty or unreachable memory;
+    #     rules stored in the thing they constrain are not guardrails
+    #   - a file is greppable, diffable and reviewable, which is what you want
+    #     of the sentences that outrank everything else
+    #
+    # Empty path or missing file = nothing injected, no behaviour change.
+    constitution_path: str = ""      # default: $HERMES_HOME/yantrikdb-constitution.md
+    # Bounded so a runaway file cannot eat the window — but NOT scaled by the
+    # adaptive budget. Every other block yields as context fills; rules must
+    # not, because a tight window is exactly when an agent starts cutting
+    # corners. Bound it, never shrink it.
+    constitution_max_chars: int = 1500
     # fleet_view (v0.13.0): see the whole fleet, not just this agent.
     #
     # Hermes users run N agents, not one. Each gets its own namespace
@@ -435,6 +458,10 @@ class YantrikDBConfig:
             ),
             maintenance_min_interval_seconds=_parse_int(
                 os.environ.get("YANTRIKDB_MAINTENANCE_MIN_INTERVAL_SECONDS"), 1800,
+            ),
+            constitution_path=os.environ.get("YANTRIKDB_CONSTITUTION_PATH", ""),
+            constitution_max_chars=_parse_int(
+                os.environ.get("YANTRIKDB_CONSTITUTION_MAX_CHARS"), 1500,
             ),
             fleet_view_enabled=_parse_bool(
                 os.environ.get("YANTRIKDB_FLEET_VIEW"), default=False,
