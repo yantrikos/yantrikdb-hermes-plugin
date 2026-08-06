@@ -100,12 +100,29 @@ def _burst(YantrikDB, base: Path, n: int, queries: list[str]) -> dict:
             dd.mkdir()
             dbs.append(YantrikDB.with_default(str(_stage(base, dd))))
 
-        def order(db, q):
+        def order(db, q, skip_reinforce=False):
+            """`skip_reinforce` (engine b56b11b+) removes arm A's only confound.
+
+            Without it every read mutates access_count, so repeat N measures a
+            database repeats 1..N-1 modified — deterministic state evolution
+            that looks exactly like nondeterminism. Arm A passes it when
+            available so a signal there means the engine, not the harness.
+            """
+            kw = {"top_k": 5, "namespace": "g"}
+            if skip_reinforce:
+                kw["skip_reinforce"] = True
             return tuple((h.get("text") or "").strip()[:24]
-                         for h in db.recall_text(q, top_k=5, namespace="g"))
+                         for h in db.recall_text(q, **kw))
+
+        try:
+            order(single, queries[0], skip_reinforce=True)
+            arm_a_frozen = True
+        except TypeError:
+            arm_a_frozen = False
 
         t0 = time.time()
-        arm_a = {q: len({order(single, q) for _ in range(n)}) for q in queries}
+        arm_a = {q: len({order(single, q, arm_a_frozen) for _ in range(n)})
+                 for q in queries}
         span_a = time.time() - t0
 
         # Per-query window is the denominator that matters: each query's
@@ -122,7 +139,7 @@ def _burst(YantrikDB, base: Path, n: int, queries: list[str]) -> dict:
 
         del single, dbs
         gc.collect()
-        return {"arm_a": arm_a, "arm_b": arm_b,
+        return {"arm_a": arm_a, "arm_a_frozen": arm_a_frozen, "arm_b": arm_b,
                 "span_a": span_a, "span_b": span_b,
                 "max_per_query_window": max(per_query_windows)}
     finally:
@@ -148,12 +165,13 @@ def main() -> int:
     varied_b: dict[str, int] = {}
     varied_a: dict[str, int] = {}
     bursts_with_variation = 0
-    spans_b, windows = [], []
+    spans_b, windows, frozen = [], [], []
 
     for _ in range(args.bursts):
         r = _burst(YantrikDB, base, args.instances, queries)
         spans_b.append(r["span_b"])
         windows.append(r["max_per_query_window"])
+        frozen.append(r["arm_a_frozen"])
         bad_b = [q for q, c in r["arm_b"].items() if c > 1]
         bad_a = [q for q, c in r["arm_a"].items() if c > 1]
         for q in bad_b:
@@ -183,6 +201,13 @@ def main() -> int:
             "would understate how tight the measurement actually is"),
         "queries_varying_across_instances": varied_b,
         "queries_varying_within_instance": varied_a,
+        "arm_a_used_skip_reinforce": all(frozen),
+        "arm_a_caveat": (
+            "reinforcement suppressed; a signal here is the engine"
+            if all(frozen) else
+            "engine predates skip_reinforce — arm A still mutates access_count "
+            "between repeats, so treat any signal here as the harness until "
+            "re-run on a build that supports it"),
         "verdict": (
             "DETERMINISTIC across every swept query" if clean else
             "NOT DETERMINISTIC — see queries_varying_*; a single varying query "

@@ -166,3 +166,22 @@ def test_drift_sensitivity_is_not_hardcoded():
         "METRICS must map name -> fn only; a hardcoded drift flag is the "
         "assumption this version exists to remove"
     )
+
+
+def test_degeneracy_metric_declares_its_denominator():
+    """Two gates, one name, a ~17x gap — caught minutes before both numbers
+    appeared in the same release note.
+
+    The engine's `bm25_near_best_fraction` counts near-best strength over the
+    ADMITTED candidate set, unrounded. This gate's counts DISTINCT bm25 values
+    over ALL matching sqlite rows at 6dp. Same concept, different denominator,
+    different rounding — and under a shared name ("degeneracy ratio") they were
+    silently comparable-looking and not comparable.
+    """
+    src = (_ROOT / "tests" / "comparison" / "gate_4k.py").read_text(encoding="utf-8")
+    assert "bm25_distinct_ratio_over_all_matches_6dp" in src
+    assert "not_comparable_to" in src, (
+        "the metric must name what it is NOT comparable to; a denominator "
+        "stated only in a docstring is not carried alongside the number"
+    )
+    assert "degeneracy_ratio\"" not in src, "the ambiguous name must be gone"

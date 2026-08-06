@@ -294,6 +294,22 @@ def _measure_transposed(instances, unique, ambiguous, probes,
 
 
 def _degeneracy(db_path: str, term: str = "taylor") -> dict:
+    """Lexical degeneracy, with its denominator IN ITS NAME.
+
+    The engine publishes `bm25_near_best_fraction`: the fraction of FTS-matched
+    candidates (the ADMITTED set) whose normalized strength is >= 0.9 of the
+    query's best, unrounded. This function publishes something different — the
+    fraction of DISTINCT bm25 values among ALL sqlite rows matching the term,
+    rounded to 6dp before counting distinctness.
+
+    On query "taylor" the two read 0.4667 and 0.028: a ~17x gap, same concept,
+    different denominator and different rounding. They sat under the same name
+    ("degeneracy ratio") in two gates that quote numbers at each other, and
+    were minutes from appearing side by side in one release note.
+
+    Hence the long name. A metric whose denominator is ambiguous will be
+    compared against a metric it does not measure.
+    """
     con = sqlite3.connect(db_path)
     rows = con.execute(
         "SELECT memories_fts.rank FROM memories m "
@@ -307,7 +323,12 @@ def _degeneracy(db_path: str, term: str = "taylor") -> dict:
     tied = sum(1 for r in ranks if round(r, 6) == round(best, 6))
     return {"term": term, "matched": len(rows),
             "distinct_bm25": len({round(r, 6) for r in ranks}),
-            "degeneracy_ratio": round(len({round(r, 6) for r in ranks}) / len(rows), 4),
+            "bm25_distinct_ratio_over_all_matches_6dp":
+                round(len({round(r, 6) for r in ranks}) / len(rows), 4),
+            "not_comparable_to": ("engine bm25_near_best_fraction — that counts "
+                                  "near-best strength over ADMITTED candidates, "
+                                  "unrounded; this counts DISTINCT values over "
+                                  "ALL matching rows at 6dp"),
             "matchers_tied_at_best_rank": tied,
             "fraction_ordered_by_cosine_alone": round(tied / len(rows), 4)}
 
