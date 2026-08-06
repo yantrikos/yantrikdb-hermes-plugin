@@ -143,41 +143,65 @@ def _fresh_copy(base: Path, into: Path) -> Path:
     return into / base.name
 
 
-def _one_pass(db, unique: list[dict], ambiguous: list[dict],
-              probes: list[dict]) -> dict:
-    def texts(q, k=5):
-        return [(h.get("text") or "").strip()
-                for h in db.recall_text(q, top_k=k, namespace="g")]
+def _texts(db, q, k=5):
+    return [(h.get("text") or "").strip()
+            for h in db.recall_text(q, top_k=k, namespace="g")]
 
+
+# --- v1.3.0: one function per metric, so the runner can transpose the loop ---
+#
+# Each of these measures ONE metric on ONE instance. The runner calls a single
+# metric across every instance back-to-back, which keeps that metric's
+# cross-instance comparison inside its own tight window instead of smearing it
+# across the whole suite. See _measure_transposed for why that matters.
+
+def _m_precision(db, unique, ambiguous, probes) -> float:
     hits = 0
     for q in unique:
-        got = texts(q["query"], q.get("top_k", 5))
+        got = _texts(db, q["query"], q.get("top_k", 5))
         t = (q.get("target_text") or "").strip()
         if t and any(t in g or g in t for g in got):
             hits += 1
-    precision = hits / len(unique) if unique else 0.0
+    return hits / len(unique) if unique else 0.0
 
-    # Ambiguous role queries: what fraction of the returned relation records put
-    # the queried entity in SUBJECT position? Independent of which valid answer
-    # was designated, so a mechanism that promotes any correct answer scores.
+
+def _m_role_share(db, unique, ambiguous, probes) -> float:
+    """Ambiguous role queries: what fraction of returned relation records put
+    the queried entity in SUBJECT position? Independent of which valid answer
+    was designated, so a mechanism promoting any correct answer scores."""
     shares = []
     for q in ambiguous:
         m = _REPORTS_TO.match((q.get("target_text") or "").strip())
         if not m:
             continue
         subj = m.group(1)
-        rel = [t for t in texts(q["query"]) if " reports to " in t]
+        rel = [t for t in _texts(db, q["query"]) if " reports to " in t]
         if rel:
             shares.append(sum(1 for t in rel if t.startswith(f"{subj} reports to "))
                           / len(rel))
-    role_share = statistics.mean(shares) if shares else 0.0
+    return statistics.mean(shares) if shares else 0.0
 
-    top1, jac, seps = [], [], []
+
+def _m_possessive_top1(db, unique, ambiguous, probes) -> float:
+    vals = []
     for p in probes:
-        a, b = texts(p["query_possessive"]), texts(p["query_plain"])
-        top1.append(1.0 if (a and b and a[0] == b[0]) else 0.0)
-        sa, sb = set(a), set(b)
-        jac.append(len(sa & sb) / len(sa | sb) if (sa | sb) else 1.0)
+        a, b = _texts(db, p["query_possessive"]), _texts(db, p["query_plain"])
+        vals.append(1.0 if (a and b and a[0] == b[0]) else 0.0)
+    return statistics.mean(vals) if vals else 0.0
+
+
+def _m_possessive_jaccard(db, unique, ambiguous, probes) -> float:
+    vals = []
+    for p in probes:
+        a = set(_texts(db, p["query_possessive"]))
+        b = set(_texts(db, p["query_plain"]))
+        vals.append(len(a & b) / len(a | b) if (a | b) else 1.0)
+    return statistics.mean(vals) if vals else 0.0
+
+
+def _m_direction_separation(db, unique, ambiguous, probes) -> float:
+    seps = []
+    for p in probes:
         e = p["entity"]
         sp, op = f"{e} reports to ", f" reports to {e}."
 
@@ -185,17 +209,88 @@ def _one_pass(db, unique: list[dict], ambiguous: list[dict],
             rel = [t for t in ts if _sp in t or _op in t]
             return None if not rel else sum(1 for t in rel if t.startswith(_sp)) / len(rel)
 
-        s, o = share(texts(p["query_subject"])), share(texts(p["query_object"]))
+        s = share(_texts(db, p["query_subject"]))
+        o = share(_texts(db, p["query_object"]))
         if s is not None and o is not None:
             seps.append(s - o)
+    return statistics.mean(seps) if seps else 0.0
 
-    return {
-        "precision_at_5_unique_answers_only": precision,
-        "role_share_ambiguous_queries": role_share,
-        "possessive_top1_agreement": statistics.mean(top1) if top1 else 0.0,
-        "possessive_jaccard_secondary": statistics.mean(jac) if jac else 0.0,
-        "direction_separation": statistics.mean(seps) if seps else 0.0,
-    }
+
+# Drift sensitivity is MEASURED per run, not declared here.
+#
+# The tempting shortcut is to label rank-based metrics drift-immune and
+# set-based ones drift-sensitive. That is wrong, and this gate caught itself
+# assuming it: a rank statistic is immune only where the ranks it compares are
+# SEPARATED. At a tie for rank 1, decay drift flips the pair and the "immune"
+# metric moves like any other. Immunity is a property of the metric AND the
+# corpus it is run on, so it has to be measured on the corpus in hand.
+METRICS = {
+    "precision_at_5_unique_answers_only": _m_precision,
+    "role_share_ambiguous_queries": _m_role_share,
+    "possessive_top1_agreement": _m_possessive_top1,
+    "possessive_jaccard_secondary": _m_possessive_jaccard,
+    "direction_separation": _m_direction_separation,
+}
+
+
+def _one_pass(db, unique: list[dict], ambiguous: list[dict],
+              probes: list[dict]) -> dict:
+    """Retained for callers wanting a single instance's full reading."""
+    return {name: fn(db, unique, ambiguous, probes)
+            for name, fn in METRICS.items()}
+
+
+def _measure_transposed(instances, unique, ambiguous, probes,
+                        decay_per_second: float = 5e-8,
+                        drift_probe_seconds: int = 8) -> dict:
+    """Measure each metric across ALL instances back-to-back, not each instance
+    across all metrics.
+
+    WHY. Recency decay is recomputed per query, so scores fall with the wall
+    clock (~5e-8/s) at slightly different rates per record — near-ties in a
+    degenerate band therefore cross on a seconds timescale. A repeat loop that
+    runs instance-by-instance spreads one metric's readings across the whole
+    suite, so its spread is mostly drift. v1.2.0 did exactly that and reported
+    the result as stdev, i.e. as noise. It wasn't noise; it was the clock.
+
+    Transposing fixes it: one metric across N instances is a burst of a few
+    hundred milliseconds, and the drift budget inside that window is printed
+    next to the number so a reader can check it against the effect they care
+    about rather than trusting the harness.
+    """
+    out = {}
+    for name, fn in METRICS.items():
+        t0 = time.time()
+        vals = [fn(db, unique, ambiguous, probes) for db in instances]
+        span = time.time() - t0
+
+        # Measure drift sensitivity instead of asserting it: read the metric on
+        # ONE fixed instance, wait, read it again. Any movement is the clock,
+        # because the instance and its data are identical.
+        before = fn(instances[0], unique, ambiguous, probes)
+        time.sleep(drift_probe_seconds)
+        after = fn(instances[0], unique, ambiguous, probes)
+        moved = abs(after - before)
+
+        sd = statistics.stdev(vals) if len(vals) > 1 else 0.0
+        out[name] = {
+            "mean": round(statistics.mean(vals), 4),
+            "stdev": round(sd, 4),
+            "spread": round(max(vals) - min(vals), 4),
+            "burst_span_s": round(span, 3),
+            "drift_budget_in_burst": f"{span * decay_per_second:.2e}",
+            "measured_drift_move": round(moved, 4),
+            "drift_probe_seconds": drift_probe_seconds,
+            "reading": (
+                f"MOVED {moved:.4f} on a fixed instance over "
+                f"{drift_probe_seconds}s with no other change — spread here may "
+                "be the clock, not the engine; confirm against "
+                "determinism_burst before calling a change a result"
+                if moved > 0 else
+                "held exactly on a fixed instance across the drift probe — "
+                "spread here is not decay, so a change larger than it is real"),
+        }
+    return out
 
 
 def _degeneracy(db_path: str, term: str = "taylor") -> dict:
@@ -270,27 +365,24 @@ def main() -> int:
               file=sys.stderr)
         _seed(facts, str(base))
 
-    runs, root = [], Path(tempfile.mkdtemp())
+    # Stage and OPEN every instance before measuring anything. Opening is the
+    # slow part; doing it up front is what lets each metric be read across all
+    # instances inside a burst rather than across the whole suite.
+    root = Path(tempfile.mkdtemp())
+    instances = []
     for i in range(args.repeats):
         d = root / f"rep{i}"
         d.mkdir()
-        db = YantrikDB.with_default(str(_fresh_copy(base, d)))
-        runs.append(_one_pass(db, unique, ambiguous, probes))
-        del db
-        gc.collect()
+        instances.append(YantrikDB.with_default(str(_fresh_copy(base, d))))
+
+    metrics = _measure_transposed(instances, unique, ambiguous, probes)
+
+    del instances
+    gc.collect()
     shutil.rmtree(root, ignore_errors=True)
 
-    metrics = {}
-    for key in runs[0]:
-        xs = [r[key] for r in runs]
-        sd = statistics.stdev(xs) if len(xs) > 1 else 0.0
-        metrics[key] = {"mean": round(statistics.mean(xs), 4),
-                        "stdev": round(sd, 4),
-                        "spread": round(max(xs) - min(xs), 4),
-                        "noise_floor": round(2 * sd, 4)}
-
     out = {
-        "gate": "hermes-plugin/competing-distractors v1.2.0",
+        "gate": "hermes-plugin/competing-distractors v1.3.0",
         "engine": yantrikdb.__version__,
         "corpus": len(facts),
         "determinism": _determinism(base),
@@ -303,10 +395,14 @@ def main() -> int:
             "valid_answers_per_ambiguous_query":
                 sorted({q["valid_answers"] for q in ambiguous}),
         },
-        "repeats": args.repeats,
+        "instances": args.repeats,
         "metrics": metrics,
-        "reading_deltas": ("a change smaller than noise_floor (2 stdev) is not "
-                           "a result; report it as unmeasured"),
+        "reading_deltas": (
+            "Two different cautions. On a metric marked drift_sensitive=false, "
+            "spread is real and a change larger than it is a result. On "
+            "drift_sensitive=true, spread may be ties crossing under recency "
+            "decay rather than nondeterminism — check determinism_burst before "
+            "calling any such change a result."),
         "lexical_degeneracy": _degeneracy(str(base)),
     }
     print(json.dumps(out, indent=2))

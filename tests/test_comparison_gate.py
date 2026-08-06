@@ -138,10 +138,31 @@ def test_determinism_is_checked_before_any_metric_is_believed():
     assert '"deterministic"' in src
 
 
-def test_every_metric_publishes_a_noise_floor():
-    """A delta smaller than the instrument's own spread is not a result — this
-    session shipped two conclusions that turned out to be noise before the gate
-    reported error bars."""
+def test_every_metric_publishes_measured_drift_sensitivity():
+    """v1.3.0 replaces an assumed noise floor with a measured one.
+
+    v1.2.0 published `noise_floor = 2*stdev` from a repeat loop that ran
+    instance-by-instance over ~30 seconds — so the "noise" was mostly recency
+    decay, and two conclusions were drawn from it that had to be retracted.
+    v1.3.0 transposes the loop and, for each metric, reads it twice on ONE
+    fixed instance across a deliberate delay: any movement there is the clock,
+    because nothing else changed. Declared immunity is not accepted — a
+    rank-based metric is drift-immune only where the ranks it compares are
+    separated, and this gate caught itself assuming otherwise.
+    """
     src = (_ROOT / "tests" / "comparison" / "gate_4k.py").read_text(encoding="utf-8")
-    assert "noise_floor" in src
-    assert "stdev" in src
+    assert "measured_drift_move" in src
+    assert "drift_probe_seconds" in src
+    assert "_measure_transposed" in src
+    assert "burst_span_s" in src, "each metric must publish its own window"
+
+
+def test_drift_sensitivity_is_not_hardcoded():
+    """The shortcut this gate must never take again: labelling metrics
+    drift-immune by category instead of measuring them on the corpus at hand."""
+    src = (_ROOT / "tests" / "comparison" / "gate_4k.py").read_text(encoding="utf-8")
+    block = src.split("METRICS = {")[1].split("}")[0]
+    assert "True" not in block and "False" not in block, (
+        "METRICS must map name -> fn only; a hardcoded drift flag is the "
+        "assumption this version exists to remove"
+    )
