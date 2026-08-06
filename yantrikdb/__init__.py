@@ -1599,6 +1599,21 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "env_var": "YANTRIKDB_CONSTITUTION_PATH",
             },
             {
+                "key": "gap_detection",
+                "description": (
+                    "Turn unanswered questions into agenda items and to-dos. "
+                    "OFF since v0.15.0 because the underlying score does not "
+                    "reliably tell a real gap from noise — measured on engine "
+                    "0.13.0, deliberate gibberish scored as high as genuine "
+                    "questions. Turning this on may fill your agenda with "
+                    "work that isn't real; leave it off unless you have "
+                    "checked the threshold against your own memory with "
+                    "benchmarks/gap_floor_check.py."
+                ),
+                "default": "false",
+                "env_var": "YANTRIKDB_GAP_DETECTION",
+            },
+            {
                 "key": "shared_brain_namespace",
                 "description": (
                     "Running SEVERAL AGENTS? Set this to a shared namespace "
@@ -3994,14 +4009,18 @@ class YantrikDBMemoryProvider(MemoryProvider):
             tasks = (listed.get("tasks") if isinstance(listed, dict) else listed) or []
         except (AttributeError, YantrikDBServerError, YantrikDBError):
             tasks = []
-        try:
-            resp = self._client.knowledge_gaps(
-                max_avg_top_score=self._config.gap_max_avg_top_score, limit=cap,
-                namespace=self._namespace,
-            )
-            gaps = (resp.get("gaps") if isinstance(resp, dict) else resp) or []
-        except (AttributeError, YantrikDBServerError, YantrikDBError):
-            gaps = []
+        # v0.15.0: the gap signal is off by default because it does not
+        # discriminate — see YantrikDBConfig.gap_max_avg_top_score. Showing an
+        # empty "unanswered questions" list would read as "nothing missing".
+        if self._config.gap_detection:
+            try:
+                resp = self._client.knowledge_gaps(
+                    max_avg_top_score=self._config.gap_max_avg_top_score, limit=cap,
+                    namespace=self._namespace,
+                )
+                gaps = (resp.get("gaps") if isinstance(resp, dict) else resp) or []
+            except (AttributeError, YantrikDBServerError, YantrikDBError):
+                gaps = []
         if not tasks and not gaps:
             return ""
         lines = ["", "## Your memory's agenda"]
@@ -4105,6 +4124,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if self._client is None or self._config is None:
             return
         cfg = self._config
+        # v0.15.0: minting durable to-dos from a signal that cannot tell
+        # gibberish from a real question spends the operator's attention on
+        # noise. Off until the engine ships a gap signal that discriminates.
+        if not cfg.gap_detection:
+            return
         try:
             resp = self._client.knowledge_gaps(
                 min_count=cfg.gap_task_min_count,

@@ -136,9 +136,16 @@ class TestPeriodicMaintenance:
         self, provider_module, mock_client, monkeypatch,
     ):
         """The whole point: an always-on agent should get the SAME work a
-        short-lived one gets, including gap→task."""
+        short-lived one gets, including gap→task.
+
+        Gap detection is opt-in since v0.15.0 (the signal does not
+        discriminate — see YantrikDBConfig.gap_max_avg_top_score), so this
+        enables it explicitly. What is under test here is that periodic
+        maintenance runs the same path a session end does, not the default.
+        """
         mock_client.knowledge_gaps.return_value = {"gaps": [{"query": "x"}]}
         p = _provider(provider_module, mock_client, monkeypatch,
+                      YANTRIKDB_GAP_DETECTION="true",
                       YANTRIKDB_MAINTENANCE_CADENCE_TURNS="1",
                       YANTRIKDB_MAINTENANCE_MIN_INTERVAL_SECONDS="0")
         p.on_turn_start(1, "hi")

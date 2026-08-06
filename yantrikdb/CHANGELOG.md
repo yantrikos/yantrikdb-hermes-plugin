@@ -3,6 +3,52 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.15.0] — 2026-08-06 — Better retrieval, and one feature switched off on the evidence
+
+Two changes. One gives you a retrieval improvement that was sitting behind a version pin. The other **turns off a feature that has been quietly telling you nothing**, and explains why in enough detail that you can check the claim yourself.
+
+### Engine 0.13.x is now supported — you get BM25 lexical fusion
+
+The ceiling was `<0.13.0`, so nobody installing this plugin received the engine's new lexical fusion. It now admits `<0.14.0`, verified against the full suite on 0.13.0 before the bound moved — which is the rule `test_dependency_pins.py` exists to enforce. The bound moves; it never disappears.
+
+What fusion buys, measured on a deliberately hostile 4,353-record corpus: **precision@5 0.25 → 0.30 for +0.5 ms**, and two answers that previously never appeared in the top 100 at all became reachable. On corpora where records don't all share a sentence frame, the engine team measured considerably more.
+
+### Knowledge-gap detection is now OFF by default
+
+Since v0.10.0 this plugin has watched for questions your memory answers badly and turned recurring ones into agenda items and to-dos. **It doesn't work, and this release stops pretending it does.**
+
+`gap_max_avg_top_score` compares a *composite* recall score against a threshold. That composite folds in importance, recency and decay — terms that describe how to weight a result **once you've decided to return it**, not whether memory holds anything near the question. Measured on engine 0.13.0 over 4,353 records:
+
+```
+queries flagged as a gap ................ 0 / 20
+deliberate nonsense NOT flagged ......... 3 / 4
+  "zzqx wobble frangible" ....... avg 0.4810
+  "quantum tarpaulin metric" .... avg 0.3707
+  "grommet fitzwilliam parsnip" . avg 0.3023
+```
+
+Gibberish scores as high as a real question. So the detector is not being cautious, as v0.12.2 intended when it recalibrated the threshold — **it is uninformative, and its silence reads as "nothing is missing."** A signal that cannot be wrong cannot be right either.
+
+**The defect is the instrument, not the number.** v0.12.2 already retuned this constant once; retuning it again would move the same bug to a new value and expire it at the next scoring change. So the default goes off until the signal itself discriminates.
+
+Deliberately **not** replaced with a similarity threshold: on the same corpus nonsense reached `max_similarity` 0.653 against 0.624 for real queries, so that swap is unproven and might only relocate the defect. The engine team is gating a `min_similarity` candidate on evidence; this plugin adopts it if and when it separates.
+
+Nothing was removed. `YANTRIKDB_GAP_DETECTION=true` restores the previous behaviour, and it appears in `hermes memory setup` with the risk stated rather than the mechanism. **Open tasks are unaffected** — those are facts you wrote, not a signal we inferred.
+
+### Check it against your own memory
+
+```bash
+python benchmarks/gap_floor_check.py <your.db> [--threshold 0.30]
+```
+
+Reports the observed score distribution, probes it with nonsense, and exits non-zero if gibberish clears your threshold. If you calibrated a threshold against a composite score anywhere, this tells you in one command. It deliberately does **not** compute a "floor" from the per-component contributions — those don't sum to the composite, and an earlier version of this analysis drew a wrong conclusion from assuming they did. The script says so, so nobody repeats it.
+
+### The benchmark gate is now in the repo
+
+`tests/comparison/gate_4k.py` plus hash-pinned fixtures — the competing-distractor gate used to evaluate engine candidates, including a direction-sensitivity subset and a possessive minimal pair. It refuses to run on a corpus whose hash has drifted, and CI asserts the hashes so a regenerated fixture can't silently make old numbers incomparable. It is a **stress** corpus, pathological by construction; weight a production-clone benchmark above it for any user-facing claim.
+
+19 new tests; 456 pass / 3 skip.
+
 ## [0.14.0] — 2026-08-05 — Standing rules that belong to the operator
 
 Until now exactly one channel in this plugin carried always-injected **rules** rather than facts: a knowledge pack's constitution. Which meant **a third party could install standing rules into someone's agent and the person who owns it could not.** That asymmetry was the wrong way round.

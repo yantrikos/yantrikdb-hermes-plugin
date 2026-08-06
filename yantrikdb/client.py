@@ -400,6 +400,16 @@ class YantrikDBConfig:
     # for each recurring gap that doesn't already have one — so the agent's
     # unanswered questions become durable, actionable to-dos.
     auto_gap_tasks: bool = True
+    # gap_detection (v0.15.0): master switch for everything derived from
+    # knowledge_gaps(). DEFAULT OFF, and that is a correction rather than a
+    # preference — see gap_max_avg_top_score below for the measurement.
+    #
+    # Re-enable once the engine ships a gap signal that discriminates; until
+    # then the surfaces below are silent whether this is on or off, and an
+    # honest off beats a silent on. Set YANTRIKDB_GAP_DETECTION=true to
+    # restore the previous behaviour if you have calibrated your own
+    # threshold against your own corpus.
+    gap_detection: bool = False
     gap_task_max: int = 3            # cap new gap-tasks created per session
     gap_task_min_count: int = 3      # a gap must recur >= this to become a task
     # Max average top recall score for a query to count as a "gap".
@@ -424,6 +434,35 @@ class YantrikDBConfig:
     # tests/test_gap_calibration.py re-measures this against the benchmark
     # corpus, so the next scoring change fails loudly instead of silently
     # filling somebody's agenda.
+    #
+    # v0.15.0 — WHY gap_detection NOW DEFAULTS OFF. The overlap noted above
+    # ("no threshold separates them cleanly") turned out to understate it.
+    # Measured on engine 0.13.0 against a 4,353-record corpus:
+    #
+    #   queries flagged as a gap at 0.30 ............ 0 / 20
+    #   deliberate nonsense NOT flagged ............. 3 / 4
+    #     "zzqx wobble frangible" ......... avg 0.4810
+    #     "quantum tarpaulin metric" ...... avg 0.3707
+    #     "grommet fitzwilliam parsnip" ... avg 0.3023
+    #
+    # Gibberish scores as high as real questions, so the detector is not
+    # erring toward silence as v0.12.2 intended — it is silent, and its
+    # silence carries no information. An operator reads that as "no gaps".
+    #
+    # The defect is the INSTRUMENT, not the number. A threshold compared
+    # against the COMPOSITE score inherits terms — importance, recency,
+    # decay — that describe how to weight a result once you have decided to
+    # return it, not whether memory holds anything near the question. v0.12.2
+    # recalibrated the value and left the instrument; recalibrating again
+    # would just move the same bug to a new constant and expire it on the
+    # next scoring change.
+    #
+    # Deliberately NOT replaced with a similarity threshold here: on the same
+    # corpus, nonsense reached max_similarity 0.653 against 0.624 for real
+    # queries, so that swap is unproven and might only relocate the defect.
+    # The engine is gating a `min_similarity` candidate on evidence; this
+    # plugin adopts it if and when it separates. benchmarks/gap_floor_check.py
+    # reproduces all of the above against any database in one command.
     gap_max_avg_top_score: float = 0.30
     # surface_agenda: prepend a compact "## Your memory's agenda" block to
     # system_prompt_block — top open tasks + unresolved knowledge gaps — so
@@ -569,6 +608,9 @@ class YantrikDBConfig:
             ),
             conversation_buffer_surface_limit=_parse_int(
                 os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_SURFACE_LIMIT"), 6,
+            ),
+            gap_detection=_parse_bool(
+                os.environ.get("YANTRIKDB_GAP_DETECTION"), default=False,
             ),
             auto_gap_tasks=_parse_bool(
                 os.environ.get("YANTRIKDB_AUTO_GAP_TASKS"), default=True,
