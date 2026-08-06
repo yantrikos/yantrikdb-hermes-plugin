@@ -99,3 +99,49 @@ def test_corpus_declares_that_it_is_a_stress_fixture():
     note = payload["note"].lower()
     assert "stress" in note
     assert "not a representative" in note or "representative" in note
+
+
+# --- v1.2.0: the gate must refuse to measure what it cannot measure ---------
+
+def test_ambiguous_queries_are_not_scored_by_record_identity():
+    """The defect that made this version necessary.
+
+    The `What is X's role?` queries have nineteen valid answers each. Scoring
+    them by whether one designated record came back caps precision at 5/19 by
+    construction AND penalises a mechanism that correctly promotes a different
+    valid answer — the gate reported a real improvement as a regression. The
+    partition is what stops that recurring.
+    """
+    src = (_ROOT / "tests" / "comparison" / "gate_4k.py").read_text(encoding="utf-8")
+    assert "_partition_queries" in src
+    assert "precision_at_5_unique_answers_only" in src, (
+        "the precision metric must NAME its restriction, so nobody quotes it "
+        "as overall precision"
+    )
+    assert "role_share_ambiguous_queries" in src
+
+
+def test_repeats_run_against_isolated_copies():
+    """`recall_text` has no skip_reinforce, so every query mutates access_count
+    and repeat N would otherwise measure a db repeats 1..N-1 modified."""
+    src = (_ROOT / "tests" / "comparison" / "gate_4k.py").read_text(encoding="utf-8")
+    assert "_fresh_copy" in src
+    assert "shutil.copy2" in src
+
+
+def test_determinism_is_checked_before_any_metric_is_believed():
+    """A build that answers differently on identical bytes cannot be measured.
+    The gate must say so rather than reporting means over the top."""
+    src = (_ROOT / "tests" / "comparison" / "gate_4k.py").read_text(encoding="utf-8")
+    assert "_determinism" in src
+    assert "is unreliable" in src
+    assert '"deterministic"' in src
+
+
+def test_every_metric_publishes_a_noise_floor():
+    """A delta smaller than the instrument's own spread is not a result — this
+    session shipped two conclusions that turned out to be noise before the gate
+    reported error bars."""
+    src = (_ROOT / "tests" / "comparison" / "gate_4k.py").read_text(encoding="utf-8")
+    assert "noise_floor" in src
+    assert "stdev" in src

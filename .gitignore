@@ -17,3 +17,9 @@ htmlcov/
 *.log
 .env
 hermes-test/data/
+
+# Local MCP server config — contains host/URL details, not for a public repo
+.mcp.json
+# Local scratch design docs and screenshots
+DEEP-RESEARCH-V05-DESIGN.md
+hermes-test/scripts/*.png
