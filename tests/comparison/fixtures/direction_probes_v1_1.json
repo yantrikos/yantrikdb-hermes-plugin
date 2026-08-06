@@ -1,0 +1,120 @@
+{
+ "built_from": "corpus_4353_gate_v1.json",
+ "note": "Ground truth is role position, not record identity: this corpus gives each person many managers on purpose, so no single record is 'the' answer. Scoring by role share is what makes the subset valid on a corpus built to be degenerate.",
+ "probes": [
+  {
+   "entity": "Alice",
+   "n_object_records": 19,
+   "n_subject_records": 19,
+   "query_object": "Who reports to Alice?",
+   "query_plain": "What is Alice s manager?",
+   "query_possessive": "What is Alice's manager?",
+   "query_subject": "Who does Alice report to?"
+  },
+  {
+   "entity": "Bob",
+   "n_object_records": 18,
+   "n_subject_records": 19,
+   "query_object": "Who reports to Bob?",
+   "query_plain": "What is Bob s manager?",
+   "query_possessive": "What is Bob's manager?",
+   "query_subject": "Who does Bob report to?"
+  },
+  {
+   "entity": "Carol",
+   "n_object_records": 18,
+   "n_subject_records": 19,
+   "query_object": "Who reports to Carol?",
+   "query_plain": "What is Carol s manager?",
+   "query_possessive": "What is Carol's manager?",
+   "query_subject": "Who does Carol report to?"
+  },
+  {
+   "entity": "Dave",
+   "n_object_records": 19,
+   "n_subject_records": 19,
+   "query_object": "Who reports to Dave?",
+   "query_plain": "What is Dave s manager?",
+   "query_possessive": "What is Dave's manager?",
+   "query_subject": "Who does Dave report to?"
+  },
+  {
+   "entity": "Eve",
+   "n_object_records": 19,
+   "n_subject_records": 19,
+   "query_object": "Who reports to Eve?",
+   "query_plain": "What is Eve s manager?",
+   "query_possessive": "What is Eve's manager?",
+   "query_subject": "Who does Eve report to?"
+  },
+  {
+   "entity": "Frank",
+   "n_object_records": 19,
+   "n_subject_records": 19,
+   "query_object": "Who reports to Frank?",
+   "query_plain": "What is Frank s manager?",
+   "query_possessive": "What is Frank's manager?",
+   "query_subject": "Who does Frank report to?"
+  },
+  {
+   "entity": "Grace",
+   "n_object_records": 19,
+   "n_subject_records": 19,
+   "query_object": "Who reports to Grace?",
+   "query_plain": "What is Grace s manager?",
+   "query_possessive": "What is Grace's manager?",
+   "query_subject": "Who does Grace report to?"
+  },
+  {
+   "entity": "Henry",
+   "n_object_records": 19,
+   "n_subject_records": 18,
+   "query_object": "Who reports to Henry?",
+   "query_plain": "What is Henry s manager?",
+   "query_possessive": "What is Henry's manager?",
+   "query_subject": "Who does Henry report to?"
+  },
+  {
+   "entity": "Ivy",
+   "n_object_records": 19,
+   "n_subject_records": 17,
+   "query_object": "Who reports to Ivy?",
+   "query_plain": "What is Ivy s manager?",
+   "query_possessive": "What is Ivy's manager?",
+   "query_subject": "Who does Ivy report to?"
+  },
+  {
+   "entity": "Jack",
+   "n_object_records": 18,
+   "n_subject_records": 19,
+   "query_object": "Who reports to Jack?",
+   "query_plain": "What is Jack s manager?",
+   "query_possessive": "What is Jack's manager?",
+   "query_subject": "Who does Jack report to?"
+  },
+  {
+   "entity": "Kate",
+   "n_object_records": 19,
+   "n_subject_records": 19,
+   "query_object": "Who reports to Kate?",
+   "query_plain": "What is Kate s manager?",
+   "query_possessive": "What is Kate's manager?",
+   "query_subject": "Who does Kate report to?"
+  },
+  {
+   "entity": "Liam",
+   "n_object_records": 18,
+   "n_subject_records": 18,
+   "query_object": "Who reports to Liam?",
+   "query_plain": "What is Liam s manager?",
+   "query_possessive": "What is Liam's manager?",
+   "query_subject": "Who does Liam report to?"
+  }
+ ],
+ "scoring": {
+  "direction_separation": "mean over probes of (subject-role share in query_subject top-k) minus (subject-role share in query_object top-k). 0.0 = direction fully lost; 1.0 = perfectly separated. Reported SEPARATELY from overall precision so a candidate cannot look good by winning easy queries.",
+  "possessive_jaccard": "Jaccard overlap of top-k result sets for query_possessive vs query_plain. The two strings are IDENTICAL except that one apostrophe becomes a space, so 1.0 is correct and any lower value isolates the tokenize() apostrophe exemption. Deliberately a minimal pair: comparing differently-worded queries would conflate the defect with rewording."
+ },
+ "subset": "direction-sensitivity + possessive",
+ "version": "1.1.0"
+}

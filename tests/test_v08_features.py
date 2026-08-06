@@ -41,7 +41,7 @@ class TestGapToTask:
         self, provider_module, mock_client, monkeypatch, tmp_path,
     ):
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
-                      YANTRIKDB_AUTO_GAP_TASKS="true")
+                      YANTRIKDB_AUTO_GAP_TASKS="true", YANTRIKDB_GAP_DETECTION="true")
         mock_client.knowledge_gaps.return_value = {"gaps": [
             {"query": "kubernetes ingress config", "count": 6},
             {"query": "oncall escalation path", "count": 4},
@@ -55,7 +55,7 @@ class TestGapToTask:
         self, provider_module, mock_client, monkeypatch, tmp_path,
     ):
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
-                      YANTRIKDB_AUTO_GAP_TASKS="true")
+                      YANTRIKDB_AUTO_GAP_TASKS="true", YANTRIKDB_GAP_DETECTION="true")
         mock_client.knowledge_gaps.return_value = {"gaps": [
             {"query": "kubernetes ingress config"},
             {"query": "oncall escalation path"},
@@ -71,24 +71,42 @@ class TestGapToTask:
         self, provider_module, mock_client, monkeypatch, tmp_path,
     ):
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
-                      YANTRIKDB_AUTO_GAP_TASKS="true", YANTRIKDB_GAP_TASK_MAX="1")
+                      YANTRIKDB_AUTO_GAP_TASKS="true", YANTRIKDB_GAP_DETECTION="true", YANTRIKDB_GAP_TASK_MAX="1")
         mock_client.knowledge_gaps.return_value = {"gaps": [
             {"query": "a"}, {"query": "b"}, {"query": "c"},
         ]}
         p.on_session_end([])
         assert mock_client.task_add.call_count == 1
 
-    def test_on_by_default(
+    def test_off_by_default_because_the_signal_does_not_discriminate(
         self, provider_module, mock_client, monkeypatch, tmp_path,
     ):
-        """v0.10.0 — the self-directing loop ships ON.
+        """v0.15.0 reverses the v0.10.0 default, on measurement.
 
-        Through v0.9.x this was opt-in, which meant the capability the plugin
-        is *for* never ran for anyone who installed it and didn't read the
-        README. The gate is demand-aggregated and the output is capped, so
-        turning it on cannot mint junk tasks.
+        v0.10.0 shipped this ON reasoning that a demand-aggregated, capped
+        gate "cannot mint junk tasks". True, but it assumed the gate could
+        tell a real gap from noise. Measured on engine 0.13.0: deliberate
+        gibberish scores as high as real questions, so the gate is not
+        conservative — it is uninformative, and 3 of 4 nonsense queries
+        evade the threshold entirely.
+
+        Minting durable to-dos from that spends the operator's attention on
+        noise, and a silent gap surface is read as "nothing missing". Off
+        until the signal discriminates; the knob stays for anyone who has
+        calibrated their own threshold against their own corpus.
         """
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path)
+        mock_client.knowledge_gaps.return_value = {"gaps": [{"query": "x"}]}
+        p.on_session_end([])
+        mock_client.task_add.assert_not_called()
+        mock_client.knowledge_gaps.assert_not_called()
+
+    def test_opt_in_restores_it(
+        self, provider_module, mock_client, monkeypatch, tmp_path,
+    ):
+        """Off by default is a default, not a removal."""
+        p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
+                      YANTRIKDB_GAP_DETECTION="true")
         mock_client.knowledge_gaps.return_value = {"gaps": [{"query": "x"}]}
         p.on_session_end([])
         mock_client.task_add.assert_called_once()
@@ -106,7 +124,7 @@ class TestGapToTask:
         self, provider_module, mock_client, monkeypatch, tmp_path,
     ):
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
-                      YANTRIKDB_AUTO_GAP_TASKS="true")
+                      YANTRIKDB_AUTO_GAP_TASKS="true", YANTRIKDB_GAP_DETECTION="true")
         mock_client.knowledge_gaps.side_effect = AttributeError("old engine")
         p.on_session_end([])  # must not raise
         mock_client.task_add.assert_not_called()
@@ -116,7 +134,7 @@ class TestGapToTask:
     ):
         # v0.8.1: engine 0.9.3+ scopes demand per namespace.
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
-                      YANTRIKDB_AUTO_GAP_TASKS="true")
+                      YANTRIKDB_AUTO_GAP_TASKS="true", YANTRIKDB_GAP_DETECTION="true")
         mock_client.knowledge_gaps.return_value = {"gaps": [{"query": "x"}]}
         p.on_session_end([])
         assert mock_client.knowledge_gaps.call_args.kwargs.get("namespace")
@@ -133,7 +151,8 @@ class TestAgendaBlock:
         self, provider_module, mock_client, monkeypatch, tmp_path,
     ):
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
-                      YANTRIKDB_SURFACE_AGENDA="true")
+                      YANTRIKDB_SURFACE_AGENDA="true",
+                      YANTRIKDB_GAP_DETECTION="true")
         mock_client.task_list.return_value = {"tasks": [
             {"id": "t1", "title": "Resolve knowledge gap: oncall path", "priority": "medium"},
         ]}
@@ -157,6 +176,7 @@ class TestAgendaBlock:
         self, provider_module, mock_client, monkeypatch, tmp_path,
     ):
         p = _provider(provider_module, mock_client, monkeypatch, tmp_path,
-                      YANTRIKDB_SURFACE_AGENDA="true")
+                      YANTRIKDB_SURFACE_AGENDA="true",
+                      YANTRIKDB_GAP_DETECTION="true")
         mock_client.knowledge_gaps.return_value = {"gaps": [{"query": "topic X"}]}
         assert "Your memory's agenda" in p.system_prompt_block()
