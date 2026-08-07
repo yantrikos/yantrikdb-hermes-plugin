@@ -98,6 +98,30 @@ def main() -> int:
 
     import yantrikdb
 
+    # CONTROL FIRST. A byte scan that finds nothing proves nothing unless the
+    # same scan, on the same build, finds a canary it SHOULD find. Without
+    # this, a write that silently failed, a drain that was too short, or a
+    # changed storage layout all report "clean" — the scan measuring nothing
+    # and saying so in the language of success.
+    control_dir = tempfile.mkdtemp()
+    control_path = os.path.join(control_dir, "plain.db")
+    plain = YantrikDB(control_path, embedding_dim=args.dim)
+    plain.record(CANARY, memory_type="semantic", namespace="canary")
+    time.sleep(DRAIN_SECONDS)
+    del plain
+    control_hits = _scan_raw_bytes(control_dir)
+    if not control_hits:
+        print(json.dumps({
+            "engine": yantrikdb.__version__,
+            "verdict": "INCONCLUSIVE — the control failed",
+            "detail": ("an UNENCRYPTED database did not show the canary in its "
+                       "raw bytes, so this scan cannot detect a leak on this "
+                       "build. Any 'clean' result here would be the instrument "
+                       "measuring nothing. Fix the control before trusting a "
+                       "pass."),
+        }, indent=2))
+        return 2
+
     workdir = tempfile.mkdtemp()
     db_path = os.path.join(workdir, "canary.db")
     db = YantrikDB(db_path, embedding_dim=args.dim,
@@ -113,6 +137,10 @@ def main() -> int:
 
     print(json.dumps({
         "engine": yantrikdb.__version__,
+        "control_unencrypted_canary_found": control_hits,
+        "control_note": ("the same scan on an UNENCRYPTED db on this build — it "
+                         "must find the canary, or a clean result below means "
+                         "nothing"),
         "is_encrypted_reports": claimed,
         "canary_in_raw_file_bytes": raw,
         "plaintext_located_in": where,
