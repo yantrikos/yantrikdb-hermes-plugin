@@ -94,8 +94,9 @@ def main() -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from _bootstrap import _pin_engine_import
     _pin_engine_import()
-    import yantrikdb
     from yantrikdb._yantrikdb_rust import YantrikDB
+
+    import yantrikdb
 
     workdir = tempfile.mkdtemp()
     db_path = os.path.join(workdir, "canary.db")
