@@ -3,6 +3,42 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.16.0] — 2026-08-12 — Engine 0.14.0 admitted, and one axis this release could not verify
+
+The ceiling moves from `<0.14.0` to `<0.15.0`. No plugin behaviour changes: this release is the compatibility claim and the evidence behind it.
+
+### What engine 0.14.0 gives you
+
+Caller-supplied `created_at` on record input, so an imported memory can carry the time it actually started rather than the time it was ingested. A caller-supplied `consolidate_cluster`. A `get_memory(rid)` point-read. Packs now expose their namespace. And the bundled embedder initialises **once per process** instead of once per instance, with bounded-backoff retry on download.
+
+### The one compile break cannot reach this plugin
+
+Engine 0.14.0 breaks Rust callers that construct `RecordInput` by struct literal. This plugin has no `Cargo.toml`, no `.rs` files, and zero `RecordInput` constructions — checked, not assumed. Pure-Python and MCP consumers are unaffected.
+
+### What the gate measured
+
+`tests/comparison/gate_4k.py` v1.3.0 on the hash-pinned 4,353-record corpus, 7 instances, both engines seeded by their own interpreter:
+
+| metric | 0.13.4 | 0.14.0 |
+|---|---|---|
+| precision@5 | 0.3929 (spread 0.0625) | 0.3750 (spread 0.0000) |
+| role_share | 0.8464 (spread 0.0500) | 0.8750 (spread 0.0000) |
+| possessive_top1 | 0.9167 | 0.9167 |
+| distinct_orderings | 2 | 2 |
+| lexical_degeneracy | 143 / 4 / 0.2797 | identical |
+
+**No primary metric moved outside 0.13.4's own measured spread.** Full suite 462 pass / 3 skip, identical on both. The plain encryption canary is clean with its control firing.
+
+The spread going to zero is the interesting number, and it is **not** a finding. The gate opens 7 instances and per-instance embedder init was the racy path, so 0.14.0's process-global init is a plausible mechanism — but nothing here tested that link, and one gate run is not a variance measurement.
+
+### What this release did **not** verify
+
+`benchmarks/encryption_migration_canary.py` returns `INCONCLUSIVE` on the 0.13.3 → 0.14.0 path at both 300 and 3,000 rows: the pre-fix writer left no plaintext, so the scan cannot demonstrate it would detect the freed-page case. **An INCONCLUSIVE is not a pass.** Whether 0.14.0 retains the VACUUM-then-checkpoint fix is untested by this release, and the ceiling moved anyway as an operator decision. If you enable encryption, that gap is yours to weigh — the plain canary covers fresh writes, not migrated pages.
+
+### A correction to how these numbers were produced
+
+The first comparison run for this release was invalid: the system interpreter had already been upgraded to 0.14.0, so a "0.13.4 baseline" measured 0.14.0 against itself, and reported a `distinct_orderings 1 → 2` regression that does not exist. The gate has always stamped `"engine"` in its output; the stamp was simply not read before the arm was trusted. Every number above comes from version-pinned virtualenvs with both stamps asserted first. **If you compare engine builds, assert the stamp before you compare the metrics** — the instrument recorded provenance correctly and the reading is where it failed.
+
 ## [0.15.0] — 2026-08-06 — Better retrieval, and one feature switched off on the evidence
 
 Two changes. One gives you a retrieval improvement that was sitting behind a version pin. The other **turns off a feature that has been quietly telling you nothing**, and explains why in enough detail that you can check the claim yourself.

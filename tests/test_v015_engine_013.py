@@ -24,6 +24,7 @@ off-by-default is a default, not a removal.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -58,19 +59,37 @@ def _provider(provider_module, mock_client, monkeypatch, **env):
     return p
 
 
+def _engine_bounds(repo_root):
+    """(floor, ceiling) of the engine pin as (major, minor, patch) tuples.
+
+    Parsed rather than string-matched: this file asserts that 0.13.x stays
+    admitted, which is a claim about the *range*. Pinning the literal ceiling
+    made a later release fail a test whose own docstring says the bound moves.
+    """
+    text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'"yantrikdb>=([\d.]+),<([\d.]+)"', text)
+    assert m, "engine pin is missing, unbounded, or no longer parseable"
+
+    def parts(v):
+        return tuple(int(x) for x in v.split("."))
+
+    return parts(m.group(1)), parts(m.group(2))
+
+
 class TestEngineCeiling:
     def test_admits_0_13_x(self, repo_root):
         """The whole point of the release: users get BM25 fusion."""
-        text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
-        assert "yantrikdb>=0.12.1,<0.14.0" in text
+        floor, ceiling = _engine_bounds(repo_root)
+        assert floor <= (0, 13, 0), f"floor {floor} excludes 0.13.x"
+        assert ceiling > (0, 13, 0), f"ceiling {ceiling} excludes 0.13.x"
 
     def test_still_bounded(self, repo_root):
         """Raising a ceiling is not removing it. An unbounded pin is how
         yantrikdb-mcp lost a published release when a dependency shipped a
         new major; the bound moves, it never disappears."""
+        floor, ceiling = _engine_bounds(repo_root)
+        assert floor == (0, 12, 1), f"engine floor moved to {floor} unremarked"
         text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
-        assert "yantrikdb>=0.12.1," in text
-        assert "<0.14.0" in text
         for line in text.splitlines():
             s = line.strip()
             if s.startswith('"yantrikdb>=') or s.startswith('"requests>='):
