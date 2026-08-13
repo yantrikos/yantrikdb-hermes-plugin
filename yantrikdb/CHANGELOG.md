@@ -3,6 +3,38 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [Unreleased]
+
+### The axis v0.16.0 shipped as unverified is now verified
+
+v0.16.0 said the freed-page erasure could not be certified because `encryption_migration_canary.py` returned `INCONCLUSIVE`. **That was a defect in the fixture, not an open question about the engine.** It is closed:
+
+```
+0.13.1 -> 0.13.3   before 203 / 503   after 4 / 3   RESIDUAL   <- the red proof
+0.13.1 -> 0.13.4   before 203 / 503   after 0       clean
+0.13.1 -> 0.14.0   before 203 / 503   after 0       clean
+0.13.1 -> 0.14.1   before 203 / 503   after 0       clean
+```
+
+Two mistakes were in the way, and the script now documents and detects both. The prefix arm must predate **0.13.2** — the write path was fixed there, so a 0.13.2/0.13.3 prefix seals on write and never creates plaintext to strand; the run now names that cause instead of leaving the operator to guess between two possibilities. And **row count is load-bearing in the direction nobody expects**: the residue shows at 200 and 500 rows and vanishes at 3,000, because the migration's own later writes reuse the freed pages and erase the evidence. A 3,000-row run reports *clean on a known-bad engine* with its control still firing — a false green that looks fully qualified. Raising the row count "to be thorough" inverts the result.
+
+### Engine 0.14.1 measured, and one earlier hypothesis retracted
+
+0.14.1 lands inside the shipped `<0.15.0` ceiling and changes recall ranking, so it was measured rather than assumed. Three runs per arm, engine stamps asserted first, compared as **across-run ranges**:
+
+| metric | 0.13.4 (3 runs) | 0.14.1 (3 runs) | |
+|---|---|---|---|
+| precision@5 | 0.3750–0.3929 | 0.3839 | overlap — not a result |
+| role_share | 0.8250–0.8750 | 0.8333 | overlap — not a result |
+| possessive_top1 | 0.9167 | **1.0000** | real |
+| possessive_jaccard | 0.8690–0.8889 | **0.9722** | real |
+| direction_separation | 0.0690–0.0952 | **0.1310–0.1429** | real, no overlap |
+| distinct_orderings | 2, 2, 1 | 1, 1, 1 | |
+
+**v0.16.0's zero-spread hypothesis is retracted.** It suggested engine 0.14.0's process-global embedder init explained the gate's cross-instance spread collapsing to zero. Re-running the identical gate on 0.13.4 gave spreads of 0.0625/0.0500, then 0.0000/0.0000, then 0.0000/0.0000 — **0.13.4 produces zero spread too.** The single observation was noise.
+
+That retraction exposed a **defect in how this gate is read**. Its `spread` is *within-run* variation across the 7 instances, and its own `reading` text says a change larger than it is real. That yardstick generates false positives: `role_share` moved 0.8750 → 0.8333 with spread 0.0000 on both arms, which clears the stated bar — yet 0.13.4 alone ranges 0.8250–0.8750 across runs and contains both values. **Compare across-run ranges from repeated runs; a single run's spread is not a variance measurement.**
+
 ## [0.16.0] — 2026-08-12 — Engine 0.14.0 admitted, and one axis this release could not verify
 
 The ceiling moves from `<0.14.0` to `<0.15.0`. No plugin behaviour changes: this release is the compatibility claim and the evidence behind it.

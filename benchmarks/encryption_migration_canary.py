@@ -33,6 +33,28 @@ in the same run, on the same fixture.
 Verify the pair by also running it with a KNOWN-BAD candidate (0.13.2/0.13.3):
 it must report RESIDUAL. A run that only ever shows green has not been shown to
 go red.
+
+TWO WAYS TO GET A MEANINGLESS RESULT FROM THIS SCRIPT. Both were hit for real
+while gating engine 0.14.0, and both look like a pass if you do not read closely.
+
+1. THE PREFIX MUST PREDATE 0.13.2. There are two different "pre-fix" versions
+   here and conflating them wastes a day: the WRITE path was fixed in 0.13.2,
+   the FREED-PAGE erasure only in 0.13.4. Hand this script a 0.13.2 or 0.13.3
+   prefix and it seals on write, no plaintext is ever created, nothing can be
+   stranded, and you get INCONCLUSIVE — a true statement about the fixture and
+   no statement at all about the candidate. Use 0.13.1.
+
+2. ROW COUNT IS LOAD-BEARING, AND MORE IS WORSE. Measured 0.13.1 -> 0.13.3:
+
+       200 rows    before 203    after 4     RESIDUAL
+       500 rows    before 503    after 3     RESIDUAL
+      3000 rows    before 3000   after 0     "clean"  <-- FALSE GREEN
+
+   At 3000 rows the migration's own subsequent writes reuse the freed pages and
+   overwrite the plaintext incidentally, so a KNOWN-BAD engine reports clean.
+   The control still fires, which is what makes this dangerous: the run looks
+   fully qualified. Scaling rows up to "be thorough" inverts the result. Stay at
+   200-500 unless you have re-demonstrated a red at the larger count.
 """
 
 from __future__ import annotations
@@ -94,13 +116,28 @@ print(yantrikdb.__version__)
 
     before = _scan(work)
     if not before:
+        try:
+            sealed_on_write = tuple(
+                int(p) for p in pre_ver.split(".")[:3]
+            ) >= (0, 13, 2)
+        except ValueError:
+            sealed_on_write = False
+        detail = ("the pre-fix engine left no plaintext, so this scan cannot "
+                  "detect the freed-page case. A clean result below would "
+                  "mean nothing.")
+        if sealed_on_write:
+            detail += (f" NAMED CAUSE: the prefix arm is {pre_ver}, and the "
+                       "write path was fixed in 0.13.2 — it seals on write, so "
+                       "there is never plaintext to strand. This is a fixture "
+                       "error, not a finding about the candidate. Use a prefix "
+                       "older than 0.13.2 (0.13.1).")
+        else:
+            detail += (" Either the writer is already fixed, or the fixture "
+                       "is wrong.")
         print(json.dumps({
             "written_by": pre_ver,
             "verdict": "INCONCLUSIVE — the control failed",
-            "detail": ("the pre-fix engine left no plaintext, so this scan "
-                       "cannot detect the freed-page case. Either the writer "
-                       "is already fixed, or the fixture is wrong. A clean "
-                       "result below would mean nothing."),
+            "detail": detail,
         }, indent=2))
         return 2
 
