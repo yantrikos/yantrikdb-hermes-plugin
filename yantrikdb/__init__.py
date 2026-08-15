@@ -855,7 +855,7 @@ FLEET_SCHEMA = {
         "or 'which of my agents is stuck?' before duplicating effort. Read-"
         "only, and never available when per-user scoping is on."
     ),
-    "input_schema": {"type": "object", "properties": {}, "required": []},
+    "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
 PACKS_SCHEMA = {
@@ -877,7 +877,7 @@ PACKS_SCHEMA = {
         "refusal prevents confidently wrong answers, so report it rather "
         "than retrying with allow_unverified_embedder."
     ),
-    "input_schema": {
+    "parameters": {
         "type": "object",
         "properties": {
             "action": {
@@ -1318,7 +1318,13 @@ def _parse_time_filter(value: Any) -> float | None:
     today_midnight = _dt.datetime.now().replace(
         hour=0, minute=0, second=0, microsecond=0,
     ).timestamp()
-    if s in ("now", "today"):
+    if s == "now":
+        # "now" is a point in time, not a day. Mapping it to midnight made
+        # `until: "now"` exclude everything stored since midnight — up to
+        # 24h of the freshest memories vanished from a recall that looked
+        # correct (2026-08-15 downstream audit).
+        return now
+    if s == "today":
         return today_midnight
     if s == "yesterday":
         return today_midnight - 86400
@@ -1629,7 +1635,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "env_var": "YANTRIKDB_SHARED_BRAIN_NAMESPACE",
             },
             {
-                "key": "fleet_view",
+                # Was "fleet_view" — the config attribute is
+                # fleet_view_enabled, and the overlay loop drops unknown
+                # keys via hasattr: setup wrote the value and it was
+                # silently ignored (2026-08-15 downstream audit).
+                "key": "fleet_view_enabled",
                 "description": (
                     "Running several agents and want to SEE across them? Adds "
                     "a read-only `yantrikdb_fleet` tool reporting each sibling "
@@ -1728,7 +1738,15 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # requires a token. is_available() short-circuits at the provider
         # level, but be defensive here too.
         if self._config.mode == "http" and not self._config.token:
-            logger.debug("YantrikDB http mode but no token — plugin inactive")
+            # Surfaced, not debug-logged: without _init_error the prompt
+            # block rendered as if memory simply didn't exist and tools
+            # failed with a generic "not active" — the silently-absent
+            # state v0.4.4 fixed for every OTHER init failure.
+            self._init_error = (
+                "http mode configured but YANTRIKDB_TOKEN is empty — "
+                "set the token or switch mode to embedded"
+            )
+            logger.error("YantrikDB %s", self._init_error)
             return
 
         self._base_namespace = _derive_namespace(self._config.namespace, kwargs)
@@ -4418,11 +4436,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
         def _run() -> None:
             try:
+                # _run_maintenance already runs auto-ack + gap-tasks when
+                # configured; calling them again here drained triggers and
+                # scanned gaps twice per cadence — wasted round-trips today,
+                # a double-write the moment either helper gains a
+                # non-idempotent step (2026-08-15 downstream audit).
                 self._run_maintenance(reason="periodic")
-                if cfg.auto_acknowledge_triggers:
-                    self._auto_acknowledge_pending_triggers()
-                if cfg.auto_gap_tasks:
-                    self._auto_gap_tasks()
             except YantrikDBError as e:
                 logger.debug("YantrikDB periodic maintenance failed: %s", e)
 
