@@ -719,7 +719,22 @@ class YantrikDBConfig:
             elif key in bool_fields:
                 setattr(cfg, key, _parse_bool(val, default=getattr(cfg, key)))
             else:
-                setattr(cfg, key, val)
+                # Coerce by the DEFAULT's runtime type. The hand-maintained
+                # name sets above were frozen at v0.5; every knob added
+                # since fell through to raw setattr — so a yantrikdb.json
+                # carrying "gap_detection": "false" set the truthy STRING
+                # "false" and silently ENABLED the feature the operator
+                # disabled, and a string cadence raised TypeError inside
+                # on_turn_start every turn (2026-08-15 downstream audit).
+                current = getattr(cfg, key)
+                if isinstance(current, bool):
+                    setattr(cfg, key, _parse_bool(val, default=current))
+                elif isinstance(current, int) and not isinstance(current, bool):
+                    setattr(cfg, key, _parse_int(val, current))
+                elif isinstance(current, float):
+                    setattr(cfg, key, _parse_float(val, current))
+                else:
+                    setattr(cfg, key, val)
         return cfg
 
 
@@ -849,7 +864,13 @@ class YantrikDBClient:
             read=min(config.retry_total, 2),
             backoff_factor=0.5,
             status_forcelist=(500, 502, 504),
-            allowed_methods=frozenset(("GET", "POST", "DELETE")),
+            # POST removed 2026-08-15: retrying non-idempotent /v1/remember
+            # (and relate/task/skill writes) on a 5xx transparently REPLAYS
+            # the write — a server that committed and died mid-response got
+            # the memory silently duplicated, and the plugin's hook writes
+            # carry no idempotency key. Connect-level errors still retry
+            # safely (the request never reached the server).
+            allowed_methods=frozenset(("GET", "DELETE")),
             respect_retry_after_header=True,
             raise_on_status=False,
         )
