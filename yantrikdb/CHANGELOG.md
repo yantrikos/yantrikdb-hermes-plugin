@@ -3,7 +3,34 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
-## [Unreleased]
+## [0.17.0] — 2026-08-16
+
+### Fixed — five silent config/wire defects (2026-08-15 downstream audit)
+
+All the same shape: accepted input, reported success, did something else.
+
+- **Config overlay coerces by the default's runtime type.** The hand-frozen
+  name sets stopped at v0.5, so `"gap_detection": "false"` in yantrikdb.json
+  set the truthy *string* and enabled the feature the operator disabled; a
+  string cadence raised TypeError inside `on_turn_start` every turn.
+- **HTTP retries no longer replay POSTs.** A server that committed and died
+  mid-response got `/v1/remember` silently duplicated; hook writes carry no
+  idempotency key, so POST retry-on-5xx is unsafe by construction.
+  Connect-level errors still retry (the request never reached the server).
+- **`until:"now"` is a point in time, not midnight** — the old mapping
+  excluded up to 24h of the freshest memories from a correct-looking recall.
+- **Setup writes `fleet_view_enabled`**, the key the overlay loop actually
+  reads; `"fleet_view"` was dropped by hasattr and silently ignored.
+- **fleet/packs tool schemas use `parameters`** like every other tool schema
+  in the file, so the host stops seeing two malformed tools.
+
+### Not verified in this release, on purpose
+
+The engine pin stays `>=0.12.1,<0.15.0`. Engine 0.15.0 changes retrieval
+(lexical-novelty selection, lane quotas, per-lane filter integrity, and
+formerly-inert tuning knobs now live); admitting it is a gated decision —
+the 0.15 admission rides the next release, after the gate runs on this
+plugin's own harness.
 
 ### The axis v0.16.0 shipped as unverified is now verified
 
