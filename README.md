@@ -509,7 +509,7 @@ See [yantrikdb/CHANGELOG.md](yantrikdb/CHANGELOG.md) for full release notes and 
 
 ## License
 
-This plugin is **MIT** (matching Hermes — the code is intended for upstream contribution). The [YantrikDB server](https://github.com/yantrikos/yantrikdb-server) itself is AGPL-3.0; the plugin only talks to it over HTTP and does not embed or redistribute any server code, so the boundary is the same as any MIT client talking to an AGPL service. See [yantrikdb/SECURITY.md](yantrikdb/SECURITY.md#license-boundary-agpl-vs-mit) for the full note.
+This plugin is **MIT** (matching Hermes — the code is intended for upstream contribution). The [YantrikDB server](https://github.com/yantrikos/yantrikdb-server) is Apache-2.0 as of 2026-08-18 (previously AGPL-3.0), so there is no copyleft boundary to reason about at all; the plugin talks to it over HTTP and embeds no server code. See [yantrikdb/SECURITY.md](yantrikdb/SECURITY.md#license-boundary-agpl-vs-mit) for the full note.
 
 ## Links
 
