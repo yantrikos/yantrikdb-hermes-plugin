@@ -29,11 +29,11 @@ This document covers security properties of the **YantrikDB Hermes plugin** — 
 - A circuit breaker opens for 120 s after 5 consecutive transient/server/auth failures so a flapping server cannot wedge Hermes' event loop. See [ARCHITECTURE.md](ARCHITECTURE.md) for state transitions.
 - Background threads (prefetch, sync_turn, on_memory_write mirror) are all daemon threads with bounded join timeouts; they cannot prevent Hermes from exiting.
 
-## License boundary (AGPL vs MIT)
+## License boundary (Apache-2.0 vs MIT)
 
-- `yantrikdb-server` is licensed AGPL-3.0.
+- `yantrikdb-server` and the `yantrikdb` engine are licensed Apache-2.0 (as of 2026-08-18; they were AGPL-3.0 before that).
 - The plugin code in this directory is shipped under Hermes' MIT license.
-- The plugin **connects to** the server over HTTP — it does not embed, statically link, or redistribute any YantrikDB code. This is the same model as any MIT client that talks to an AGPL server. It is legally clean; if you fork or redistribute, the plugin is MIT and the server remains AGPL.
+- Both licenses are permissive, so there is no copyleft boundary to reason about: nothing here imposes obligations on your own code, your modifications, or a service you host. If you fork or redistribute, the plugin is MIT and the engine is Apache-2.0.
 
 ## Reporting a vulnerability
 

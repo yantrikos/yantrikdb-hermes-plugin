@@ -11,7 +11,7 @@ This document explains how the plugin is structured, how requests flow through i
 | `plugin.yaml`    | Declared name, version, dependencies (`requests>=2.31`), and the three optional hooks the plugin implements. |
 | `README.md`      | User-facing documentation.                                                        |
 | `CHANGELOG.md`   | Versioned change history.                                                         |
-| `SECURITY.md`    | Token / secret handling, AGPL-vs-MIT boundary, reporting.                         |
+| `SECURITY.md`    | Token / secret handling, Apache-2.0-vs-MIT boundary, reporting.                         |
 
 ## Layered responsibilities
 

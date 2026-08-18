@@ -314,7 +314,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for control flow, error taxonomy, and thr
 
 ### License
 
-YantrikDB-server is AGPL-3.0. This plugin ships under Hermes' MIT license. The plugin connects to the server over HTTP and does not statically link or embed any YantrikDB code, so the model is the same as any MIT client that talks to an AGPL server — legally clean.
+YantrikDB-server and the `yantrikdb` engine are Apache-2.0 (as of 2026-08-18; previously AGPL-3.0). This plugin ships under Hermes' MIT license. Both are permissive, so there is no copyleft boundary at all — nothing here constrains your own code, your modifications, or a service you host.
 
 ## Links
 

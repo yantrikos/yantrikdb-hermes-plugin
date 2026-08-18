@@ -4,7 +4,8 @@
 [![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![YantrikDB](https://img.shields.io/badge/yantrikdb-%E2%89%A50.12.1,%3C0.13-orange)](https://github.com/yantrikos/yantrikdb-server)
+[![PyPI](https://img.shields.io/pypi/v/yantrikdb-hermes-plugin)](https://pypi.org/project/yantrikdb-hermes-plugin/)
+[![YantrikDB engine](https://img.shields.io/badge/yantrikdb%20engine-%E2%89%A50.12.1,%3C0.16-orange)](https://github.com/yantrikos/yantrikdb)
 [![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)
@@ -499,7 +500,7 @@ The maintainer doesn't promise "I won't quit" — promises like that aren't test
 
 - Every release ships with tests + CI (Python 3.11 / 3.12 / 3.13) + tagged CHANGELOG + a publish gate where 151 tests + ruff + mypy must pass before the wheel uploads to PyPI.
 - First user issue on this repo (multilingual embedding support) was filed and shipped to PyPI the same day — 25 minutes from raised to released.
-- Underlying yantrikdb engine: ~5.2k/mo PyPI downloads; flagship server repo has 141 GitHub stars; broader yantrikos namespace ~13.5k/mo combined PyPI+npm. Cross-stack ownership (engine + HTTP server + MCP server + this plugin) — 14+ months of parallel maintenance, not a one-week hobby.
+- Underlying yantrikdb engine: ~11.3k/mo PyPI downloads; flagship server repo has 171 GitHub stars. Cross-stack ownership (engine + HTTP server + MCP server + this plugin) — 14+ months of parallel maintenance, not a one-week hobby.
 - Independent recognition: accepted into the [Cursor Directory](https://cursor.directory/plugins/yantrikdb) (300k+ developer reach) and (sibling project) the Anthropic MCP Directory.
 - Substrate design deposited as a peer-citable preprint: [10.5281/zenodo.20128887](https://doi.org/10.5281/zenodo.20128887).
 
@@ -507,9 +508,20 @@ That's what I can give you. The technical merits are above; the maintenance shap
 
 See [yantrikdb/CHANGELOG.md](yantrikdb/CHANGELOG.md) for full release notes and [yantrikdb/ARCHITECTURE.md](yantrikdb/ARCHITECTURE.md) for the control flow, error taxonomy, and threading model (covering both backends).
 
+## Related projects
+
+The rest of the YantrikDB stack, if you need memory somewhere other than Hermes:
+
+- [yantrikdb](https://github.com/yantrikos/yantrikdb) — the embeddable Rust/Python engine this plugin runs in-process (`pip install yantrikdb`).
+- [yantrikdb-server](https://github.com/yantrikos/yantrikdb-server) — HTTP gateway and HA cluster, for the alternative HTTP backend above.
+- [yantrikdb-mcp](https://github.com/yantrikos/yantrikdb-mcp) — the same memory as an MCP server for Claude Code, Cursor and Windsurf (`pip install yantrikdb-mcp`).
+- [yantrikdb-client](https://github.com/yantrikos/yantrikdb-client) — typed Python client for the HTTP server.
+- [langchain-yantrikdb](https://github.com/yantrikos/langchain-yantrikdb) — YantrikDB as a LangChain `VectorStore` and `ChatMessageHistory`.
+- [yantrik-memory](https://github.com/yantrikos/yantrik-memory) — framework-agnostic memory layer with traits and bond evolution.
+
 ## License
 
-This plugin is **MIT** (matching Hermes — the code is intended for upstream contribution). The [YantrikDB server](https://github.com/yantrikos/yantrikdb-server) is Apache-2.0 as of 2026-08-18 (previously AGPL-3.0), so there is no copyleft boundary to reason about at all; the plugin talks to it over HTTP and embeds no server code. See [yantrikdb/SECURITY.md](yantrikdb/SECURITY.md#license-boundary-agpl-vs-mit) for the full note.
+This plugin is **MIT** (matching Hermes — the code is intended for upstream contribution). The [YantrikDB server](https://github.com/yantrikos/yantrikdb-server) is Apache-2.0 as of 2026-08-18 (previously AGPL-3.0), so there is no copyleft boundary to reason about at all; the plugin talks to it over HTTP and embeds no server code. See [yantrikdb/SECURITY.md](yantrikdb/SECURITY.md#license-boundary-apache-20-vs-mit) for the full note.
 
 ## Links
 
