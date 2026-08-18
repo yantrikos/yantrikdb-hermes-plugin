@@ -3,6 +3,101 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.18.0] — 2026-08-18
+
+### The 0.15 line is admitted — except the three releases that should not be
+
+Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.16.0`.
+
+v0.17.0 shipped `<0.15.0` and said the 0.15 admission "rides the next release,
+after the gate runs on this plugin's own harness." The gate has run, on the
+homelab container, and it found more than a yes/no.
+
+**The recall gate holds.** `benchmarks/run_recall_bench.py`, three runs per arm:
+recall@1 0.973, @3/@5/@10 1.000, answer-containment identical, MRR 0.987 — byte
+identical on 0.14.1 and 0.15.3, zero variance. No regression in ranking.
+
+**0.15.0 rescaled composite scores, and ranking-only metrics cannot see it.**
+With the embedder held fixed at 64 dims (see the harness note below), similarity
+is byte-identical across engines — median 0.6044, min 0.3368, max 0.9206 — while
+the multiplier applied on top of it moves:
+
+| | 0.14.1 | 0.15.0 | 0.15.3 |
+|---|---|---|---|
+| composite ÷ similarity, median | 1.0644 | 0.7788 | 0.7788 |
+| composite ÷ similarity, **max** | **1.4317** | **1.1917** | 1.1917 |
+| avg-top3, median | 0.4721 | 0.3357 | 0.3357 |
+
+The max crossing 1.30 is the mechanism: engine commit `8ad509b` replaced an
+unbounded multiplicative freshness factor with `score = relevance ×
+exp(POLICY_BUDGET_LN × Σwᵢzᵢ)`, capped at 1.30. MRR did not move because a
+near-uniform scale factor preserves order. **A benchmark that measures only
+ranking is structurally blind to a rescaling — and every consumer that
+thresholds a raw score is invisible to it.** That is the finding worth carrying.
+
+0.15.1, 0.15.2 and 0.15.3 are identical to 0.15.0 on every figure above.
+
+### `gap_max_avg_top_score` is not recalibrated, and cannot be
+
+The rescaling puts the 0.30 default above the answered distribution, so
+`test_gap_calibration` fails on the 0.15 line. The obvious response is to pick a
+new constant. It does not exist. Measured with `benchmarks/gap_floor_check.py`
+on engine 0.15.3 against a **5,218-record** corpus — the scale this project's own
+0.13.0 measurement used:
+
+```
+nonsense  0.2346  0.2674  0.2709  0.3050
+real      0.2346 ........................ 0.3946
+```
+
+The bands overlap. 0.22 flags every real query; 0.31 reports "quantum tarpaulin
+metric" as answered. This reproduces the instrument defect `YantrikDBConfig`
+already documents, on a newer engine and a different corpus, and confirms the
+call made there: *the defect is the instrument, not the number.*
+
+A 40-record corpus does **not** reproduce it — nonsense separates cleanly at that
+size, because a random string has too few neighbours to look plausible. Anyone
+re-testing this must do it at realistic scale or they will measure the corpus
+rather than the detector.
+
+The two calibration tests are therefore `xfail` with that measurement recorded,
+not deleted and not "fixed" by moving the constant. `gap_detection` stays
+`False`, and the eight tests that enforce that — including
+`test_off_by_default_because_the_signal_does_not_discriminate` — still bind.
+
+### Two harness defects found while running the gate
+
+- **`run_recall_bench.py` reports an embedder it does not control.** Line 123
+  prints `Embedder: bundled potion-2M` as a hardcoded literal, and `_bootstrap`
+  pins nothing. Engine 0.15.0 introduced a 256-dim `potion-base-8M` default for
+  new stores, so on any engine ≥0.15.0 the bench silently used a different model
+  than it claimed. Every comparison spanning that boundary is embedder-confounded
+  and the output conceals it. The numbers above were re-taken with the dimension
+  pinned explicitly; an earlier confounded run overstated the effect by ~50%.
+- **`_engine_bounds` could not parse a pin containing `!=`.** It reported a
+  bounded pin as "missing, unbounded, or no longer parseable". Widened, and
+  `test_known_bad_releases_stay_excluded` now asserts the exclusions survive so
+  a later widening cannot silently re-admit 0.15.0–0.15.2.
+
+### Why those three releases are excluded rather than admitted
+
+Engine 0.15.0–0.15.2 carry ranking defects fixed in 0.15.3: freshness computed
+from `last_access` (which `reinforce()` mutates on every recall that *returns* a
+record, so ranking depended on who had read a memory), valence applied outside
+the policy budget with no range check (valence=100 → 31× multiplier), and a
+rescue lane that self-disabled with use. Admitting them because they sit inside a
+widened range would be the same mistake as an unbounded `>=`.
+
+The floor is unchanged, so no currently-supported engine is dropped.
+
+### Verified in the homelab container
+
+Plugin source + engine 0.15.3: every provider surface exercised (health,
+record_turn, recall, list_records, recent_turns, conflicts, knowledge_gaps,
+pending_triggers) with results identical to the 0.14.1 baseline; the agent's own
+memory migrated schema 40 → 41 with rows and integrity intact; `hermes memory
+status` reports the provider available. Suite: 461 passed, 3 skipped, 2 xfailed.
+
 ## [0.17.0] — 2026-08-16
 
 ### Fixed — five silent config/wire defects (2026-08-15 downstream audit)

@@ -59,21 +59,43 @@ def _provider(provider_module, mock_client, monkeypatch, **env):
     return p
 
 
+def _engine_spec(repo_root):
+    """The raw engine specifier string from pyproject."""
+    text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'"(yantrikdb>=[^"]+)"', text)
+    assert m, "engine pin is missing or no longer parseable"
+    return m.group(1)
+
+
 def _engine_bounds(repo_root):
     """(floor, ceiling) of the engine pin as (major, minor, patch) tuples.
 
     Parsed rather than string-matched: this file asserts that 0.13.x stays
     admitted, which is a claim about the *range*. Pinning the literal ceiling
     made a later release fail a test whose own docstring says the bound moves.
+
+    Tolerates `!=` exclusions between the bounds. A pin may need to admit a
+    range while excluding named releases inside it — excluding a known-bad
+    version is not the same as being unbounded, and the parser must not
+    conflate them. See `_engine_exclusions` for the other half of the claim.
     """
-    text = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
-    m = re.search(r'"yantrikdb>=([\d.]+),<([\d.]+)"', text)
-    assert m, "engine pin is missing, unbounded, or no longer parseable"
+    spec = _engine_spec(repo_root)
+    floor = re.search(r">=([\d.]+)", spec)
+    ceiling = re.search(r"<([\d.]+)", spec)
+    assert floor and ceiling, f"engine pin is missing a bound: {spec}"
 
     def parts(v):
         return tuple(int(x) for x in v.split("."))
 
-    return parts(m.group(1)), parts(m.group(2))
+    return parts(floor.group(1)), parts(ceiling.group(1))
+
+
+def _engine_exclusions(repo_root):
+    """Versions the pin explicitly refuses, as (major, minor, patch) tuples."""
+    return {
+        tuple(int(x) for x in v.split("."))
+        for v in re.findall(r"!=([\d.]+)", _engine_spec(repo_root))
+    }
 
 
 class TestEngineCeiling:
@@ -82,6 +104,26 @@ class TestEngineCeiling:
         floor, ceiling = _engine_bounds(repo_root)
         assert floor <= (0, 13, 0), f"floor {floor} excludes 0.13.x"
         assert ceiling > (0, 13, 0), f"ceiling {ceiling} excludes 0.13.x"
+
+    def test_known_bad_releases_stay_excluded(self, repo_root):
+        """Engine 0.15.0-0.15.2 changed the score SCALE (priors moved into one
+        bounded budget) without changing ranking, and shipped three ranking
+        defects the engine fixed in 0.15.3. They sit inside the admitted range,
+        so they are excluded by name. Measured, embedder held fixed at 64 dims:
+        composite/similarity fell 1.0644 -> 0.7788 across that boundary while
+        similarity itself was byte-identical.
+
+        If a later release widens the range, these exclusions must survive or
+        be replaced by a floor above them — dropping them silently re-admits
+        the defects."""
+        floor, ceiling = _engine_bounds(repo_root)
+        excluded = _engine_exclusions(repo_root)
+        for bad in [(0, 15, 0), (0, 15, 1), (0, 15, 2)]:
+            if floor <= bad < ceiling:
+                assert bad in excluded, (
+                    f"{bad} is inside the admitted range {floor}..{ceiling} "
+                    f"and is not excluded; it carries known ranking defects"
+                )
 
     def test_still_bounded(self, repo_root):
         """Raising a ceiling is not removing it. An unbounded pin is how
