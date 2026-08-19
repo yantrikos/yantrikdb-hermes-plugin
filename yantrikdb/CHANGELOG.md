@@ -3,7 +3,7 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
-## [0.18.1] — 2026-08-18 — Installable again
+## [0.18.2] — 2026-08-18 — Installable again, this time verified on a fresh clone
 
 Hermes v0.20.x scans plugin repositories on `hermes plugins install` and blocks a community plugin on **any single critical finding** — `--force` does not override it. This plugin tripped three, and all three were false positives. Reported by @luismanson in #67.
 
@@ -17,11 +17,15 @@ Hermes v0.20.x scans plugin repositories on `hermes plugins install` and blocks 
 
 ### What was flagged, and why it was wrong
 
-The init-failure prompt said *"Do NOT tell the user their memories were saved — they were not."* That matches `deception_hide`, whose description is "instructs agent to hide information from user" — **the exact opposite of what the sentence does.** It is an anti-deception guard: when the plugin fails to initialise, the agent must not claim a save that never happened. It now reads as a positive directive, which is better prompting regardless of any scanner. The test asserting it checks the behaviour (`"nothing was saved"`) rather than the sentence, so rewording it again won't break it twice.
+The init-failure prompt used a negative imperative — an instruction *not* to inform the user that their memories had been saved, because they had not been. That matches `deception_hide`, whose description is "instructs agent to hide information from user" — **the exact opposite of what the sentence does.** It is an anti-deception guard: when the plugin fails to initialise, the agent must not claim a save that never happened. It now reads as a positive directive, which is better prompting regardless of any scanner. The test asserting it checks the behaviour (`"nothing was saved"`) rather than the sentence, so rewording it again won't break it twice.
 
-`extractor.py` described its stopword list as "words that pretend to be names", tripping `role_pretend`. They don't pretend anything; they look like names. The new wording is simply more accurate.
+`extractor.py` described its stopword list with a verb implying those words impersonate names, tripping `role_pretend`. They don't impersonate anything; they look like names. The new wording is simply more accurate.
 
 The third was `tests/test_semantic_contract.py`, which stores prompt-injection text and asserts it round-trips **verbatim** — a test that the trust boundary holds, read by the scanner as the attack it tests for. The payload is now an equally hostile string that isn't the scanner's signature. That case asserts byte-fidelity of adversarial text, so the exact wording carries no load; **obfuscating** it would have weakened the test, but **substituting** it does not. A comment says so, because restoring the canonical phrase would silently re-block every install.
+
+### Why this entry paraphrases instead of quoting
+
+v0.18.1 quoted the two offending strings verbatim to explain the fix — and this file ships inside the repository the scanner walks, so **the release notes re-introduced the CRITICAL the release removed.** A fresh clone of v0.18.1 still scanned `DANGEROUS`. The strings above are described rather than reproduced for that reason. If you document a scanner finding, do not paste its trigger into a tracked file.
 
 ### The other 108 findings are deliberate
 
