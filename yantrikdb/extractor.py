@@ -289,7 +289,7 @@ def _is_clean_value(val: str) -> bool:
     return any(c.isalnum() for c in val)
 
 
-# Words that pretend to be names but aren't.
+# Words that look like names but aren't.
 _STOPWORD_NAMES = frozenset({
     "Sorry", "Actually", "Just", "Wondering", "Curious", "Fine", "Okay",
     "Good", "Bad", "Better", "Worse", "Trying", "Working", "Looking",
