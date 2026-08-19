@@ -65,7 +65,7 @@ See <https://yantrikdb.com/server/quickstart/> for systemd, HA cluster, and adva
 
 Optional config file: `$HERMES_HOME/yantrikdb.json`. Env vars are the primary source.
 
-| Key               | Env                         | Default                 | Description                                                                        |
+| Key               | Environment variable        | Default                 | Description                                                                        |
 |-------------------|-----------------------------|-------------------------|------------------------------------------------------------------------------------|
 | `url`             | `YANTRIKDB_URL`             | `http://localhost:7438` | HTTP endpoint.                                                                     |
 | `token`           | `YANTRIKDB_TOKEN`           | *required*              | Bearer token from `yantrikdb token create`.                                        |

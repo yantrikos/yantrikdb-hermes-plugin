@@ -6,7 +6,7 @@ Proof that the contents of [PR #9989](https://github.com/NousResearch/hermes-age
 
 > "Have we validated the PR end-to-end, or just the equivalent code via the standalone CLI installer?"
 
-The standalone repo's [VERIFICATION.md](../../../VERIFICATION.md) covers DeepSeek-driven agent sessions against the PyPI-installed plugin. This file covers the orthogonal question: a maintainer reviewing the PR can clone the branch, drop it into a Hermes tree, and verify it works without touching PyPI.
+The standalone repo's [VERIFICATION.md](https://github.com/yantrikos/yantrikdb-hermes-plugin/blob/main/VERIFICATION.md) covers DeepSeek-driven agent sessions against the PyPI-installed plugin. This file covers the orthogonal question: a maintainer reviewing the PR can clone the branch, drop it into a Hermes tree, and verify it works without touching PyPI.
 
 ## Environment
 
