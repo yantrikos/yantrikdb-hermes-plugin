@@ -153,5 +153,5 @@ class TestNotAvailablePromptBlock:
         p._init_error = "boom"
         block = p.system_prompt_block()
         assert "NOT AVAILABLE" in block
-        assert "Do NOT tell the user their memories were saved" in block
+        assert "nothing was saved" in block
         assert "issue #50" in block.lower() or "#50" in block
