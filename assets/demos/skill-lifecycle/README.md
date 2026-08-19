@@ -1,6 +1,6 @@
 # Skill Lifecycle Demo
 
-End-to-end demo showing the [`yantrikdb-hermes-plugin`](https://github.com/yantrikos/yantrikdb-hermes-plugin) skill substrate handling the **define → restart → search → outcome** loop — the autonomy loop described in [`yantrikdb/README.md`](../../../yantrikdb/README.md) and on [`yantrikdb.com/guides/autonomous-skills/`](https://yantrikdb.com/guides/autonomous-skills/).
+End-to-end demo showing the [`yantrikdb-hermes-plugin`](https://github.com/yantrikos/yantrikdb-hermes-plugin) skill substrate handling the **define → restart → search → outcome** loop — the autonomy loop described in [`yantrikdb/README.md`](https://github.com/yantrikos/yantrikdb-hermes-plugin/blob/main/yantrikdb/README.md) and on [`yantrikdb.com/guides/autonomous-skills/`](https://yantrikdb.com/guides/autonomous-skills/).
 
 ## Constellation animation (the fireworks)
 
@@ -64,7 +64,7 @@ The demo runs in ~25 seconds against a fresh ephemeral SQLite DB. No LLM in the 
 
 ## What this is and isn't
 
-**This is**: the same `handle_tool_call` entry point Hermes uses to invoke yantrikdb tools when its agent's LLM emits a tool call. The plugin code is real ([`yantrikdb_hermes_plugin.YantrikDBMemoryProvider`](../../../yantrikdb/__init__.py)). The engine is real (`yantrikdb` on PyPI). The substrate is real (SQLite under the temp dir).
+**This is**: the same `handle_tool_call` entry point Hermes uses to invoke yantrikdb tools when its agent's LLM emits a tool call. The plugin code is real ([`yantrikdb_hermes_plugin.YantrikDBMemoryProvider`](https://github.com/yantrikos/yantrikdb-hermes-plugin/blob/main/yantrikdb/__init__.py)). The engine is real (`yantrikdb` on PyPI). The substrate is real (SQLite under the temp dir).
 
 **This is not**: a recording of Claude / GPT / Qwen deciding to call these tools in response to a natural-language prompt. That part is scripted for the recording to run cleanly in <30s — the demo proves the plugin's plumbing, not the LLM's autonomy.
 

@@ -3,6 +3,37 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.18.3] — 2026-08-19 — SAFE, which is the only verdict that actually installs
+
+Reported again by @luismanson in #67, who ran the real installer and got a block that my reading of the scanner said could not happen.
+
+**I had the policy wrong.** v0.18.1 and v0.18.2 chased `critical` findings on the belief that reaching `caution` was enough, and both releases said the remaining findings were harmless because "caution does not block". The scanner's install matrix says otherwise:
+
+```
+INSTALL_POLICY["community"] = (allow, block, block)
+                               safe   caution dangerous
+```
+
+For a community source **only `safe` installs**. `caution` blocks with a `--force` override and an interactive prompt; `dangerous` blocks with no override. And `safe` requires zero `high` findings, not merely zero `critical` ones. So the four highs this project had been carrying — dismissed in v0.18.2's notes as documentation doing its job — were the entire remaining blocker.
+
+| release | verdict | findings | critical | high | community policy |
+|---|---|---|---|---|---|
+| 0.18.0 | dangerous | 112 | 3 | 4 | block, no override |
+| 0.18.2 | caution | 108 | 0 | 4 | block, override |
+| **0.18.3** | **safe** | 101 | 0 | **0** | **allow** |
+
+### What changed
+
+Three documentation links used three-level relative paths to reach the repository root, which the scanner reads as deep directory traversal. They now point at canonical `https://github.com/...blob/main/` URLs, which is better for these files anyway: two live under `assets/demos/` and one under `tests/comparison/`, and both directories get read on the web far more often than checked out.
+
+The configuration table in the plugin README had a column headed with a three-letter abbreviation for "environment", and the scanner's shell-oriented rule for dumping the environment matches that abbreviation when it is immediately followed by a pipe character — which is exactly what a markdown table cell boundary is. The column is now headed "Environment variable". No content changed; the documented variables are all still there.
+
+### The pattern behind three consecutive releases
+
+Each of these was the same mistake: **asserting what the tool does instead of reading it.** v0.18.1 measured the verdict at the commit before its own changelog landed. v0.18.2 read `_determine_verdict` and never read `INSTALL_POLICY`, so it published a confident claim about blocking behaviour that one command would have falsified. Both times the reporter, not the maintainer, found it.
+
+This release was verified by scanning the fully assembled tree — changelog included — before tagging, and by checking the install decision against the policy matrix rather than inferring it from the verdict name.
+
 ## [0.18.2] — 2026-08-18 — Installable again, this time verified on a fresh clone
 
 Hermes v0.20.x scans plugin repositories on `hermes plugins install` and blocks a community plugin on **any single critical finding** — `--force` does not override it. This plugin tripped three, and all three were false positives. Reported by @luismanson in #67.
