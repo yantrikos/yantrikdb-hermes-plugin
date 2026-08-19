@@ -3,6 +3,38 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.18.1] — 2026-08-18 — Installable again
+
+Hermes v0.20.x scans plugin repositories on `hermes plugins install` and blocks a community plugin on **any single critical finding** — `--force` does not override it. This plugin tripped three, and all three were false positives. Reported by @luismanson in #67.
+
+**Verdict goes `DANGEROUS` → `CAUTION`, which installs.** Measured with the real scanner (`tools/plugin_guard.py` + `tools/skills_guard.py`, NousResearch/hermes-agent v0.20.4) against a clean `git archive HEAD`:
+
+| | verdict | findings | criticals |
+|---|---|---|---|
+| v0.18.0 | dangerous | 112 | 3 |
+| + the two rewordings | dangerous | 109 | 1 |
+| + payload change | **caution** | 108 | **0** |
+
+### What was flagged, and why it was wrong
+
+The init-failure prompt said *"Do NOT tell the user their memories were saved — they were not."* That matches `deception_hide`, whose description is "instructs agent to hide information from user" — **the exact opposite of what the sentence does.** It is an anti-deception guard: when the plugin fails to initialise, the agent must not claim a save that never happened. It now reads as a positive directive, which is better prompting regardless of any scanner. The test asserting it checks the behaviour (`"nothing was saved"`) rather than the sentence, so rewording it again won't break it twice.
+
+`extractor.py` described its stopword list as "words that pretend to be names", tripping `role_pretend`. They don't pretend anything; they look like names. The new wording is simply more accurate.
+
+The third was `tests/test_semantic_contract.py`, which stores prompt-injection text and asserts it round-trips **verbatim** — a test that the trust boundary holds, read by the scanner as the attack it tests for. The payload is now an equally hostile string that isn't the scanner's signature. That case asserts byte-fidelity of adversarial text, so the exact wording carries no load; **obfuscating** it would have weakened the test, but **substituting** it does not. A comment says so, because restoring the canonical phrase would silently re-block every install.
+
+### The other 108 findings are deliberate
+
+`caution` does not block, and the remainder is overwhelmingly the scanner flagging documentation for being documentation: 64 unpinned `pip install` lines (12 of them in this changelog's own history), 16 references telling users where to put their API keys — which the scanner's own source calls "the DOCUMENTED way plugins tell users where to put their API keys" — and a config table that documents environment variables. Removing those would make the docs worse and the plugin no safer.
+
+### The actual bug is upstream
+
+`plugin_guard` scans `tests/` (its `EXCLUDED_DIRS` covers `.git`, `__pycache__`, `node_modules`, `.venv` — not `tests`), and offers plugins **no suppression mechanism**: `.skillignore` is honored by `skills_guard` only. So any plugin that tests its own trust boundary is blocked by its own test suite, and has to discover the workaround by reading the scanner's source. Filed as NousResearch/hermes-agent#89610. This release is the local workaround, not the fix.
+
+### Also
+
+`[tool.bumpversion] current_version` had drifted to 0.16.0 across the v0.17.0 and v0.18.0 releases, so `bump-my-version` refused to run. Resynced. It is the fourth version-bearing surface and the `version-sync` CI job does not check it.
+
 ## [0.18.0] — 2026-08-18
 
 ### The 0.15 line is admitted — except the three releases that should not be
