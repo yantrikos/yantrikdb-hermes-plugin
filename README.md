@@ -14,6 +14,8 @@
 
 This repository **is** the canonical distribution. Per Hermes maintainer guidance, new memory providers aren't being merged upstream — the recommended pattern is standalone plugins that users install via `pip` and register with their Hermes home directory. That keeps the version cadence, CI gating, issue triage, and review cycle on the plugin author's side, so fixes ship the same day they're ready instead of waiting on upstream review bandwidth.
 
+![Self-directing memory loop: gap → task → agenda → learn → close](./assets/demos/self-directing/demo.gif)
+
 ## Why this exists
 
 Two recurring observations from the Hermes community map directly to what yantrikdb does:
@@ -47,8 +49,6 @@ This is the substrate yantrikdb already ships: temporal context graph via `relat
 | Consumer-simulation contract gate | ✓ v0.9.0 — feature-probed semantic tests that catch engine behavioral breaks | none |
 
 ## The self-directing substrate (v0.8)
-
-![Self-directing memory loop: gap → task → agenda → learn → close](./assets/demos/self-directing/demo.gif)
 
 The loop no other Hermes memory provider can do — the memory **notices what it doesn't know, queues the work, hands the agent its own agenda, and closes the loop** when the gap is answered. **On by default since v0.10.0** (it was opt-in through v0.9.x, which meant most installs never saw it); bounded to `gap_task_max` new tasks per session and `agenda_max_items` prompt lines, and gated on *recurring* poorly-answered queries so one weak recall can't mint a task. Disable with `YANTRIKDB_AUTO_GAP_TASKS=false` / `YANTRIKDB_SURFACE_AGENDA=false`. Runnable via `python demos/self_directing_memory.py`. Details: **[assets/demos/self-directing/](./assets/demos/self-directing/)**.
 
