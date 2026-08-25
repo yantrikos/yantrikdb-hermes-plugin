@@ -3,7 +3,7 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
-## [Unreleased] — engine 0.16.x and 0.17.x admitted
+## [0.19.0] — 2026-08-25 — engine 0.16.x and 0.17.x admitted
 
 Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.18.0` (was `<0.16.0`). Same change in
 `plugin.yaml` and `yantrikdb/plugin.yaml`; floor and the three 0.15 exclusions unchanged.
