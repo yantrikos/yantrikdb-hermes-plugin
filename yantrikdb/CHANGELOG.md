@@ -3,6 +3,53 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [Unreleased] — engine 0.16.x and 0.17.x admitted
+
+Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.18.0` (was `<0.16.0`). Same change in
+`plugin.yaml` and `yantrikdb/plugin.yaml`; floor and the three 0.15 exclusions unchanged.
+
+### Why the bound moves now, and by how much
+
+The co-iteration gate was skipped when engine 0.16.0 shipped — this plugin never admitted it and
+no 0.16.0 gate record existed here. Both steps are now measured. The behavior-tested candidate is
+engine commit `74066e1`; the release `76b86c2` is its version-only child (four `version =` lines,
+nothing else) and was re-smoked as the official artifact.
+
+**Shared-bytes comparison** — `tests/comparison/gate_4k.py` v1.3.0, hash-pinned corpus, ONE seed
+produced by engine 0.16.0 (SHA-256 `a6923fe1…f4820`, hashed before and after all six invocations
+and unchanged), `--repeats 7`, three independent runs per engine, in hermes-lab:
+
+| axis | 0.16.0 | 0.17.0 (`74066e1`) |
+|---|---|---|
+| precision@5 (unique answers) | 0.5000 | 0.5000 |
+| role share (ambiguous) | 0.6250 | 0.6250 |
+| possessive top-1 | 0.9167 | 0.9167 |
+| possessive Jaccard | 0.9444 | 0.9444 |
+| direction separation (3-run range) | .0595–.0839 | .0300–.0625 |
+
+Context only, NOT on shared bytes: an earlier pass with each engine seeding its own database gave
+0.15.6 (the last engine this plugin had admitted) the same four values — 0.5000 / 0.6250 / 0.9167 /
+0.9444 — and direction .0339–.0442. Its seed differs, so it is not a row in the table above.
+
+Full plugin suite on 0.16.0 and on the 0.17.0 candidate: 461 passed, 3 skipped, 2 xfailed; Ruff and
+mypy clean on both. Official `yantrikdb-0.17.0` wheel, installed by normal dependency resolution
+against this pin: suite 461/3/2, `pip check` clean, one shared-seed gate run with the four axes
+invariant and direction 0.0625.
+
+### What the determinism probe actually measures
+
+`_determinism` opens six fresh copies and asks `What is Taylor's role?` — a query with nineteen valid
+answers and 143 lexically degenerate matches. Rank 1 alternates between `Taylor reports to Pat.` and
+`Pat reports to Taylor.`: a directional minimal pair whose final scores differ by ~1.6e-7, and whose
+9-second `created_at` gap makes the recency term cross as the wall clock advances. Fifty-four paired,
+interleaved cold opens per engine on identical bytes: 0.16.0 flipped 9/54, 0.17.0 flipped 8/54, the
+same two orderings, no ordering unique to either engine, ranks 2–5 never moved. So the flip is a
+pre-existing engine property, not a 0.17 regression — and a six-open probe reads it as
+`distinct_orderings=2` about two runs in three regardless of engine. For this admission the
+determinism criterion was read as ordering-set containment over paired opens rather than
+max-of-three; the gate's metric text is unchanged. An engine-side fix (a deterministic tie-break
+inside an epsilon band) is a follow-up; no issue exists yet.
+
 ## [0.18.3] — 2026-08-19 — SAFE, which is the only verdict that actually installs
 
 Reported again by @luismanson in #67, who ran the real installer and got a block that my reading of the scanner said could not happen.
