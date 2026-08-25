@@ -42,7 +42,7 @@ classifiers = [
 # shipped 2.0.0 against an unbounded pin. tests/test_dependency_pins.py enforces
 # this; raise a ceiling only after testing against the new major.
 dependencies = [
-  "yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.16.0",
+  "yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.18.0",
   "requests>=2.31,<3.0.0",
 ]
 
