@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import sqlite3
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,12 @@ assert _SPEC and _SPEC.loader
 comparator = importlib.util.module_from_spec(_SPEC)
 sys.modules[_SPEC.name] = comparator
 _SPEC.loader.exec_module(comparator)
+
+_GATE_PATH = _ROOT / "tests" / "comparison" / "gate_4k.py"
+_GATE_SPEC = importlib.util.spec_from_file_location("gate_4k_hash_contract", _GATE_PATH)
+assert _GATE_SPEC and _GATE_SPEC.loader
+gate = importlib.util.module_from_spec(_GATE_SPEC)
+_GATE_SPEC.loader.exec_module(gate)
 
 
 def _config():
@@ -44,7 +51,7 @@ def _report(*, arm, seed_sha, signatures, timestamp_offset=0.0):
         "engine": {
             "distribution_version": arm,
             "module_file": f"/{arm}/yantrikdb/__init__.py",
-            "import_source": "wheel",
+            "import_source": "site-packages",
             "wheel_sha256": arm * 8,
             "module_sha256": arm * 16,
             "extension_file": f"/{arm}/yantrikdb/_yantrikdb_rust.so",
@@ -173,6 +180,21 @@ def test_flags_same_version_with_different_native_bytes_without_refusing():
     }
 
 
+def test_refuses_a_same_native_artifact_self_comparison():
+    runs = _paired("a" * 64)
+    for run in runs:
+        run.report["engine"]["extension_sha256"] = "e" * 64
+    with pytest.raises(comparator.ComparisonRefusal, match="self-comparison"):
+        _compare(runs)
+
+
+def test_refuses_a_noncanonical_import_source():
+    runs = _paired("a" * 64)
+    runs[0].report["engine"]["import_source"] = "wheel"
+    with pytest.raises(comparator.ComparisonRefusal, match="import_source is not canonical"):
+        _compare(runs)
+
+
 def test_refuses_bad_signature_counts_and_metric_value_counts():
     runs = _paired("a" * 64)
     runs[0].report["stability"]["signatures"][0]["count"] = 2
@@ -202,7 +224,17 @@ def test_orchestration_alternates_and_guards_the_same_seed(tmp_path):
         db_path=db, gate_path=tmp_path / "gate.py", rounds=2,
         config=_config(), runner=runner)
     assert calls == ["base-python", "candidate-python", "candidate-python", "base-python"]
-    assert result["local_seed_fingerprint_sha256"]
+    assert result["local_seed_fingerprint_sha256"] == seed_sha
+
+
+def test_runner_and_comparator_use_the_same_seed_digest(tmp_path):
+    db = tmp_path / "seed.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE memories (created_at REAL)")
+    con.execute("INSERT INTO memories VALUES (1.0)")
+    con.commit()
+    con.close()
+    assert comparator._seed_fingerprint(db) == gate._seed_bytes(db)["sha256"]
 
 
 def test_orchestration_refuses_seed_sidecar_mutation(tmp_path):
@@ -215,8 +247,7 @@ def test_orchestration_refuses_seed_sidecar_mutation(tmp_path):
         return _report(arm=executable, seed_sha=seed_sha,
                        signatures=[_signature("one", [1000.0, 1001.0])])
 
-    with pytest.raises(comparator.ComparisonRefusal,
-                       match="seed changed after round 1 baseline"):
+    with pytest.raises(comparator.ComparisonRefusal, match="non-empty -wal sidecar"):
         comparator.run_comparison(
             baseline_python="baseline", candidate_python="candidate", db_path=db,
             gate_path=tmp_path / "gate.py", rounds=2, config=_config(), runner=runner)
@@ -250,6 +281,24 @@ def test_subprocess_command_forwards_config(monkeypatch, tmp_path):
         "candidate-python", str(gate), "--db", str(db), "--repeats", "3",
         "--determinism-runs", "2", "--drift-probe-seconds", "0"]
     assert captured["kwargs"] == {"check": True, "capture_output": True, "text": True}
+
+
+def test_main_surfaces_the_failed_runners_stderr(monkeypatch, tmp_path, capsys):
+    db = tmp_path / "seed.db"
+    db.write_bytes(b"seed")
+
+    def fail(**kwargs):
+        raise comparator.subprocess.CalledProcessError(
+            2, ["candidate-python", "gate_4k.py"], stderr="checkpoint the WAL first")
+
+    monkeypatch.setattr(comparator, "run_comparison", fail)
+    code = comparator.main([
+        "--baseline-python", "baseline-python",
+        "--candidate-python", "candidate-python",
+        "--db", str(db),
+    ])
+    assert code == 2
+    assert "checkpoint the WAL first" in capsys.readouterr().err
 
 
 def test_at_least_two_rounds_are_required(tmp_path):

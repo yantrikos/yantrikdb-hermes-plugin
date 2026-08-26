@@ -72,6 +72,8 @@ import tempfile
 import time
 from importlib import metadata as importlib_metadata
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CORPUS = FIXTURES / "corpus_4353_gate_v1.json"
@@ -128,8 +130,22 @@ def _load() -> tuple[list[dict], list[dict], list[dict]]:
 
 
 def _seed_bytes(base: Path) -> dict:
-    """Hash the complete database bundle without opening it."""
-    files = sorted(p for p in base.parent.glob(base.name + "*") if p.is_file())
+    """Hash a stable SQLite seed without opening it.
+
+    A non-empty WAL or rollback journal contains authoritative state outside
+    the main file. Immutable reads ignore WAL content, while ordinary reads
+    create or alter sidecars, so neither can produce a reproducible comparison.
+    Require callers to checkpoint/VACUUM INTO one stable database first.
+    """
+    if not base.is_file():
+        raise SystemExit(f"seed database does not exist: {base}")
+    for suffix in ("-wal", "-journal"):
+        sidecar = Path(f"{base}{suffix}")
+        if sidecar.is_file() and sidecar.stat().st_size > 0:
+            raise SystemExit(
+                f"seed has a non-empty {suffix} sidecar; checkpoint it or use VACUUM INTO "
+                "before comparing builds")
+    files = [base]
     bundle = hashlib.sha256()
     entries = []
     for path in files:
@@ -163,15 +179,12 @@ def _sha256_file(path: Path) -> str:
 
 def _seed_snapshot(base: Path) -> dict:
     """Content identity and clock origin for the immutable seed bundle."""
-    if not base.is_file():
-        raise SystemExit(f"seed database does not exist: {base}")
-
     # This digest is deliberately BEFORE the first SQLite open. Even a
     # metadata-only connection can touch WAL/SHM state; a report that hashes
     # afterward cannot prove both candidate processes started from the bytes
     # the comparator supplied.
     snapshot = _seed_bytes(base)
-    uri = f"file:{base.resolve().as_posix()}?mode=ro"
+    uri = f"{base.resolve().as_uri()}?mode=ro&immutable=1"
     con = sqlite3.connect(uri, uri=True)
     try:
         created_min, created_max, record_count = con.execute(
@@ -213,6 +226,15 @@ def _import_metadata(yantrikdb) -> dict:
     archive_hash = direct_url.get("archive_info", {}).get("hash")
     wheel_sha256 = archive_hash.removeprefix("sha256=") if (
         isinstance(archive_hash, str) and archive_hash.startswith("sha256=")) else None
+    if editable:
+        parsed = urlparse(direct_url.get("url", ""))
+        distribution_root = Path(url2pathname(parsed.path)).resolve()
+    else:
+        distribution_root = Path(dist.locate_file("")).resolve()
+    if not module_path.is_relative_to(distribution_root):
+        raise SystemExit(
+            "import metadata mismatch: imported yantrikdb module is outside the "
+            f"distribution root ({module_path} vs {distribution_root})")
     return {
         "distribution_version": dist.version,
         "module_file": str(module_path),
@@ -263,6 +285,13 @@ def _seed(facts: list[dict], db_path: str):
     time.sleep(DRAIN_SECONDS)
     del db
     gc.collect()
+    # The comparator consumes one immutable main file. YantrikDB uses WAL by
+    # default, so checkpoint a seed created by this runner before hashing it.
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        con.close()
 
 
 def _fresh_copy(base: Path, into: Path) -> Path:
@@ -503,7 +532,8 @@ def _degeneracy(db_path: str, term: str = "taylor") -> dict:
     Hence the long name. A metric whose denominator is ambiguous will be
     compared against a metric it does not measure.
     """
-    con = sqlite3.connect(db_path)
+    uri = f"{Path(db_path).resolve().as_uri()}?mode=ro&immutable=1"
+    con = sqlite3.connect(uri, uri=True)
     rows = con.execute(
         "SELECT memories_fts.rank FROM memories m "
         "JOIN memories_fts ON memories_fts.rowid = m.rowid "
@@ -526,30 +556,8 @@ def _degeneracy(db_path: str, term: str = "taylor") -> dict:
             "fraction_ordered_by_cosine_alone": round(tied / len(rows), 4)}
 
 
-def _determinism(base: Path, runs: int = 6, seed_mtime_ns: int = 0,
-                 query: str = STABILITY_QUERY) -> dict:
-    """Identical query, identical starting state, fresh copy each time.
-
-    A build that answers differently on the same bytes cannot be measured at
-    all, so this runs FIRST and the report says so loudly.
-    """
-    from yantrikdb._yantrikdb_rust import YantrikDB
-    seen, observations, root = [], [], Path(tempfile.mkdtemp())
-    for i in range(runs):
-        d = root / f"r{i}"
-        d.mkdir()
-        db = YantrikDB.with_default(str(_fresh_copy(base, d)))
-        trace: list[dict] = []
-        texts = _texts(db, query, TOP_K, trace)
-        seen.append(tuple(texts))
-        item = trace[0]
-        item["seed_age_s"] = round(
-            max(0.0, item["observed_at_unix"] - seed_mtime_ns / 1e9), 6)
-        observations.append(item)
-        del db
-        gc.collect()
-    shutil.rmtree(root, ignore_errors=True)
-    n = len(set(seen))
+def _group_stability_observations(observations: list[dict]) -> list[dict]:
+    """Group identical RID+text orderings while preserving observation times."""
     grouped: dict[tuple[tuple[str, ...], tuple[str, ...]], dict] = {}
     for item in observations:
         key = (tuple(item["ordering_rids"]), tuple(item["ordering_texts"]))
@@ -562,8 +570,35 @@ def _determinism(base: Path, runs: int = 6, seed_mtime_ns: int = 0,
             }
         grouped[key]["count"] += 1
         grouped[key]["observed_at_unix"].append(item["observed_at_unix"])
+    return list(grouped.values())
+
+
+def _determinism(base: Path, runs: int = 6, seed_mtime_ns: int = 0,
+                 query: str = STABILITY_QUERY) -> dict:
+    """Identical query, identical starting state, fresh copy each time.
+
+    A build that answers differently on the same bytes cannot be measured at
+    all, so this runs FIRST and the report says so loudly.
+    """
+    from yantrikdb._yantrikdb_rust import YantrikDB
+    observations, root = [], Path(tempfile.mkdtemp())
+    for i in range(runs):
+        d = root / f"r{i}"
+        d.mkdir()
+        db = YantrikDB.with_default(str(_fresh_copy(base, d)))
+        trace: list[dict] = []
+        _texts(db, query, TOP_K, trace)
+        item = trace[0]
+        item["seed_age_s"] = round(
+            max(0.0, item["observed_at_unix"] - seed_mtime_ns / 1e9), 6)
+        observations.append(item)
+        del db
+        gc.collect()
+    shutil.rmtree(root, ignore_errors=True)
+    grouped = _group_stability_observations(observations)
+    n = len(grouped)
     return {"query": query, "runs": runs, "distinct": n,
-            "signatures": list(grouped.values()),
+            "signatures": grouped,
             "deterministic": n == 1, "raw_observations": observations,
             "note": ("identical inputs produced different answers — every "
                      "metric below is unreliable" if n > 1 else
@@ -636,12 +671,11 @@ def main() -> int:
 
     determinism = _determinism(
         base, args.stability_runs, seed["latest_mtime_ns"])
-    seed_after = _seed_snapshot(base)
+    lexical_degeneracy = _degeneracy(str(base))
+    seed_after = _seed_bytes(base)
     if seed_after["sha256"] != seed["sha256"]:
         raise SystemExit(
             "seed hash changed during measurement — the gate did not run on immutable bytes")
-
-    lexical_degeneracy = _degeneracy(str(base))
     run_finished_at = time.time()
     out = {
         "gate": GATE_NAME,

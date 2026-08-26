@@ -6,6 +6,8 @@ import importlib.util
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parent.parent
 _RUNNER = _ROOT / "tests" / "comparison" / "gate_4k.py"
 
@@ -31,7 +33,7 @@ def test_v14_pins_and_reports_all_three_fixture_hashes():
     assert facts and queries and probes
 
 
-def test_seed_snapshot_covers_every_sidecar_and_detects_mutation(tmp_path):
+def test_seed_snapshot_hashes_the_checkpointed_main_file_and_detects_mutation(tmp_path):
     gate = _runner_module()
     base = tmp_path / "gate.db"
     con = sqlite3.connect(base)
@@ -39,18 +41,34 @@ def test_seed_snapshot_covers_every_sidecar_and_detects_mutation(tmp_path):
     con.executemany("INSERT INTO memories VALUES (?)", [(1.0,), (2.0,)])
     con.commit()
     con.close()
-    (tmp_path / "gate.db-extra").write_bytes(b"aux")
-
     before = gate._seed_snapshot(base)
-    assert before["bytes"] == base.stat().st_size + 3
+    assert before["bytes"] == base.stat().st_size
     assert before["record_count"] == 2
     assert before["created_at_min"] == 1.0
     assert before["created_at_max"] == 2.0
-    assert {f["name"] for f in before["files"]} == {"gate.db", "gate.db-extra"}
+    assert [f["name"] for f in before["files"]] == ["gate.db"]
 
-    (tmp_path / "gate.db-extra").write_bytes(b"changed")
+    con = sqlite3.connect(base)
+    con.execute("INSERT INTO memories VALUES (3.0)")
+    con.commit()
+    con.close()
     after = gate._seed_snapshot(base)
     assert after["sha256"] != before["sha256"]
+
+
+def test_seed_snapshot_refuses_authoritative_wal_bytes(tmp_path):
+    gate = _runner_module()
+    base = tmp_path / "gate.db"
+    con = sqlite3.connect(base)
+    assert con.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal"
+    con.execute("CREATE TABLE memories (created_at REAL)")
+    con.execute("INSERT INTO memories VALUES (1.0)")
+    con.commit()
+    wal = Path(f"{base}-wal")
+    assert wal.stat().st_size > 0
+    with pytest.raises(SystemExit, match="checkpoint it or use VACUUM INTO"):
+        gate._seed_snapshot(base)
+    con.close()
 
 
 def test_metric_observation_carries_raw_ordering_and_seed_age():
@@ -110,6 +128,19 @@ def test_metric_report_contains_the_canonical_v14_fields():
         assert len(metric["raw_observations"]) == 2
         assert all(len(row["ordering_signature"]) == 64
                    for row in metric["raw_observations"])
+
+
+def test_stability_identity_includes_rids_not_only_duplicate_text():
+    gate = _runner_module()
+    observations = [
+        {"ordering_rids": ["r1"], "ordering_texts": ["same text"],
+         "observed_at_unix": 1.0},
+        {"ordering_rids": ["r2"], "ordering_texts": ["same text"],
+         "observed_at_unix": 2.0},
+    ]
+    grouped = gate._group_stability_observations(observations)
+    assert len(grouped) == 2
+    assert {tuple(row["ordering_rids"]) for row in grouped} == {("r1",), ("r2",)}
 
 
 def test_runner_exposes_reproducibility_knobs_and_drops_stale_v13_advice():

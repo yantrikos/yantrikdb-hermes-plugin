@@ -19,7 +19,10 @@ COMPARATOR_VERSION = "1.4.0"
 DEFAULT_TOP_K = 5
 DEFAULT_STABILITY_QUERY = "What is Taylor's role?"
 
-_ENGINE_KEYS = {"distribution_version", "module_file", "import_source", "wheel_sha256"}
+_ENGINE_KEYS = {
+    "distribution_version", "module_file", "import_source", "wheel_sha256",
+    "module_sha256", "extension_file", "extension_sha256",
+}
 _HOST_KEYS = {"platform", "python"}
 _FIXTURE_KEYS = {"corpus_sha256", "queries_sha256", "probes_sha256"}
 _SEED_KEYS = {"path", "sha256", "bytes", "mtime_unix", "created_at_min",
@@ -89,11 +92,14 @@ def _canonical_bytes(value: Any) -> bytes:
 
 
 def _seed_fingerprint(db_path: Path) -> str:
-    """Use the runner's exact name+NUL+bytes digest over the whole seed bundle."""
-    files = sorted(
-        (path for path in db_path.parent.glob(db_path.name + "*") if path.is_file()),
-        key=lambda path: path.name,
-    )
+    """Use the runner's exact name+NUL+bytes digest over one stable main file."""
+    for suffix in ("-wal", "-journal"):
+        sidecar = Path(f"{db_path}{suffix}")
+        if sidecar.is_file() and sidecar.stat().st_size > 0:
+            _refuse(
+                f"seed has a non-empty {suffix} sidecar; checkpoint it or use VACUUM INTO "
+                "before comparing builds")
+    files = [db_path]
     digest = hashlib.sha256()
     for path in files:
         digest.update(path.name.encode("utf-8"))
@@ -152,6 +158,8 @@ def _validate_report(report: Mapping[str, Any], label: str, expected: GateConfig
     if _canonical_bytes(config) != _canonical_bytes(expected.as_dict()):
         _refuse(f"{label} config mismatch: expected {expected.as_dict()!r}, "
                 f"got {dict(config)!r}")
+    if engine["import_source"] not in {"site-packages", "editable", "other"}:
+        _refuse(f"{label}.engine.import_source is not canonical: {engine['import_source']!r}")
     started = _number(observed["started_unix"], f"{label}.observed.started_unix")
     finished = _number(observed["finished_unix"], f"{label}.observed.finished_unix")
     if finished < started:
@@ -258,12 +266,14 @@ def compare_reports(runs: Sequence[ArmRun], *, expected_config: GateConfig,
     first = runs[0].report
     comparable = {"gate_version": first["gate_version"], "fixtures": first["fixtures"],
                   "seed.sha256": _mapping(first["seed"], "seed")["sha256"],
-                  "config": first["config"]}
+                  "config": first["config"],
+                  "lexical_degeneracy": first["lexical_degeneracy"]}
     for run in runs[1:]:
         candidate = {"gate_version": run.report["gate_version"],
                      "fixtures": run.report["fixtures"],
                      "seed.sha256": _mapping(run.report["seed"], "seed")["sha256"],
-                     "config": run.report["config"]}
+                     "config": run.report["config"],
+                     "lexical_degeneracy": run.report["lexical_degeneracy"]}
         for field, reference in comparable.items():
             if _canonical_bytes(candidate[field]) != _canonical_bytes(reference):
                 _refuse(f"{field} mismatch across reports")
@@ -277,6 +287,9 @@ def compare_reports(runs: Sequence[ArmRun], *, expected_config: GateConfig,
                 _refuse(f"{arm} engine/host metadata changed across rounds")
         arm_metadata[arm] = reference
 
+    if arm_metadata["baseline"]["host"]["platform"] != arm_metadata["candidate"]["host"]["platform"]:
+        _refuse("baseline and candidate host.platform differ")
+
     baseline_engine = _mapping(arm_metadata["baseline"]["engine"], "baseline.engine")
     candidate_engine = _mapping(arm_metadata["candidate"]["engine"], "candidate.engine")
     same_version = (
@@ -286,6 +299,10 @@ def compare_reports(runs: Sequence[ArmRun], *, expected_config: GateConfig,
     same_native_bytes = (
         baseline_extension == candidate_extension
         if baseline_extension is not None and candidate_extension is not None else None)
+    if same_native_bytes is True:
+        _refuse(
+            "baseline and candidate use the same native extension bytes; "
+            "this is a self-comparison, not an engine comparison")
     artifact_warning = (
         "SAME_VERSION_DIFFERENT_NATIVE_BYTES"
         if same_version and same_native_bytes is False else None)
@@ -436,8 +453,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             baseline_python=args.baseline_python, candidate_python=args.candidate_python,
             db_path=args.db.resolve(), gate_path=args.gate.resolve(), rounds=args.rounds,
             config=config)
-    except (ComparisonRefusal, subprocess.CalledProcessError) as error:
+    except ComparisonRefusal as error:
         print(f"comparison refused: {error}", file=sys.stderr)
+        return 2
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or "").strip()
+        print(f"comparison refused: {error}", file=sys.stderr)
+        if detail:
+            print(detail, file=sys.stderr)
+        return 2
+    except OSError as error:
+        print(f"comparison refused: could not launch gate process: {error}", file=sys.stderr)
         return 2
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
