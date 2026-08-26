@@ -28,7 +28,13 @@ _FIXTURE_KEYS = {"corpus_sha256", "queries_sha256", "probes_sha256"}
 _SEED_KEYS = {"path", "sha256", "bytes", "mtime_unix", "created_at_min",
               "created_at_max", "record_count"}
 _CONFIG_KEYS = {"metric_repeats", "stability_runs", "drift_probe_seconds",
-                "top_k", "stability_query"}
+                "top_k", "stability_query", "seed_created_at"}
+
+# v1.5: the instant every seeded row is written at. Both arms must agree on
+# it, because it is what removes the clock from the comparison — see
+# gate_4k.SEED_CREATED_AT. A report that omits it is a v1.4 report and is
+# refused by the key check above rather than silently compared.
+DEFAULT_SEED_CREATED_AT = 1_600_000_000.0
 
 
 class ComparisonRefusal(ValueError):
@@ -42,6 +48,7 @@ class GateConfig:
     drift_probe_seconds: int
     top_k: int = DEFAULT_TOP_K
     stability_query: str = DEFAULT_STABILITY_QUERY
+    seed_created_at: float = DEFAULT_SEED_CREATED_AT
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +57,7 @@ class GateConfig:
             "drift_probe_seconds": self.drift_probe_seconds,
             "top_k": self.top_k,
             "stability_query": self.stability_query,
+            "seed_created_at": self.seed_created_at,
         }
 
 
@@ -342,6 +350,35 @@ def compare_reports(runs: Sequence[ArmRun], *, expected_config: GateConfig,
                                f"metrics.{name}")["values"]]
             metric_ranges[name][arm] = _range(values)
 
+    # Per-round, per-repeat-index paired readings.
+    #
+    # `metric_ranges` above aggregates every reading from both rounds, which is
+    # enough to describe a spread but NOT enough to decide an admission: a rule
+    # of the form "candidate >= baseline at every paired repeat index in every
+    # round" cannot be evaluated from a min/max envelope. Emitting the paired
+    # values makes the decision rule computable from the report alone, and
+    # auditable afterwards by someone who was not there.
+    paired_metrics: dict[str, Any] = {}
+    for round_number, pair in sorted(by_round.items()):
+        per_round: dict[str, Any] = {}
+        for name in sorted(metric_names):
+            arm_values = {
+                arm: [float(value) for value in
+                      _mapping(_mapping(pair[arm]["metrics"], "metrics")[name],
+                               f"metrics.{name}")["values"]]
+                for arm in ("baseline", "candidate")
+            }
+            if len(arm_values["baseline"]) != len(arm_values["candidate"]):
+                _refuse(f"round {round_number} metric {name} repeat counts differ: "
+                        f"{len(arm_values['baseline'])} vs {len(arm_values['candidate'])}")
+            deltas = [round(c - b, 12) for b, c in
+                      zip(arm_values["baseline"], arm_values["candidate"], strict=True)]
+            per_round[name] = {"baseline": arm_values["baseline"],
+                               "candidate": arm_values["candidate"],
+                               "delta": deltas,
+                               "min_delta": min(deltas) if deltas else None}
+        paired_metrics[str(round_number)] = per_round
+
     paired_runs = []
     for index, (round_number, pair) in enumerate(sorted(by_round.items())):
         baseline_times = _stability_timestamps(pair["baseline"])
@@ -370,6 +407,7 @@ def compare_reports(runs: Sequence[ArmRun], *, expected_config: GateConfig,
             "candidate_only": partition(candidate_keys - baseline_keys),
             "shared": partition(baseline_keys & candidate_keys, shared=True)},
         "paired_runs": paired_runs, "metric_ranges": metric_ranges,
+        "paired_metrics": paired_metrics,
     }
 
 
