@@ -123,6 +123,67 @@ def _compare(runs):
         process_orders=(("baseline", "candidate"), ("candidate", "baseline")))
 
 
+def test_a_complete_1_5_0_report_pair_is_accepted_and_paired_metrics_computable():
+    """The version the runner now emits must actually be consumable.
+
+    The voided 0.18.0 run proved the refusal path works and left the accept
+    path unproven. This pins it: a complete 1.5.0 pair compares, and the
+    per-round, per-index deltas the decision rule reads are present and
+    correctly signed.
+    """
+    result = _compare(_paired("seed-15"))
+    assert result["gate_version"] == "1.5.0"
+    assert set(result["paired_metrics"]) == {"1", "2"}
+    for round_key in ("1", "2"):
+        precision = result["paired_metrics"][round_key]["precision"]
+        assert precision["baseline"] == [0.1, 0.2, 0.3]
+        assert precision["candidate"] == [0.1, 0.2, 0.3]
+        assert precision["delta"] == [0.0, 0.0, 0.0]
+        assert precision["min_delta"] == 0.0
+
+
+def test_paired_metrics_reports_a_per_index_shortfall():
+    """A candidate that is worse at ONE repeat index must show up as such.
+
+    The decision rule is `candidate >= baseline` at every index, so a single
+    low reading has to survive into the report rather than being averaged
+    away by a mean or hidden inside a min/max envelope.
+    """
+    runs = _paired("seed-15")
+    for run in runs:
+        if run.arm == "candidate":
+            run.report["metrics"]["precision"]["values"] = [0.1, 0.05, 0.3]
+    result = _compare(runs)
+    precision = result["paired_metrics"]["1"]["precision"]
+    assert precision["delta"] == [0.0, -0.15, 0.0]
+    assert precision["min_delta"] == -0.15
+    # the envelope alone would not have shown it
+    assert result["metric_ranges"]["precision"]["candidate"]["min"] == 0.05
+
+
+def test_a_1_4_0_report_is_refused_not_compared():
+    runs = _paired("seed-15")
+    runs[0].report["gate_version"] = "1.4.0"
+    with pytest.raises(comparator.ComparisonRefusal, match="gate version mismatch"):
+        _compare(runs)
+
+
+def test_mixed_gate_versions_across_rounds_are_refused():
+    """Round 1 on one gate version and round 2 on another is not a comparison."""
+    runs = _paired("seed-15")
+    runs[3].report["gate_version"] = "1.4.0"
+    with pytest.raises(comparator.ComparisonRefusal, match="gate version mismatch"):
+        _compare(runs)
+
+
+def test_a_report_without_seed_created_at_is_refused():
+    """A v1.4-shaped config cannot be silently compared against v1.5."""
+    runs = _paired("seed-15")
+    del runs[1].report["config"]["seed_created_at"]
+    with pytest.raises(comparator.ComparisonRefusal):
+        _compare(runs)
+
+
 def test_comparator_and_runner_pin_the_same_gate_version():
     """A half-bumped pair refuses every report instead of comparing.
 
