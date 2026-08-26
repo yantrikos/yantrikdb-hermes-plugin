@@ -23,3 +23,15 @@ hermes-test/data/
 # Local scratch design docs and screenshots
 DEEP-RESEARCH-V05-DESIGN.md
 hermes-test/scripts/*.png
+
+# ── Local config that carries credentials ────────────────────────────
+# Kept in step across the YantrikDB repos after a `git add -A` swept a
+# live API key out of `.mcp.json` into a commit on 2026-08-26; only
+# GitHub push protection stopped it being published.
+.mcp.json
+.mcp.local.json
+.env
+.env.*
+!.env.example
+.claude/
+*.local.json
