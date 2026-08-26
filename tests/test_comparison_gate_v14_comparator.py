@@ -123,6 +123,17 @@ def _compare(runs):
         process_orders=(("baseline", "candidate"), ("candidate", "baseline")))
 
 
+def test_comparator_and_runner_pin_the_same_gate_version():
+    """A half-bumped pair refuses every report instead of comparing.
+
+    The 0.18.0 deciding run was voided this way: the runner said 1.5.0 while
+    the comparator still expected 1.4.0. The check was right; nothing was
+    keeping the two constants together.
+    """
+    assert comparator.GATE_VERSION == gate.GATE_VERSION
+    assert comparator.COMPARATOR_VERSION == gate.GATE_VERSION
+
+
 def test_reports_signature_counts_timestamp_skew_and_metric_ranges():
     result = _compare(_paired("a" * 64))
     signatures = result["ordering_signatures"]

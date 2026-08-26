@@ -14,8 +14,13 @@ from pathlib import Path
 from typing import Any
 
 GATE_NAME = "hermes-plugin/competing-distractors"
-GATE_VERSION = "1.4.0"
-COMPARATOR_VERSION = "1.4.0"
+# Kept in lockstep with gate_4k.GATE_VERSION on purpose: a report from a
+# different gate version is refused, not compared. The deciding run of the
+# 0.18.0 admission was voided by exactly that check firing on a half-bumped
+# pair, which is the check working — so these two are asserted equal by the
+# gate's own test suite rather than left to be remembered.
+GATE_VERSION = "1.5.0"
+COMPARATOR_VERSION = "1.5.0"
 DEFAULT_TOP_K = 5
 DEFAULT_STABILITY_QUERY = "What is Taylor's role?"
 
