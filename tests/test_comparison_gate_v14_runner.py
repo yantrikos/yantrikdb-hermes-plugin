@@ -25,7 +25,7 @@ def _runner_module():
 def test_v14_pins_and_reports_all_three_fixture_hashes():
     gate = _runner_module()
     assert gate.GATE_NAME == "hermes-plugin/competing-distractors"
-    assert gate.GATE_VERSION == "1.4.0"
+    assert gate.GATE_VERSION == "1.5.0"
     assert set(gate.FIXTURE_HASHES) == {
         "corpus_sha256",
         "queries_sha256",

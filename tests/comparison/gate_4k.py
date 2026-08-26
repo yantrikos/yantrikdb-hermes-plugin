@@ -83,7 +83,27 @@ QUERIES = FIXTURES / "queries_1k.json"
 PROBES = FIXTURES / "direction_probes_v1_1.json"
 
 GATE_NAME = "hermes-plugin/competing-distractors"
-GATE_VERSION = "1.4.0"
+GATE_VERSION = "1.5.0"
+
+# Every seeded record is written at ONE fixed historical instant.
+#
+# v1.4 measured a candidate against a baseline and could not tell a real
+# ranking change from the clock: three comparator runs over the SAME seed
+# bytes with the SAME two wheels disagreed with themselves — the baseline
+# alone read direction_separation 0.0625-0.1042, then 0.0347-0.0458, then
+# 0.0458-0.0625. The share metrics are computed over near-tied directional
+# pairs, so one flipped tie moves them by 1/len(rel); and the pair flips
+# because `now()` advances between reads while the two rows sit seconds
+# apart in created_at, which makes their recency terms cross at a
+# sub-epsilon difference in the composite.
+#
+# Writing every row at the same instant removes the term that moves:
+# recency and decay are then identical across candidates at any `now`, so
+# ranking is decided by the geometry the gate exists to measure. The value
+# is far enough in the past that the decay curve is flat there, and it is
+# FIXED so two runs a day apart see the same corpus age relative to each
+# other.
+SEED_CREATED_AT = 1_600_000_000.0  # 2020-09-13T12:26:40Z
 
 # Pinned at gate v1.0.0 and unchanged since. A candidate build must be measured
 # against the same bytes the previous candidate was measured against.
@@ -277,7 +297,15 @@ def _seed(facts: list[dict], db_path: str):
     for f in facts:
         while True:
             try:
-                db.record_text(f["text"], memory_type="semantic", namespace="g")
+                db.record_text(
+                    f["text"],
+                    memory_type="semantic",
+                    namespace="g",
+                    # See SEED_CREATED_AT: identical for every row, so the
+                    # recency and decay terms cannot decide a near-tie and
+                    # the comparison stops depending on when it ran.
+                    created_at=SEED_CREATED_AT,
+                )
                 break
             except Exception as e:  # noqa: BLE001 — backpressure is expected at this rate
                 if "queue full" in str(e) or "Backpressure" in type(e).__name__:
@@ -704,6 +732,7 @@ def main() -> int:
             "drift_probe_seconds": args.drift_probe_seconds,
             "top_k": TOP_K,
             "stability_query": STABILITY_QUERY,
+            "seed_created_at": SEED_CREATED_AT,
         },
         "observed": {
             "started_unix": run_started_at,
