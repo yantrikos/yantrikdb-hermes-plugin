@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib.util
 import sqlite3
+import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -69,6 +71,79 @@ def test_seed_snapshot_refuses_authoritative_wal_bytes(tmp_path):
     with pytest.raises(SystemExit, match="checkpoint it or use VACUUM INTO"):
         gate._seed_snapshot(base)
     con.close()
+
+
+def test_self_seed_checkpoint_retries_busy_and_requires_success(monkeypatch, tmp_path):
+    gate = _runner_module()
+    rows = iter([(1, 3, 2), (0, 0, 0)])
+    sleeps = []
+
+    class Connection:
+        def __init__(self, row):
+            self.row = row
+
+        def execute(self, statement):
+            assert statement == "PRAGMA wal_checkpoint(TRUNCATE)"
+            return self
+
+        def fetchone(self):
+            return self.row
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(gate.sqlite3, "connect", lambda _path: Connection(next(rows)))
+    monkeypatch.setattr(gate.time, "sleep", sleeps.append)
+    gate._checkpoint_seed(tmp_path / "gate.db", retries=2)
+    assert sleeps == [0.05]
+
+
+def test_self_seed_checkpoint_refuses_permanent_busy(monkeypatch, tmp_path):
+    gate = _runner_module()
+
+    class BusyConnection:
+        def execute(self, _statement):
+            return self
+
+        def fetchone(self):
+            return (1, 3, 0)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(gate.sqlite3, "connect", lambda _path: BusyConnection())
+    monkeypatch.setattr(gate.time, "sleep", lambda _seconds: None)
+    with pytest.raises(RuntimeError, match="SQLite busy=1"):
+        gate._checkpoint_seed(tmp_path / "gate.db", retries=2)
+
+
+def test_import_metadata_must_describe_the_imported_module(monkeypatch, tmp_path):
+    gate = _runner_module()
+    imported = tmp_path / "imported" / "yantrikdb"
+    imported.mkdir(parents=True)
+    module_file = imported / "__init__.py"
+    extension_file = imported / "_yantrikdb_rust.pyd"
+    module_file.write_text("", encoding="utf-8")
+    extension_file.write_bytes(b"native")
+
+    module = ModuleType("yantrikdb")
+    module.__file__ = str(module_file)
+    module._yantrikdb_rust = SimpleNamespace(__file__=str(extension_file))
+    monkeypatch.setitem(sys.modules, "yantrikdb", module)
+
+    class WrongDistribution:
+        version = "0.17.1"
+
+        def read_text(self, _name):
+            return None
+
+        def locate_file(self, _name):
+            return tmp_path / "different-install"
+
+    monkeypatch.setattr(
+        gate.importlib_metadata, "distribution", lambda _name: WrongDistribution())
+    with pytest.raises(SystemExit, match="imported yantrikdb module is outside"):
+        gate._import_metadata(module)
 
 
 def test_metric_observation_carries_raw_ordering_and_seed_age():

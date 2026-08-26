@@ -47,13 +47,15 @@ hashes are unchanged from v1.1.0.
 WHAT v1.4.0 ADDS. A comparison now carries its proof of identity: all three
 fixture hashes, the complete seed bundle hash before its first database open,
 seed age for every metric window, import provenance, raw metric values, and
-cold-open ordering signatures with observation times. The companion comparator
+fresh-copy in-process ordering signatures with observation times. The companion comparator
 runs both interpreters in alternating order against those exact seed bytes and
 refuses mismatched reports before calculating a delta.
 
 Run:
-    python tests/comparison/gate_4k.py --repeats 7 --direction
-    python tests/comparison/gate_4k.py --db <seeded.db> --repeats 7
+    python tests/comparison/gate_4k.py --repeats 7 --stability-runs 6 --drift-probe-seconds 8
+    python tests/comparison/gate_4k.py --db <checkpointed.db> --repeats 7
+    python tests/comparison/compare_gate_4k.py --baseline-python <python> \
+        --candidate-python <python> --db <checkpointed.db>
 """
 
 from __future__ import annotations
@@ -287,11 +289,25 @@ def _seed(facts: list[dict], db_path: str):
     gc.collect()
     # The comparator consumes one immutable main file. YantrikDB uses WAL by
     # default, so checkpoint a seed created by this runner before hashing it.
-    con = sqlite3.connect(db_path)
-    try:
-        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    finally:
-        con.close()
+    _checkpoint_seed(Path(db_path))
+
+
+def _checkpoint_seed(db_path: Path, retries: int = 5) -> None:
+    """Checkpoint self-seeded WAL state, verifying SQLite did not report busy."""
+    busy = 1
+    for attempt in range(retries):
+        con = sqlite3.connect(db_path)
+        try:
+            row = con.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        finally:
+            con.close()
+        busy = int(row[0]) if row else 1
+        if busy == 0:
+            return
+        time.sleep(0.05 * (attempt + 1))
+    raise RuntimeError(
+        f"could not checkpoint self-seeded gate database after {retries} attempts "
+        f"(SQLite busy={busy}); close remaining engine handles and retry")
 
 
 def _fresh_copy(base: Path, into: Path) -> Path:
@@ -405,13 +421,6 @@ METRICS = {
     "possessive_jaccard_secondary": _m_possessive_jaccard,
     "direction_separation": _m_direction_separation,
 }
-
-
-def _one_pass(db, unique: list[dict], ambiguous: list[dict],
-              probes: list[dict]) -> dict:
-    """Retained for callers wanting a single instance's full reading."""
-    return {name: fn(db, unique, ambiguous, probes, None)
-            for name, fn in METRICS.items()}
 
 
 def _metric_observation(fn, db, unique, ambiguous, probes,
@@ -578,7 +587,8 @@ def _determinism(base: Path, runs: int = 6, seed_mtime_ns: int = 0,
     """Identical query, identical starting state, fresh copy each time.
 
     A build that answers differently on the same bytes cannot be measured at
-    all, so this runs FIRST and the report says so loudly.
+    all, so the report carries every ordering and the comparator refuses to
+    treat unstable readings as a trustworthy change.
     """
     from yantrikdb._yantrikdb_rust import YantrikDB
     observations, root = [], Path(tempfile.mkdtemp())

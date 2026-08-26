@@ -264,6 +264,9 @@ def compare_reports(runs: Sequence[ArmRun], *, expected_config: GateConfig,
             _refuse(f"round {round_number} does not contain both arms")
 
     first = runs[0].report
+    # FTS5 is supplied by each interpreter's SQLite build. Requiring the exact
+    # degeneracy object can conservatively refuse unlike Python environments;
+    # it can never silently bless different lexical behavior as comparable.
     comparable = {"gate_version": first["gate_version"], "fixtures": first["fixtures"],
                   "seed.sha256": _mapping(first["seed"], "seed")["sha256"],
                   "config": first["config"],
@@ -420,9 +423,6 @@ def run_comparison(*, baseline_python: str, candidate_python: str, db_path: Path
                     f"{arm} round {round_number} reported seed SHA "
                     f"{report_seed.get('sha256')!r}, but the pre-launch bytes hash to {fingerprint}"
                 )
-            if position == 0:
-                _assert_seed(db_path, fingerprint,
-                             f"between processes in round {round_number}", hasher)
             runs.append(ArmRun(arm, round_number, report))
     _assert_seed(db_path, fingerprint, "after all processes", hasher)
     result = compare_reports(runs, expected_config=config, process_orders=process_orders)
