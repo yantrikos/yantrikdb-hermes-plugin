@@ -3,6 +3,31 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.20.0] — 2026-08-26 — engine 0.18.x admitted
+Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.19.0` (was `<0.18.0`). No plugin code change.
+
+Engine 0.18.0 is additive (pack substrate: structured `hit["pack"]` provenance, signed
+settings on `mounted_packs()`, `pack_context_for`, `recall_from_packs_for`, `PackNotMounted`).
+The plugin does not use the new surfaces yet.
+
+Admission by gate v1.4 (`tests/comparison/compare_gate_4k.py`, LXC hermes-lab, one
+checkpointed seed `58e3725f…`, baseline PyPI 0.17.1 vs candidate 0.18.0 wheel
+`f50eebb4…`, 2 rounds × 7 repeats, alternating process order, 6 stability opens per arm
+per round; comparator exit 0, no identity refusal, distinct native bytes):
+
+| metric (14 readings/arm) | 0.17.1 | 0.18.0 |
+|---|---|---|
+| precision@5 (unique answers) | 0.5 / 0.5 | 0.5 / 0.5 |
+| possessive top-1 agreement | 0.9167 | 0.9167 |
+| possessive Jaccard (secondary) | 0.9444 | 0.9444 |
+| direction separation (min–max) | 0.025–0.0625 | 0.0347–0.0625 |
+| role share, ambiguous queries (min–max) | 0.5625–0.625 | 0.5625–0.625 |
+
+Ordering signatures: candidate-only = ∅, baseline-only = ∅; both arms produce the same two
+known orderings (the "Taylor reports to Pat." / "Pat reports to Taylor." recency tie-crossing,
+baseline 9/3, candidate 8/4 of 12 opens). No category negative. Plugin suite on the candidate
+engine: 488 passed, 3 skipped, 2 xfailed.
+
 ## [0.19.0] — 2026-08-25 — engine 0.16.x and 0.17.x admitted
 
 Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.18.0` (was `<0.16.0`). Same change in
