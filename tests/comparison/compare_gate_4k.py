@@ -277,6 +277,19 @@ def compare_reports(runs: Sequence[ArmRun], *, expected_config: GateConfig,
                 _refuse(f"{arm} engine/host metadata changed across rounds")
         arm_metadata[arm] = reference
 
+    baseline_engine = _mapping(arm_metadata["baseline"]["engine"], "baseline.engine")
+    candidate_engine = _mapping(arm_metadata["candidate"]["engine"], "candidate.engine")
+    same_version = (
+        baseline_engine["distribution_version"] == candidate_engine["distribution_version"])
+    baseline_extension = baseline_engine.get("extension_sha256")
+    candidate_extension = candidate_engine.get("extension_sha256")
+    same_native_bytes = (
+        baseline_extension == candidate_extension
+        if baseline_extension is not None and candidate_extension is not None else None)
+    artifact_warning = (
+        "SAME_VERSION_DIFFERENT_NATIVE_BYTES"
+        if same_version and same_native_bytes is False else None)
+
     signature_sets = {arm: _collect_signatures(reports) for arm, reports in by_arm.items()}
     baseline_keys, candidate_keys = set(signature_sets["baseline"]), set(signature_sets["candidate"])
 
@@ -327,6 +340,11 @@ def compare_reports(runs: Sequence[ArmRun], *, expected_config: GateConfig,
         "rounds": len(by_round), "fixtures": dict(_mapping(first["fixtures"], "fixtures")),
         "seed_sha256": _mapping(first["seed"], "seed")["sha256"],
         "config": dict(_mapping(first["config"], "config")), "arms": arm_metadata,
+        "artifact_identity": {
+            "same_distribution_version": same_version,
+            "same_native_extension_bytes": same_native_bytes,
+            "warning": artifact_warning,
+        },
         "ordering_signatures": {
             "baseline_only": partition(baseline_keys - candidate_keys),
             "candidate_only": partition(candidate_keys - baseline_keys),

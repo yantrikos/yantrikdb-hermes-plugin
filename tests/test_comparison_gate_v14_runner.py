@@ -123,5 +123,8 @@ def test_runner_exposes_reproducibility_knobs_and_drops_stale_v13_advice():
     assert '"gate_version": GATE_VERSION' in src
     assert '"config": {' in src
     assert '"stability": determinism' in src
+    assert '"module_sha256"' in src
+    assert '"extension_sha256"' in src
+    assert '"executable"' in src
     assert "drift_sensitive=false" not in src
     assert "determinism_burst" not in src

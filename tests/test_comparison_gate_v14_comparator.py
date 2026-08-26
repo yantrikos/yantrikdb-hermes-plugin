@@ -46,6 +46,9 @@ def _report(*, arm, seed_sha, signatures, timestamp_offset=0.0):
             "module_file": f"/{arm}/yantrikdb/__init__.py",
             "import_source": "wheel",
             "wheel_sha256": arm * 8,
+            "module_sha256": arm * 16,
+            "extension_file": f"/{arm}/yantrikdb/_yantrikdb_rust.so",
+            "extension_sha256": arm * 32,
         },
         "host": {"platform": "test", "python": f"python-{arm}"},
         "fixtures": {
@@ -156,6 +159,18 @@ def test_refuses_engine_or_host_instability_within_an_arm():
     with pytest.raises(comparator.ComparisonRefusal,
                        match="baseline engine/host metadata changed"):
         _compare(runs)
+
+
+def test_flags_same_version_with_different_native_bytes_without_refusing():
+    runs = _paired("a" * 64)
+    for run in runs:
+        run.report["engine"]["distribution_version"] = "0.17.1"
+    result = _compare(runs)
+    assert result["artifact_identity"] == {
+        "same_distribution_version": True,
+        "same_native_extension_bytes": False,
+        "warning": "SAME_VERSION_DIFFERENT_NATIVE_BYTES",
+    }
 
 
 def test_refuses_bad_signature_counts_and_metric_value_counts():

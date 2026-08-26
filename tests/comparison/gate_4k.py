@@ -153,6 +153,14 @@ def _seed_bytes(base: Path) -> dict:
     }
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _seed_snapshot(base: Path) -> dict:
     """Content identity and clock origin for the immutable seed bundle."""
     if not base.is_file():
@@ -185,7 +193,10 @@ def _seed_snapshot(base: Path) -> dict:
 
 def _import_metadata(yantrikdb) -> dict:
     """Prove which interpreter, package, and native extension produced a run."""
+    from yantrikdb import _yantrikdb_rust
+
     module_path = Path(yantrikdb.__file__).resolve()
+    extension_path = Path(_yantrikdb_rust.__file__).resolve()
     dist = importlib_metadata.distribution("yantrikdb")
     direct_url = {}
     if raw := dist.read_text("direct_url.json"):
@@ -207,6 +218,9 @@ def _import_metadata(yantrikdb) -> dict:
         "module_file": str(module_path),
         "import_source": import_source,
         "wheel_sha256": wheel_sha256,
+        "module_sha256": _sha256_file(module_path),
+        "extension_file": str(extension_path),
+        "extension_sha256": _sha256_file(extension_path),
     }
 
 
@@ -636,6 +650,7 @@ def main() -> int:
         "host": {
             "platform": platform.platform(),
             "python": platform.python_version(),
+            "executable": str(Path(sys.executable).resolve()),
         },
         "fixtures": FIXTURE_HASHES,
         "seed": seed,
