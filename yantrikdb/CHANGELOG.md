@@ -20,6 +20,31 @@ index" cannot be evaluated from a min/max envelope, and a rule that cannot be ev
 a rule. `seed_created_at` joins the canonical config, so a v1.4 report is refused rather than
 silently compared, and the runner and comparator versions are now asserted equal by the suite.
 
+## [0.22.0] — 2026-09-06 — engine 0.20.x admitted
+
+Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.21.0` (was `<0.20.0`). No plugin code change.
+
+Engine 0.20.0 is additive (schema unchanged, v51): entity admission (values and headings
+never become graph nodes; `reextract_entities()` heals stores that already hold them) and the
+temporal tag (stated and extracted claims carry `valid_from`/`valid_to`, inherited from the
+record's event time; `get_claims()` exposes them). The plugin does not use the new surfaces
+yet. A store the plugin opens is unchanged on open; the entity heal is opt-in.
+
+Admission by **gate v1.5.0**, same protocol as 0.21.0: baseline PyPI 0.19.0 vs the 0.20.0
+release wheel `ea16c921…fada7` (the bytes to be published), one checkpointed seed built by the
+baseline engine, 2 rounds × 7 repeats, alternating process order, comparator exit 0, no identity
+refusal, distinct native bytes:
+
+Every one of the five metrics was **exactly equal** across the arms at every paired repeat
+index in both rounds — `min_delta = +0.0` for all 5 × 7 × 2 readings, no violations
+(`direction_separation` 0.02361, `possessive_jaccard_secondary` 0.88889,
+`possessive_top1_agreement` 0.91667, `precision_at_5_unique_answers_only` 0.5,
+`role_share_ambiguous_queries` 0.625 on both arms). Ordering signatures: candidate-only = ∅,
+baseline-only = ∅, one shared ordering (baseline 12 / candidate 12). Plugin suite on the
+candidate engine: 494 passed, 3 skipped, 2 xfailed — identical to the 0.21.0 reference.
+
+Same scope caveat as before: recency is held constant by the seed.
+
 ## [0.21.0] — 2026-09-06 — engine 0.19.x admitted
 
 Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.20.0` (was `<0.19.0`). No plugin code change.
