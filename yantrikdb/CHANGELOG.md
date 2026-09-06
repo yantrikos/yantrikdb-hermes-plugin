@@ -20,6 +20,29 @@ index" cannot be evaluated from a min/max envelope, and a rule that cannot be ev
 a rule. `seed_created_at` joins the canonical config, so a v1.4 report is refused rather than
 silently compared, and the runner and comparator versions are now asserted equal by the suite.
 
+## [0.23.0] — 2026-09-06 — engine 0.21.x admitted
+
+Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.22.0` (was `<0.21.0`). No plugin code change.
+
+Engine 0.21.0 adds schema v52 (`token_case_stats`, additive, migrates on open): the store
+learns its own lexicon so sentence-initial common words and shouted headings are no longer
+entity subjects; `reextract_entities()` rebuilds the lexicon and heals existing stores. The
+plugin does not use the new surface; a store it opens migrates v51 → v52 on first open.
+
+Admission by **gate v1.5.0**, same protocol as 0.22.0: baseline PyPI 0.20.0 vs the 0.21.0
+release wheel `47e3399c…9c70` (the bytes to be published), one checkpointed seed built by the
+baseline engine, 2 rounds × 7 repeats, alternating process order, comparator exit 0, no
+identity refusal, distinct native bytes:
+
+Every one of the five metrics was **exactly equal** across the arms at every paired repeat
+index in both rounds — `min_delta = +0.0` for all 5 × 7 × 2 readings, no violations.
+Ordering signatures: candidate-only = ∅, baseline-only = ∅, one shared ordering (baseline
+12 / candidate 12). Plugin suite on the candidate engine: 494 passed, 3 skipped, 2 xfailed —
+identical to the 0.22.0 reference. The gate script now checkpoints the seed after seeding
+(a seed left with a non-empty `-wal` sidecar is refused by design).
+
+Same scope caveat as before: recency is held constant by the seed.
+
 ## [0.22.0] — 2026-09-06 — engine 0.20.x admitted
 
 Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.21.0` (was `<0.20.0`). No plugin code change.
