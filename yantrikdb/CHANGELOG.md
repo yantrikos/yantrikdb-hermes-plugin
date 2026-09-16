@@ -22,8 +22,16 @@ silently compared, and the runner and comparator versions are now asserted equal
 
 ## [0.25.1] — 2026-09-16 — `hermes plugins validate` passes
 
-Pin unchanged (`yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0`). Patch release so the
-catalog-validation fix reaches PyPI: 0.25.0 as published still fails `hermes plugins validate`.
+Pin unchanged (`yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0`).
+
+**Which install path this affects.** The root `__init__.py` fixed below is a repository file, not
+a packaged one: `[tool.setuptools] packages = ["yantrikdb_hermes_plugin"]` ships only the inner
+package, so neither the wheel nor the sdist has ever contained it. Users on `pip install
+yantrikdb-hermes-plugin` followed by `yantrikdb-hermes install` were never affected — that path
+copies the inner package and never executes the root file. The fix matters to Hermes' own
+directory-plugin path (`hermes plugins install`, and the `hermes plugins validate` the catalog
+runs), which loads the repository directory itself. It therefore travels with this tag and the
+repository, not with PyPI.
 
 ### Fixed
 - **The root `__init__.py` now recognises every loader name Hermes uses.** Its discriminator
