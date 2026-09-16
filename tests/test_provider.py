@@ -1344,6 +1344,13 @@ class TestHermesPluginsInstallEntryPoint:
         # NOT pre-registered — that is the loader quirk the file works around.
         parent = mod_name.rpartition(".")[0]
         # Don't pre-register parent — that's the bug we're working around.
+        #
+        # Two of these names are real namespaces a live Hermes owns
+        # (``hermes_plugins.<slug>`` for every installed directory plugin), so
+        # record what sys.modules held before and evict only what this test adds.
+        # A prefix sweep here would delete other people's plugins out from under
+        # whatever runs next.
+        preexisting = frozenset(sys.modules)
         spec = importlib.util.spec_from_file_location(
             mod_name, str(top_init),
             submodule_search_locations=[str(repo_root)],
@@ -1366,10 +1373,43 @@ class TestHermesPluginsInstallEntryPoint:
             from agent.memory_provider import MemoryProvider
             assert issubclass(mod.YantrikDBMemoryProvider, MemoryProvider)
         finally:
-            # Cleanup synthetic modules so other tests aren't affected
-            for key in list(sys.modules):
-                if key == mod_name or (parent and key.startswith(parent)):
+            # Cleanup: only keys this test introduced, and only ones belonging to
+            # its own module tree or the parent the workaround synthesised. The
+            # tree matters — ``__init__.py`` also registers ``<mod_name>._yantrikdb_inner``.
+            for key in frozenset(sys.modules) - preexisting:
+                if key == mod_name or key.startswith(f"{mod_name}.") or key == parent:
                     sys.modules.pop(key, None)
+
+    def test_loader_probe_leaves_a_live_hermes_namespace_intact(self):
+        """The probe above loads under real Hermes namespaces, so its cleanup
+        must not evict modules it did not create.
+
+        Current Hermes imports every installed directory plugin as
+        ``hermes_plugins.<slug>``. If this test suite is run from inside a Hermes
+        checkout, a prefix-based cleanup would drop other plugins out of
+        ``sys.modules`` and break whatever imports them next.
+        """
+        import sys
+        import types
+
+        sibling = "hermes_plugins.some_other_plugin"
+        created = [k for k in ("hermes_plugins", sibling) if k not in sys.modules]
+        for key in created:
+            sys.modules[key] = types.ModuleType(key)
+        try:
+            self.test_top_level_init_exposes_register_and_provider("hermes_plugins.yantrikdb")
+            assert "hermes_plugins" in sys.modules, (
+                "the loader probe evicted the live hermes_plugins namespace"
+            )
+            assert sibling in sys.modules, (
+                "the loader probe evicted another plugin's module"
+            )
+            # Its own synthetic modules are still cleaned up.
+            assert "hermes_plugins.yantrikdb" not in sys.modules
+            assert "hermes_plugins.yantrikdb._yantrikdb_inner" not in sys.modules
+        finally:
+            for key in created:
+                sys.modules.pop(key, None)
 
     def test_top_level_plugin_yaml_declares_name_yantrikdb(self):
         """Hermes installer uses `plugin.yaml.name` as the install-target

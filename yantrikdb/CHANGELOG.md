@@ -20,6 +20,27 @@ index" cannot be evaluated from a min/max envelope, and a rule that cannot be ev
 a rule. `seed_created_at` joins the canonical config, so a v1.4 report is refused rather than
 silently compared, and the runner and comparator versions are now asserted equal by the suite.
 
+## [0.25.1] — 2026-09-16 — `hermes plugins validate` passes
+
+Pin unchanged (`yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0`). Patch release so the
+catalog-validation fix reaches PyPI: 0.25.0 as published still fails `hermes plugins validate`.
+
+### Fixed
+- **The root `__init__.py` now recognises every loader name Hermes uses.** Its discriminator
+  matched only `_hermes_user_memory*`, but current Hermes imports directory plugins as
+  `hermes_plugins.<slug>` and `hermes plugins validate` probes as `hermes_validate_probe_plugin`.
+  Under those names the file was a silent no-op, so `register()` was never exposed and validation
+  reported `capability probe: no register() function`. Reported and fixed by @teknium1 (#80), who
+  also parametrised the regression test over all three names so a future loader rename cannot
+  regress it quietly.
+
+### Changed
+- **The loader probe no longer evicts modules it did not create.** Its cleanup swept every
+  `sys.modules` key sharing the parent prefix, so running this suite inside a live Hermes
+  checkout dropped other installed plugins out of `hermes_plugins.*` — and it leaked its own
+  inner module on the non-dotted name. It now removes only keys the test introduced, within its
+  own module tree or a parent it synthesised, with a test that fails against the old sweep.
+
 ## [0.25.0] — 2026-09-14 — engine 0.23.x admitted
 
 Pin: `yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0` (was `<0.23.0`). No plugin code change.
