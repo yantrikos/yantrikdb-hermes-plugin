@@ -864,7 +864,22 @@ class EmbeddedYantrikDBClient:
         domain: str | None = None,
         since_rid: str | None = None,
     ) -> dict[str, Any]:
-        """Structured scan over a namespace (engine ``list_records``).
+        """Structured scan over records (engine ``list_records``).
+
+        ``namespace=None`` means **every namespace**, matching the HTTP
+        backend, which simply omits the parameter when it is None. This used
+        to substitute ``self.config.namespace`` instead, which made the two
+        backends disagree about what "no namespace" means — and silently broke
+        the one caller that needs a wide scan.
+
+        The fleet scan (``_do_fleet``) asks for an unscoped enumeration and
+        then filters locally by the ``{base}:{workspace}:`` prefix. Under the
+        substitution it received only records whose namespace equalled the
+        *un-derived* base, and since every agent's records live at
+        ``{base}:{workspace}:{identity}``, nothing ever matched: the tool
+        reported an empty fleet with ``ok: true`` (issue #83). Callers that
+        want a scoped scan — the stale-candidate scan does — pass the
+        namespace explicitly and are unaffected.
 
         Returns ``{"records": [...], "next_cursor": ...}``. Raises
         ``AttributeError`` on engines too old to expose ``list_records``;
@@ -872,7 +887,7 @@ class EmbeddedYantrikDBClient:
         """
         try:
             out = self._db.list_records(
-                namespace=namespace or self.config.namespace,
+                namespace=namespace,
                 limit=int(limit),
                 order=order,
                 domain=domain,

@@ -512,3 +512,70 @@ class TestEmbeddedErrorMapping:
 
         with pytest.raises(client_module.YantrikDBServerError):
             client.recall("durable fact")
+
+
+# ── #83: the fleet scan needs an unscoped enumeration ────────────────
+
+
+class TestListRecordsNamespaceForwarding:
+    """`list_records(namespace=None)` must reach the engine as None.
+
+    Issue #83: `_do_fleet` asks for an unscoped scan and filters locally by the
+    `{base}:{workspace}:` prefix. This method resolved None to
+    `self.config.namespace` — the *un-derived* base — and the engine matches
+    `namespace` exactly. Every agent's records live at
+    `{base}:{workspace}:{identity}`, so the scan matched nothing and the tool
+    reported `sibling_agents: []` with `ok: true`.
+
+    The HTTP backend omits the parameter when it is None, so the two backends
+    disagreed about what "no namespace" meant and only the embedded one was
+    wrong. These spy on the engine call rather than mocking `list_records`
+    itself — the existing fleet tests mock the method under test, which is
+    exactly why this survived them.
+    """
+
+    @staticmethod
+    def _client(embedded_module, base="hermes"):
+        class _SpyEngine:
+            def __init__(self):
+                self.calls = []
+
+            def list_records(self, **kwargs):
+                self.calls.append(kwargs)
+                return {"records": [], "next_cursor": None}
+
+        c = object.__new__(embedded_module.EmbeddedYantrikDBClient)
+        c._db = _SpyEngine()
+        c.config = types.SimpleNamespace(namespace=base)
+        return c
+
+    def test_no_namespace_is_forwarded_as_no_namespace(self, embedded_module):
+        c = self._client(embedded_module)
+        c.list_records(limit=100)
+        got = c._db.calls[0]["namespace"]
+        assert got is None, (
+            "an unscoped scan must reach the engine unscoped; substituting "
+            f"{got!r} restricts it to records whose namespace equals the base "
+            "exactly, and no agent record ever does"
+        )
+
+    def test_configured_base_does_not_leak_into_an_unscoped_call(self, embedded_module):
+        c = self._client(embedded_module, base="hermes")
+        assert c.config.namespace == "hermes"
+        c.list_records(limit=10)
+        assert c._db.calls[0]["namespace"] != "hermes"
+
+    def test_an_explicit_namespace_is_forwarded_unchanged(self, embedded_module):
+        c = self._client(embedded_module)
+        target = "hermes:workspace1:agent-a"
+        c.list_records(namespace=target, limit=10)
+        assert c._db.calls[0]["namespace"] == target
+
+    def test_the_other_arguments_still_reach_the_engine(self, embedded_module):
+        """A fix that dropped `since_rid` would break hygiene-scan paging."""
+        c = self._client(embedded_module)
+        c.list_records(limit=7, order="desc", domain="work", since_rid="rid-9")
+        call = c._db.calls[0]
+        assert (call["limit"], call["order"], call["domain"], call["since_rid"]) == (
+            7, "desc", "work", "rid-9",
+        )
