@@ -1,12 +1,12 @@
 # yantrikdb-hermes-plugin
 
 [![CI](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-128%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
+[![Tests](https://img.shields.io/badge/tests-497%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/yantrikdb-hermes-plugin)](https://pypi.org/project/yantrikdb-hermes-plugin/)
 [![Downloads](https://img.shields.io/pypi/dm/yantrikdb-hermes-plugin)](https://pypi.org/project/yantrikdb-hermes-plugin/)
-[![YantrikDB engine](https://img.shields.io/badge/yantrikdb%20engine-%E2%89%A50.12.1,%3C0.16-orange)](https://github.com/yantrikos/yantrikdb)
+[![YantrikDB engine](https://img.shields.io/badge/yantrikdb%20engine-%E2%89%A50.12.1,%3C0.24.0-orange)](https://github.com/yantrikos/yantrikdb)
 [![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)

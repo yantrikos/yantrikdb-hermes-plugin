@@ -40,6 +40,31 @@ jobs:
           fi
           echo "All four version sources match: $PYPROJECT"
 
+          # Surfaces five and six: the ones that have each drifted silently
+          # BECAUSE this job did not read them. bump-my-version's own
+          # current_version drifted twice (see CHANGELOG 0.20.1 and again by
+          # 0.25.1) and refuses to run when it disagrees; the README engine
+          # badge sat at "<0.16" for eight minor pin bumps, telling every
+          # visitor the plugin could not run the current engine.
+          BUMP=$(grep -E '^current_version = ' pyproject.toml | head -1 | sed 's/current_version = "\(.*\)"/\1/')
+          echo "bumpversion current_version = $BUMP"
+          if [ "$PYPROJECT" != "$BUMP" ]; then
+            echo "::error::bump-my-version current_version=$BUMP disagrees with pyproject=$PYPROJECT; bump-my-version will refuse to run"
+            exit 1
+          fi
+
+          # The badge must show the SAME upper bound as the real pin, since
+          # that is the number a visitor reads as "which engines work".
+          PIN_MAX=$(grep -oE '"yantrikdb>=[^"]*"' pyproject.toml | head -1 | grep -oE '<[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          BADGE_MAX=$(grep -oE 'yantrikdb%20engine-[^)]*' README.md | head -1 | sed 's/%3C/</' | grep -oE '<[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+          echo "pin upper bound        = $PIN_MAX"
+          echo "README badge bound     = $BADGE_MAX"
+          if [ "$PIN_MAX" != "$BADGE_MAX" ]; then
+            echo "::error::README engine badge says $BADGE_MAX but the pin says $PIN_MAX — update the badge in README.md"
+            exit 1
+          fi
+          echo "Engine badge matches the pin: $PIN_MAX"
+
   test:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
