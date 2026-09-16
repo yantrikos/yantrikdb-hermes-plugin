@@ -41,12 +41,14 @@ from pathlib import Path
 # collection, direct ``import``, etc.) so it doesn't create a second copy of
 # the inner package and break ``isinstance`` checks across test fixtures.
 #
-# Hermes' user-installed-plugin loader loads this file under a module name
-# starting with ``_hermes_user_memory.`` — that's the discriminator we use to
-# decide whether to do the inner load. Bundled discovery (which fires after
+# Hermes' user-installed-plugin loader imports this file under a namespaced
+# module name — ``hermes_plugins.<slug>`` on current Hermes, ``_hermes_user_memory.*``
+# on older releases, and ``hermes_validate_probe_plugin`` from ``hermes plugins
+# validate`` — that's the discriminator we use to decide whether to do the inner
+# load. Bundled discovery (which fires after
 # ``yantrikdb-hermes install`` copies the inner ``yantrikdb/`` contents into
 # ``<hermes>/plugins/memory/yantrikdb/``) doesn't go through this file at all.
-if __name__.startswith("_hermes_user_memory"):
+if __name__.startswith(("_hermes_user_memory", "hermes_plugins", "hermes_validate_probe_plugin")):
 
     # Workaround for a Hermes bug in user-installed plugin discovery: the loader
     # registers the module under a dotted name (e.g. ``_hermes_user_memory.yantrikdb``)
