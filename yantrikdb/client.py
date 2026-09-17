@@ -1033,16 +1033,17 @@ class YantrikDBClient:
         run_pattern_mining: bool = False,
         run_personality: bool = False,
         consolidation_limit: int | None = None,
-        namespace: str | None = None,
     ) -> dict[str, Any]:
+        # No `namespace` in the body — the server's /v1/think parser never
+        # read it, so sending it only ever looked like scoping. Kept in
+        # lockstep with the embedded backend so the two cannot drift; see
+        # the note on EmbeddedYantrikDBClient.think and issue #87.
         body: dict[str, Any] = {
             "run_consolidation": run_consolidation,
             "run_conflict_scan": run_conflict_scan,
             "run_pattern_mining": run_pattern_mining,
             "run_personality": run_personality,
         }
-        if namespace:
-            body["namespace"] = namespace
         if consolidation_limit is not None:
             body["consolidation_limit"] = int(consolidation_limit)
         return self._request("POST", "/v1/think", body)

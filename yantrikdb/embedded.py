@@ -707,19 +707,27 @@ class EmbeddedYantrikDBClient:
         run_pattern_mining: bool = False,
         run_personality: bool = False,
         consolidation_limit: int | None = None,
-        namespace: str | None = None,
     ) -> dict[str, Any]:
+        # NO `namespace` KEY HERE, and no namespace parameter — see issue #87.
+        # `think()` is store-wide on every backend and always has been. The
+        # engine's ThinkConfig has no namespace field, and the server's
+        # /v1/think body parser ignores the key, so passing it never scoped
+        # anything; it was silently dropped. Engine 0.15.0 then made the
+        # binding reject unknown config keys, which turned that silent no-op
+        # into a hard failure and took embedded self-maintenance down
+        # completely — undetected, because the caller logged it at DEBUG.
+        #
+        # Dropping it costs no isolation. Namespace safety lives BELOW
+        # think(), not in its arguments: consolidation groups candidates by
+        # namespace before clustering, and the conflict scans join on equal
+        # namespaces. A multi-agent store consolidates each namespace on its
+        # own during one store-wide pass.
         cfg: dict[str, Any] = {
             "run_consolidation": run_consolidation,
             "run_conflict_scan": run_conflict_scan,
             "run_pattern_mining": run_pattern_mining,
             "run_personality": run_personality,
         }
-        # Only set namespace when provided so older engine versions that
-        # don't read the key from cfg keep their existing behavior. Engine
-        # pin is `yantrikdb >= 0.7.4`; current engines honor it.
-        if namespace:
-            cfg["namespace"] = namespace
         if consolidation_limit is not None:
             cfg["consolidation_limit"] = int(consolidation_limit)
         try:
