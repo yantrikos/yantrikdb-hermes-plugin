@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import copy
 import json
 import logging
 import os
@@ -1020,6 +1021,20 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset({
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _without_fields(schema: dict[str, Any], fields: frozenset[str]) -> dict[str, Any]:
+    """A copy of a tool schema with some of its parameters removed. The shared schema is untouched."""
+    if not fields:
+        return schema
+    out = copy.deepcopy(schema)
+    params = out.get("parameters") or {}
+    props = params.get("properties") or {}
+    for field in fields:
+        props.pop(field, None)
+    if isinstance(params.get("required"), list):
+        params["required"] = [r for r in params["required"] if r not in fields]
+    return out
 
 def _ensure_engine_cache_dir() -> None:
     """Pre-create the engine's model-cache directory if it doesn't exist.
@@ -2488,6 +2503,17 @@ class YantrikDBMemoryProvider(MemoryProvider):
             schemas = [s for s in schemas if s["name"] != "yantrikdb_packs"]
         if not cfg.fleet_view_enabled:
             schemas = [s for s in schemas if s["name"] != "yantrikdb_fleet"]
+
+        # A Yantrik machine's memory server offers less than the engine does. What it refuses is
+        # not shown at all, rather than shown and refused on every call.
+        if (cfg.mode or "").strip().lower() == "yantrik":
+            from .yantrik_memory import UNOFFERED_FIELDS, UNOFFERED_TOOLS
+
+            schemas = [
+                _without_fields(s, UNOFFERED_FIELDS.get(s["name"], frozenset()))
+                for s in schemas
+                if s["name"] not in UNOFFERED_TOOLS
+            ]
         return schemas
 
     def handle_tool_call(

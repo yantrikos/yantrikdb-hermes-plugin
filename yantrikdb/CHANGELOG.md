@@ -22,6 +22,10 @@ by the standalone `yantrik-memory` service otherwise.
 - What the server does not offer (consolidation, stats, triggers, tasks, skills, gaps, record
   scans, packs, idempotency keys) is refused with `YantrikMemoryUnsupported`, a client error that
   does not count against the circuit breaker. `owner_scoping` is refused at initialize.
+- In yantrik mode the model is not offered those tools, nor `yantrikdb_remember`'s
+  `idempotency_key`: a tool that is shown gets used, and Hermes on a live Yantrik desktop spent a
+  turn on a refused idempotency key before retrying without it. A test calls every tool against
+  the fake server and requires the hidden set to be exactly the refused set.
 - Event-stream replies are decoded as UTF-8 explicitly; `requests` would otherwise read them as
   ISO-8859-1 and garble every curly quote and accented name.
 
