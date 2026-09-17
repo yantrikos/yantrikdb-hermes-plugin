@@ -234,15 +234,18 @@ class TestRequestFormation:
 
     def test_think_with_pattern_mining(self, client, mock_session):
         mock_session.request.return_value = _make_response(200, {})
-        client.think(
-            run_pattern_mining=True,
-            consolidation_limit=100,
-            namespace="hermes:workspace:coder",
-        )
+        client.think(run_pattern_mining=True, consolidation_limit=100)
         body = mock_session.request.call_args.kwargs["json"]
         assert body["run_pattern_mining"] is True
         assert body["consolidation_limit"] == 100
-        assert body["namespace"] == "hermes:workspace:coder"
+
+    def test_think_sends_no_namespace(self, client, mock_session):
+        """issue #87 — /v1/think never read a namespace, so sending one only
+        ever looked like scoping. Kept in lockstep with the embedded backend,
+        where the same key is a hard error on engine 0.15.0+."""
+        mock_session.request.return_value = _make_response(200, {})
+        client.think(run_pattern_mining=True)
+        assert "namespace" not in mock_session.request.call_args.kwargs["json"]
 
     def test_conflicts_is_get_with_no_body(self, client, mock_session):
         mock_session.request.return_value = _make_response(200, {"conflicts": []})

@@ -1428,6 +1428,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
         self._last_maintenance_turn: int = 0
         self._last_maintenance_at: float = 0.0
         self._maintenance_thread: threading.Thread | None = None
+        # issue #87 — the FIRST maintenance failure is reported at WARNING,
+        # later ones at DEBUG. Self-maintenance runs unattended, so a purely
+        # DEBUG failure is indistinguishable from "nothing to consolidate":
+        # a whole-feature outage looked like an idle feature for a month.
+        # One warning names it; the rest stay quiet so a persistently
+        # unreachable store cannot flood a long-running agent's log.
+        self._maintenance_failure_warned: bool = False
 
         self._prefetch_results: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
@@ -2750,7 +2757,6 @@ class YantrikDBMemoryProvider(MemoryProvider):
         resp = self._require_client().think(
             run_pattern_mining=bool(args.get("run_pattern_mining", False)),
             consolidation_limit=args.get("consolidation_limit"),
-            namespace=self._namespace,
         )
         self._record_success()
         return json.dumps({
@@ -3045,9 +3051,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             result: dict[str, Any] = {"action": "apply", "namespace": namespace}
             if args.get("consolidate"):
                 try:
-                    think = client.think(
-                        run_pattern_mining=False, namespace=namespace,
-                    )
+                    think = client.think(run_pattern_mining=False)
                     result["consolidated"] = think.get("consolidation_count", 0)
                     result["conflicts_found"] = think.get("conflicts_found", 0)
                 except YantrikDBError as e:
@@ -4104,7 +4108,6 @@ class YantrikDBMemoryProvider(MemoryProvider):
             stats = self._client.think(
                 run_pattern_mining=False,
                 run_personality=False,
-                namespace=self._namespace,
             )
             logger.info(
                 "YantrikDB %s think: consolidated=%s conflicts=%s duration_ms=%s",
@@ -4114,7 +4117,16 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 stats.get("duration_ms"),
             )
         except YantrikDBError as e:
-            logger.debug("YantrikDB %s think failed: %s", reason, e)
+            if not self._maintenance_failure_warned:
+                self._maintenance_failure_warned = True
+                logger.warning(
+                    "YantrikDB %s think failed: %s — self-maintenance "
+                    "(consolidation, conflict scan, triggers) is not running. "
+                    "Further failures log at DEBUG.",
+                    reason, e,
+                )
+            else:
+                logger.debug("YantrikDB %s think failed: %s", reason, e)
             return
 
         # v0.4.15+ — drain the pending-trigger queue when configured.

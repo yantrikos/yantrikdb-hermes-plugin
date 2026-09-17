@@ -762,7 +762,10 @@ class TestHandleToolCall:
             "yantrikdb_think", {"run_pattern_mining": True},
         )
         assert mock_client.think.call_args.kwargs["run_pattern_mining"] is True
-        assert mock_client.think.call_args.kwargs["namespace"] == "hermes:workspace:coder"
+        # issue #87: think() must NOT be handed a namespace. It is store-wide
+        # on every backend, and the engine rejects the key outright since
+        # 0.15.0, which broke the tool on the default backend.
+        assert "namespace" not in mock_client.think.call_args.kwargs
         parsed = json.loads(out)
         assert parsed["consolidated"] == 2
         assert parsed["conflicts_found"] == 1

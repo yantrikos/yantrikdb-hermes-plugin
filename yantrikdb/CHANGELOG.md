@@ -20,6 +20,55 @@ index" cannot be evaluated from a min/max envelope, and a rule that cannot be ev
 a rule. `seed_created_at` joins the canonical config, so a v1.4 report is refused rather than
 silently compared, and the runner and comparator versions are now asserted equal by the suite.
 
+## [0.26.0] — 2026-09-17 — self-maintenance runs again on the default backend
+
+Pin unchanged (`yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0`).
+
+**Everyone on the embedded backend should take this release.** Embedded is the default since
+v0.2.0, and on it `think()` — consolidation, the conflict scan, trigger production, the whole
+self-maintenance story — has been failing on every call since engine 0.15.0 shipped on
+2026-08-15. Reported with a complete diagnosis and the fix by @PaulrydrickPuri (#87).
+
+### Fixed
+- **`think()` no longer sends a `namespace` the engine refuses.** All three call sites passed
+  `namespace=self._namespace`, and the plugin always has a namespace set, so the call could
+  never succeed: the engine's `think()` takes a config dict whose keys are whitelisted, and
+  `namespace` is not among them. Affected every engine the pin admits from 0.15.3 up.
+
+  The parameter never did anything on any backend. `think()` is store-wide by construction —
+  the engine's `ThinkConfig` has no namespace field, and the server's `/v1/think` body parser
+  does not read the key either — so before 0.15.0 it was silently discarded, and the strict
+  unknown-key check added there turned that silent no-op into a hard error. Removing it costs
+  no isolation, because namespace safety sits below `think()` rather than in its arguments:
+  consolidation groups candidates by namespace before clustering, and the conflict scans join
+  on equal namespaces. Verified on a real multi-namespace store — two agents, one database,
+  one store-wide pass — four syntheses, twelve member rows, none crossing a namespace.
+
+- **A failed maintenance pass now says so.** The failure was logged at DEBUG, so at default log
+  level a feature that never ran was indistinguishable from a feature with nothing to do, which
+  is what let this sit for a month. The first failure per session now logs at WARNING and names
+  what stopped working; later ones stay at DEBUG so an unreachable store cannot flood the log
+  of a long-running agent.
+
+### Changed
+- **`think()` no longer accepts a `namespace` argument on either client.** Removed rather than
+  ignored, on both the embedded and HTTP backends, so a caller that supplies one gets a
+  `TypeError` at the call site instead of a parameter that is quietly dropped. Being accepted
+  and discarded is precisely how this stayed invisible on HTTP. Callers outside the provider
+  should delete the argument; there is no behaviour to replace.
+
+### Added
+- **The suite now asserts the plugin's calls against the real engine.** The bug survived a
+  green suite because every layer that could have caught it was mocked: the provider tests mock
+  the client, the embedded tests mock the engine, and the signature-parity test compares the two
+  clients to each other while both were wrong in the same way. A dict of config keys is invisible
+  to any signature-level check, so `tests/test_engine_contract.py` adds two layers — one that
+  runs everywhere and pins the keys the clients may send, and one that drives the embedded client
+  against a real store. A new `engine-contract` CI job installs the engine at the pin's ceiling
+  so that second layer actually runs, and fails if the real-engine tests are skipped rather than
+  passing a job that saw nothing. The matrix job keeps running without an engine, the way a
+  contributor runs it.
+
 ## [0.25.1] — 2026-09-16 — `hermes plugins validate` passes
 
 Pin unchanged (`yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0`).

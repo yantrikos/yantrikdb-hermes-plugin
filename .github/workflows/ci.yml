@@ -95,3 +95,44 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -v
+
+  # Issue #87: think() was broken on the DEFAULT backend for a month and the
+  # suite above stayed green throughout, because it mocks the engine and a
+  # mock accepts any config key. The engine is the only thing that rejects,
+  # so one job installs it for real and asserts the plugin's calls against
+  # it. Deliberately a separate job on a single Python: the matrix above must
+  # keep passing with no engine present, the way a contributor runs it.
+  engine-contract:
+    name: Engine contract (real engine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install the engine at the pin's ceiling
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pytest
+          # Same range pyproject.toml declares, so this job tests the newest
+          # engine a user can actually install alongside the plugin.
+          pip install "yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0"
+          python -c "from importlib import metadata; print('engine', metadata.version('yantrikdb'))"
+
+      - name: Fail if the engine did not actually install
+        # Without this, a resolver failure would leave every real-engine test
+        # SKIPPED and the job green — a gate that sees nothing.
+        run: |
+          set -euo pipefail
+          python -m pytest tests/test_engine_contract.py -v             | tee /tmp/contract.log
+          if grep -q "SKIPPED" /tmp/contract.log; then
+            echo "::error::real-engine tests skipped — the engine is missing in this job"
+            exit 1
+          fi
+
+      - name: Full suite against the real engine
+        run: python -m pytest tests/ -q
