@@ -3,6 +3,28 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+### Unreleased — `yantrik` mode: a Yantrik machine's shared memory
+
+On a Yantrik machine one memory file is shared by whichever mind is active — Yantrik Mind or
+Hermes — and only one process may hold it with a live engine (a second engine on the same file
+does not see the first one's writes). `YANTRIKDB_MODE=yantrik` never opens the file: it speaks
+MCP over streamable HTTP to the machine's memory server (`127.0.0.1:7440/mcp`, token read from
+the file the memory's owner writes beside it), which is served by Yantrik Mind while it runs and
+by the standalone `yantrik-memory` service otherwise.
+
+- Automatic recall and saving (`prefetch`, `sync_turn`) and the remember / recall / forget /
+  conflicts / relate tools work against the shared memory. Recall covers the whole machine's
+  memory; the agent's namespace is kept on writes as a record of who wrote what.
+- Recall returns Yantrik Mind's beliefs alongside memories, labelled as beliefs with their
+  confidence — in the recall tool's results and in the injected memory block.
+- An open session survives a mind switch: the new owner answers 404 for the old session and the
+  client reopens it once, transparently. Verified live across Mind → standalone → Mind.
+- What the server does not offer (consolidation, stats, triggers, tasks, skills, gaps, record
+  scans, packs, idempotency keys) is refused with `YantrikMemoryUnsupported`, a client error that
+  does not count against the circuit breaker. `owner_scoping` is refused at initialize.
+- Event-stream replies are decoded as UTF-8 explicitly; `requests` would otherwise read them as
+  ISO-8859-1 and garble every curly quote and accented name.
+
 ## [0.27.0] — 2026-09-19 — a multiplexed gateway keeps each profile's YantrikDB settings to itself
 
 Pin unchanged (`yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0`). Gated against engine 0.23.1.
