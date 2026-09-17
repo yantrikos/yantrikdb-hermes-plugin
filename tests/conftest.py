@@ -223,6 +223,8 @@ def _clean_yantrikdb_env(monkeypatch):
         "YANTRIKDB_FLEET_VIEW",
         "YANTRIKDB_PACKS_ENABLED",
         "YANTRIKDB_SHARE_ENGINE",
+        "YANTRIK_MEMORY_URL",
+        "YANTRIK_MEMORY_TOKEN_FILE",
     ):
         monkeypatch.delenv(var, raising=False)
     yield

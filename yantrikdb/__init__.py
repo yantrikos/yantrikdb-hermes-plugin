@@ -1244,6 +1244,13 @@ def _format_recall_block(
         origin = ""
         if third_party_namespaces and r.get("namespace") in third_party_namespaces:
             origin = " _(from a knowledge pack — third-party, not your memory)_"
+        meta = r.get("metadata") or {}
+        if meta.get("kind") == "belief":
+            confidence = meta.get("confidence")
+            origin += (
+                f" _(belief, confidence {confidence:.2f})_"
+                if isinstance(confidence, (int, float)) else " _(belief)_"
+            )
         lines.append(f"- {text}{tag}{origin}")
     return "\n".join(lines)
 
@@ -1485,8 +1492,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
         - embedded mode: available iff `yantrikdb` Python package is importable.
         - http mode: available iff a token is configured.
+        - yantrik mode: available iff the memory server's token file is readable.
         """
         cfg = YantrikDBConfig.load()
+        if cfg.mode == "yantrik":
+            from .yantrik_memory import read_token
+            return bool(read_token(cfg))
         if cfg.mode == "embedded":
             try:
                 import yantrikdb._yantrikdb_rust  # noqa: F401
@@ -1532,8 +1543,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "key": "mode",
                 "description": (
                     "Backend: 'embedded' (default since v0.2.0; in-process, "
-                    "~10 MB, no server) or 'http' (talks to a separately-run "
-                    "yantrikdb-server, for HA cluster setups)."
+                    "~10 MB, no server), 'http' (talks to a separately-run "
+                    "yantrikdb-server, for HA cluster setups) or 'yantrik' "
+                    "(on a Yantrik machine: the memory shared with Yantrik "
+                    "Mind, through its memory server)."
                 ),
                 "default": "embedded",
                 "env_var": "YANTRIKDB_MODE",
@@ -1541,7 +1554,29 @@ class YantrikDBMemoryProvider(MemoryProvider):
             },
         ]
 
-        if mode == "http":
+        if mode == "yantrik":
+            schema.extend([
+                {
+                    "key": "memory_server_url",
+                    "description": (
+                        "The Yantrik memory server. Empty uses the machine's "
+                        "default, http://127.0.0.1:7440/mcp."
+                    ),
+                    "default": "",
+                    "env_var": "YANTRIK_MEMORY_URL",
+                },
+                {
+                    "key": "memory_server_token_file",
+                    "description": (
+                        "File holding the memory server's token, written by "
+                        "whichever process owns the memory. Empty uses "
+                        "~/.local/share/yantrik-mind/yantrik-memory.token."
+                    ),
+                    "default": "",
+                    "env_var": "YANTRIK_MEMORY_TOKEN_FILE",
+                },
+            ])
+        elif mode == "http":
             schema.extend([
                 {
                     "key": "token",
@@ -1789,9 +1824,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
         try:
             self._client.health()
-            target = self._config.url if self._config.mode == "http" else (
-                self._config.db_path or "default"
-            )
+            if self._config.mode == "yantrik":
+                from .yantrik_memory import resolve_memory_url
+                target = resolve_memory_url(self._config)
+            else:
+                target = self._config.url if self._config.mode == "http" else (
+                    self._config.db_path or "default"
+                )
             logger.info(
                 "YantrikDB connected: mode=%s target=%s namespace=%s",
                 self._config.mode, target, self._namespace,
@@ -2718,7 +2757,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             rid = r.get("rid")
             if rid in boost_by_rid:
                 why.append(f"reinforced (+{boost_by_rid[rid]:.2f})")
-            compact.append({
+            entry = {
                 "rid": rid,
                 "text": r.get("text"),
                 "score": r.get("score"),
@@ -2735,7 +2774,15 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "created_at": r.get("created_at"),
                 # Explainable recall — server returns a list of reasons per result.
                 "why_retrieved": why,
-            })
+            }
+            # Yantrik mode returns beliefs alongside memories. A belief is a conclusion held with
+            # a confidence, not a stored remark, and the agent should be able to tell which it is
+            # reading.
+            meta = r.get("metadata") or {}
+            if meta.get("kind") == "belief":
+                entry["kind"] = "belief"
+                entry["confidence"] = meta.get("confidence")
+            compact.append(entry)
         return json.dumps({"count": len(compact), "results": compact})
 
     def _do_forget(self, args: dict[str, Any]) -> str:

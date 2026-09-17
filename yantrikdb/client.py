@@ -57,7 +57,8 @@ _USER_AGENT = "hermes-yantrikdb-plugin/0.1"
 
 @dataclass
 class YantrikDBConfig:
-    # Backend selector — "embedded" (default in v0.2.0+) or "http"
+    # Backend selector — "embedded" (default in v0.2.0+), "http", or "yantrik"
+    # (a Yantrik machine's shared memory, through its memory server)
     mode: str = "embedded"
     # HTTP-only fields
     url: str = DEFAULT_URL
@@ -65,6 +66,11 @@ class YantrikDBConfig:
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT
     read_timeout: float = DEFAULT_READ_TIMEOUT
     retry_total: int = DEFAULT_RETRY_TOTAL
+    # Yantrik-mode fields. Empty means the machine's defaults: the memory server on
+    # 127.0.0.1:7440 and the token file beside the memory. The token is only ever
+    # read from the file — whichever process owns the memory created it there.
+    memory_server_url: str = ""
+    memory_server_token_file: str = ""
     # Embedded-only fields
     db_path: str = ""               # default $HERMES_HOME/yantrikdb-memory.db
     embedder_name: str = ""         # bundled potion-2M when empty; "potion-base-8M" / "potion-base-32M" for tier 2/3
@@ -476,6 +482,8 @@ class YantrikDBConfig:
             mode=os.environ.get("YANTRIKDB_MODE", "embedded").strip().lower(),
             url=os.environ.get("YANTRIKDB_URL", DEFAULT_URL).rstrip("/"),
             token=os.environ.get("YANTRIKDB_TOKEN", ""),
+            memory_server_url=os.environ.get("YANTRIK_MEMORY_URL", ""),
+            memory_server_token_file=os.environ.get("YANTRIK_MEMORY_TOKEN_FILE", ""),
             db_path=os.environ.get("YANTRIKDB_DB_PATH", ""),
             embedder_name=os.environ.get("YANTRIKDB_EMBEDDER", ""),
             embedder_class=os.environ.get("YANTRIKDB_EMBEDDER_CLASS", ""),

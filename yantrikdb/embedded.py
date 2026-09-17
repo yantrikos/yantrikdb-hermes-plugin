@@ -1342,8 +1342,9 @@ class EmbeddedYantrikDBClient:
 
 
 def make_backend(config: YantrikDBConfig) -> Any:
-    """Factory: return either ``YantrikDBClient`` (HTTP) or
-    ``EmbeddedYantrikDBClient`` based on ``config.mode``.
+    """Factory: return ``YantrikDBClient`` (HTTP), ``EmbeddedYantrikDBClient``
+    or ``YantrikMemoryClient`` (a Yantrik machine's shared memory server)
+    based on ``config.mode``.
 
     Both expose the same 8-method surface so the provider's dispatch
     code stays unchanged.
@@ -1354,8 +1355,11 @@ def make_backend(config: YantrikDBConfig) -> Any:
     if mode == "http":
         from .client import YantrikDBClient
         return YantrikDBClient(config)
+    if mode == "yantrik":
+        from .yantrik_memory import YantrikMemoryClient
+        return YantrikMemoryClient(config)
     raise YantrikDBError(
-        f"unknown YANTRIKDB_MODE={mode!r}. Use 'embedded' or 'http'."
+        f"unknown YANTRIKDB_MODE={mode!r}. Use 'embedded', 'http' or 'yantrik'."
     )
 
 
