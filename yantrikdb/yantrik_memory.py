@@ -66,6 +66,34 @@ _JSONRPC_INVALID_PARAMS = -32602
 _PLUGIN_VERSION = "0.25.0"
 
 
+# Tools with nothing behind them on the memory server. Offered anyway, each would be refused on
+# every call, and a model that sees a tool uses it: Hermes spent turns on yantrikdb_remember's
+# idempotency key before retrying without it. So in yantrik mode the provider leaves these out of
+# the tool list, and takes the refused fields off the tools it keeps.
+UNOFFERED_TOOLS = frozenset({
+    "yantrikdb_think",
+    "yantrikdb_stats",
+    "yantrikdb_resolve_conflict",
+    "yantrikdb_pending_triggers",
+    "yantrikdb_acknowledge_trigger",
+    "yantrikdb_dismiss_trigger",
+    "yantrikdb_act_on_trigger",
+    "yantrikdb_knowledge_gaps",
+    # These three read engine stats or scan every record, neither of which the server offers.
+    "yantrikdb_observability",
+    "yantrikdb_hygiene",
+    "yantrikdb_fleet",
+    "yantrikdb_packs",
+    "yantrikdb_tasks",
+    "yantrikdb_skill_search",
+    "yantrikdb_skill_define",
+    "yantrikdb_skill_outcome",
+})
+UNOFFERED_FIELDS = {
+    "yantrikdb_remember": frozenset({"idempotency_key"}),
+}
+
+
 class YantrikMemoryUnsupported(YantrikDBClientError):
     """The memory server does not offer this. Not a failure of the memory."""
 

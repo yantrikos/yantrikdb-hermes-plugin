@@ -201,6 +201,18 @@ def provider(provider_module, yantrik_env, ym):
     p.shutdown()
 
 
+def _minimal_args(schema: dict[str, Any]) -> dict[str, Any]:
+    """The least a tool call needs to reach the client: every required field, filled plainly."""
+    params = schema.get("parameters") or {}
+    props = params.get("properties") or {}
+    filler = {"string": "x", "number": 0.5, "integer": 1, "boolean": False, "array": ["x"], "object": {}}
+    args: dict[str, Any] = {}
+    for name in params.get("required") or []:
+        spec = props.get(name) or {}
+        args[name] = (spec.get("enum") or [filler.get(spec.get("type"), "x")])[0]
+    return args
+
+
 def _wait(t, timeout: float = 5.0) -> None:
     if t is not None and t.is_alive():
         t.join(timeout=timeout)
@@ -409,6 +421,49 @@ class TestProvider:
             assert "error" in out.lower()
         assert provider._failure_count == 0
         assert not provider._breaker_open()
+
+    def test_the_model_is_offered_exactly_what_the_server_does_not_refuse(
+        self, provider_module, yantrik_env, ym, monkeypatch
+    ):
+        # Every surface switched on, so nothing is hidden for a reason other than the server.
+        for flag, value in {
+            "YANTRIKDB_TOOL_PROFILE": "full",
+            "YANTRIKDB_SKILLS_ENABLED": "true",
+            "YANTRIKDB_PACKS_ENABLED": "true",
+            "YANTRIKDB_FLEET_VIEW": "true",
+        }.items():
+            monkeypatch.setenv(flag, value)
+        p = provider_module.YantrikDBMemoryProvider()
+        p.initialize("sess-1", agent_workspace="home", agent_identity="hermes", platform="cli")
+        try:
+            refused = set()
+            for schema in provider_module.ALL_TOOL_SCHEMAS:
+                out = p.handle_tool_call(schema["name"], _minimal_args(schema))
+                if "not offered by the Yantrik memory server" in out:
+                    refused.add(schema["name"])
+            offered = {s["name"] for s in p.get_tool_schemas()}
+        finally:
+            p.shutdown()
+        assert refused == set(ym.UNOFFERED_TOOLS)
+        assert not offered & refused
+        assert offered == {s["name"] for s in provider_module.ALL_TOOL_SCHEMAS} - refused
+
+    def test_remember_is_offered_without_the_idempotency_key_the_server_refuses(self, provider):
+        out = provider.handle_tool_call(
+            "yantrikdb_remember", {"text": "The spare key is in the blue pot", "idempotency_key": "msg-1"}
+        )
+        assert "not offered by the Yantrik memory server" in out
+        remember = next(s for s in provider.get_tool_schemas() if s["name"] == "yantrikdb_remember")
+        assert "idempotency_key" not in remember["parameters"]["properties"]
+        assert "text" in remember["parameters"]["properties"]
+
+    def test_embedded_mode_still_offers_the_idempotency_key(self, provider_module, monkeypatch):
+        monkeypatch.setenv("YANTRIKDB_MODE", "embedded")
+        remember = next(
+            s for s in provider_module.YantrikDBMemoryProvider().get_tool_schemas()
+            if s["name"] == "yantrikdb_remember"
+        )
+        assert "idempotency_key" in remember["parameters"]["properties"]
 
     def test_session_end_does_not_count_missing_consolidation_as_failure(self, provider):
         provider.on_session_end([{"role": "user", "content": "bye"}])
