@@ -27,6 +27,8 @@ hermes memory setup                   # → select "yantrikdb"
 
 No server, no token, no GPU. From here the agent remembers and recalls on its own — tell it "I prefer dark mode in VS Code" in one session, ask "what editor theme do I like?" in the next, and it answers from `yantrikdb_recall` with a `why_retrieved` reason attached. Full install options — including `hermes plugins install`, `uv`/`pipx` environments, and the HTTP backend for HA clusters — are under [Install](#install-default--embedded-backend) below.
 
+Not using Hermes? The same engine ships as an MCP server ([yantrikdb-mcp](https://github.com/yantrikos/yantrikdb-mcp)) for Claude Code, Cursor, and other MCP-capable agents, or as a plain Python import ([yantrikdb](https://github.com/yantrikos/yantrikdb)) for anything else — same `recall`/`remember`/`conflicts()` primitives, different transport.
+
 ## Why this exists
 
 Two recurring observations from the Hermes community map directly to what yantrikdb does:
