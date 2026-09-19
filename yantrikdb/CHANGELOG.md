@@ -3,7 +3,19 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
-## [Unreleased] — a multiplexed gateway keeps each profile's YantrikDB settings to itself
+## [0.27.0] — 2026-09-19 — a multiplexed gateway keeps each profile's YantrikDB settings to itself
+
+Pin unchanged (`yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0`). Gated against engine 0.23.1.
+
+**Anyone running a multiplexed Hermes gateway with more than one profile should take this
+release.** Validated live on Hermes 0.19.0: before it, a secondary profile's memories went into
+the launch profile's store, even when that profile's own `.env` configured a different one.
+
+**Install note.** Hermes' memory loader prefers `plugins/memory/yantrikdb` inside the Hermes
+package over `$HERMES_HOME/plugins/yantrikdb`. If you ever used the deprecated
+`yantrikdb-hermes install <hermes_root>` form, that copy shadows every later default install and
+you are still running whatever version it copied. Update it the same way, or remove it. A stock
+Hermes wheel ships no such copy.
 
 **Behaviour change for multiplexed gateways** (`gateway.multiplex_profiles`, on by default in
 Hermes): every `YANTRIKDB_*` setting is now read from the active profile's own `.env`, through
