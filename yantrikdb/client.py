@@ -50,6 +50,60 @@ DEFAULT_MAX_TEXT_LEN = 25000  # matches Honcho's message cap
 
 _USER_AGENT = "hermes-yantrikdb-plugin/0.1"
 
+# Names already warned about by _warn_if_process_env_ignored (once per process).
+_IGNORED_ENV_WARNED: set[str] = set()
+
+
+def _profile_env(name: str, default: str = "") -> str:
+    """Read a profile-scoped YantrikDB setting without crossing Hermes profiles.
+
+    A multiplexed Hermes gateway keeps the launch/default profile's .env in
+    os.environ; the active profile's values live in agent.secret_scope. Outside
+    Hermes (packaging, standalone tests), fall back to the process environment.
+
+    Do not catch UnscopedSecretError here. In multiplex mode an unscoped read
+    must fail closed rather than borrow another profile's value.
+    """
+    try:
+        from agent.secret_scope import get_secret
+    except (ImportError, AttributeError):
+        return os.environ.get(name, default)
+
+    value = get_secret(name, default)
+    _warn_if_process_env_ignored(name)
+    return default if value is None else value
+
+
+def _warn_if_process_env_ignored(name: str) -> None:
+    """Say so when multiplexing hides a YantrikDB setting from this profile.
+
+    Under ``gateway.multiplex_profiles`` a scoped read returns the default for
+    a name missing from the profile's .env, even when the process environment
+    sets it (docker ``-e``, systemd ``Environment=``, or the launch profile's
+    .env). For ``YANTRIKDB_MODE`` that silently swaps an http backend for an
+    empty embedded store, so the drop has to be visible. Logs the name only,
+    never the value: the value may be a token.
+    """
+    if name in _IGNORED_ENV_WARNED or name not in os.environ:
+        return
+    try:
+        from agent.secret_scope import current_secret_scope, is_multiplex_active
+    except (ImportError, AttributeError):
+        return
+    if not is_multiplex_active():
+        return
+    scope = current_secret_scope()
+    if scope is None or name in scope:
+        return
+    _IGNORED_ENV_WARNED.add(name)
+    logger.warning(
+        "%s is set in the gateway process environment but not in this "
+        "profile's .env. With gateway.multiplex_profiles on, each profile "
+        "reads YantrikDB settings only from its own .env, so the default is "
+        "used here. Add %s to this profile's .env to keep it.",
+        name, name,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -473,192 +527,192 @@ class YantrikDBConfig:
     @classmethod
     def from_env(cls) -> YantrikDBConfig:
         return cls(
-            mode=os.environ.get("YANTRIKDB_MODE", "embedded").strip().lower(),
-            url=os.environ.get("YANTRIKDB_URL", DEFAULT_URL).rstrip("/"),
-            token=os.environ.get("YANTRIKDB_TOKEN", ""),
-            db_path=os.environ.get("YANTRIKDB_DB_PATH", ""),
-            embedder_name=os.environ.get("YANTRIKDB_EMBEDDER", ""),
-            embedder_class=os.environ.get("YANTRIKDB_EMBEDDER_CLASS", ""),
-            embedder_model2vec=os.environ.get("YANTRIKDB_EMBEDDER_MODEL2VEC", ""),
-            embedder_huggingface=os.environ.get("YANTRIKDB_EMBEDDER_HF", ""),
-            embedding_dim=_parse_int(os.environ.get("YANTRIKDB_EMBEDDING_DIM"), 0),
+            mode=_profile_env("YANTRIKDB_MODE", "embedded").strip().lower(),
+            url=_profile_env("YANTRIKDB_URL", DEFAULT_URL).rstrip("/"),
+            token=_profile_env("YANTRIKDB_TOKEN", ""),
+            db_path=_profile_env("YANTRIKDB_DB_PATH", ""),
+            embedder_name=_profile_env("YANTRIKDB_EMBEDDER", ""),
+            embedder_class=_profile_env("YANTRIKDB_EMBEDDER_CLASS", ""),
+            embedder_model2vec=_profile_env("YANTRIKDB_EMBEDDER_MODEL2VEC", ""),
+            embedder_huggingface=_profile_env("YANTRIKDB_EMBEDDER_HF", ""),
+            embedding_dim=_parse_int(_profile_env("YANTRIKDB_EMBEDDING_DIM"), 0),
             share_engine=_parse_bool(
-                os.environ.get("YANTRIKDB_SHARE_ENGINE"), default=True,
+                _profile_env("YANTRIKDB_SHARE_ENGINE"), default=True,
             ),
             tool_profile=(
-                os.environ.get("YANTRIKDB_TOOL_PROFILE", "core").strip().lower()
+                _profile_env("YANTRIKDB_TOOL_PROFILE", "core").strip().lower()
                 or "core"
             ),
             capture_delegations=_parse_bool(
-                os.environ.get("YANTRIKDB_CAPTURE_DELEGATIONS"), default=True,
+                _profile_env("YANTRIKDB_CAPTURE_DELEGATIONS"), default=True,
             ),
             maintenance_cadence_turns=_parse_int(
-                os.environ.get("YANTRIKDB_MAINTENANCE_CADENCE_TURNS"), 40,
+                _profile_env("YANTRIKDB_MAINTENANCE_CADENCE_TURNS"), 40,
             ),
             maintenance_min_interval_seconds=_parse_int(
-                os.environ.get("YANTRIKDB_MAINTENANCE_MIN_INTERVAL_SECONDS"), 1800,
+                _profile_env("YANTRIKDB_MAINTENANCE_MIN_INTERVAL_SECONDS"), 1800,
             ),
-            constitution_path=os.environ.get("YANTRIKDB_CONSTITUTION_PATH", ""),
+            constitution_path=_profile_env("YANTRIKDB_CONSTITUTION_PATH", ""),
             constitution_max_chars=_parse_int(
-                os.environ.get("YANTRIKDB_CONSTITUTION_MAX_CHARS"), 1500,
+                _profile_env("YANTRIKDB_CONSTITUTION_MAX_CHARS"), 1500,
             ),
             fleet_view_enabled=_parse_bool(
-                os.environ.get("YANTRIKDB_FLEET_VIEW"), default=False,
+                _profile_env("YANTRIKDB_FLEET_VIEW"), default=False,
             ),
             fleet_scan_limit=_parse_int(
-                os.environ.get("YANTRIKDB_FLEET_SCAN_LIMIT"), 400,
+                _profile_env("YANTRIKDB_FLEET_SCAN_LIMIT"), 400,
             ),
             packs_enabled=_parse_bool(
-                os.environ.get("YANTRIKDB_PACKS_ENABLED"), default=False,
+                _profile_env("YANTRIKDB_PACKS_ENABLED"), default=False,
             ),
-            auto_mount_packs=os.environ.get("YANTRIKDB_AUTO_MOUNT_PACKS", ""),
+            auto_mount_packs=_profile_env("YANTRIKDB_AUTO_MOUNT_PACKS", ""),
             surface_pack_context=_parse_bool(
-                os.environ.get("YANTRIKDB_SURFACE_PACK_CONTEXT"), default=True,
+                _profile_env("YANTRIKDB_SURFACE_PACK_CONTEXT"), default=True,
             ),
             pack_context_max_chars=_parse_int(
-                os.environ.get("YANTRIKDB_PACK_CONTEXT_MAX_CHARS"), 2000,
+                _profile_env("YANTRIKDB_PACK_CONTEXT_MAX_CHARS"), 2000,
             ),
             adaptive_prompt_budget=_parse_bool(
-                os.environ.get("YANTRIKDB_ADAPTIVE_PROMPT_BUDGET"), default=True,
+                _profile_env("YANTRIKDB_ADAPTIVE_PROMPT_BUDGET"), default=True,
             ),
             prompt_budget_high_watermark=_parse_int(
-                os.environ.get("YANTRIKDB_PROMPT_BUDGET_HIGH"), 40000,
+                _profile_env("YANTRIKDB_PROMPT_BUDGET_HIGH"), 40000,
             ),
             prompt_budget_low_watermark=_parse_int(
-                os.environ.get("YANTRIKDB_PROMPT_BUDGET_LOW"), 12000,
+                _profile_env("YANTRIKDB_PROMPT_BUDGET_LOW"), 12000,
             ),
             delegation_max_len=_parse_int(
-                os.environ.get("YANTRIKDB_DELEGATION_MAX_LEN"), 4000,
+                _profile_env("YANTRIKDB_DELEGATION_MAX_LEN"), 4000,
             ),
             skills_enabled=_parse_bool(
-                os.environ.get("YANTRIKDB_SKILLS_ENABLED"), default=False,
+                _profile_env("YANTRIKDB_SKILLS_ENABLED"), default=False,
             ),
             auto_think_on_session_end=_parse_bool(
-                os.environ.get("YANTRIKDB_AUTO_THINK_ON_SESSION_END"), default=True,
+                _profile_env("YANTRIKDB_AUTO_THINK_ON_SESSION_END"), default=True,
             ),
             auto_acknowledge_triggers=_parse_bool(
-                os.environ.get("YANTRIKDB_AUTO_ACKNOWLEDGE_TRIGGERS"), default=False,
+                _profile_env("YANTRIKDB_AUTO_ACKNOWLEDGE_TRIGGERS"), default=False,
             ),
             surface_recent_skills=_parse_bool(
-                os.environ.get("YANTRIKDB_SURFACE_RECENT_SKILLS"), default=True,
+                _profile_env("YANTRIKDB_SURFACE_RECENT_SKILLS"), default=True,
             ),
             auto_recall_min_score=_parse_float(
-                os.environ.get("YANTRIKDB_AUTO_RECALL_MIN_SCORE"), 0.4,
+                _profile_env("YANTRIKDB_AUTO_RECALL_MIN_SCORE"), 0.4,
             ),
             auto_recall_token_budget=_parse_int(
-                os.environ.get("YANTRIKDB_AUTO_RECALL_TOKEN_BUDGET"), 600,
+                _profile_env("YANTRIKDB_AUTO_RECALL_TOKEN_BUDGET"), 600,
             ),
             auto_skill_attach=_parse_bool(
-                os.environ.get("YANTRIKDB_AUTO_SKILL_ATTACH"), default=True,
+                _profile_env("YANTRIKDB_AUTO_SKILL_ATTACH"), default=True,
             ),
             auto_skill_min_score=_parse_float(
-                os.environ.get("YANTRIKDB_AUTO_SKILL_MIN_SCORE"), 0.55,
+                _profile_env("YANTRIKDB_AUTO_SKILL_MIN_SCORE"), 0.55,
             ),
             auto_skill_max_bodies=_parse_int(
-                os.environ.get("YANTRIKDB_AUTO_SKILL_MAX_BODIES"), 2,
+                _profile_env("YANTRIKDB_AUTO_SKILL_MAX_BODIES"), 2,
             ),
             surface_pending_conflicts=_parse_bool(
-                os.environ.get("YANTRIKDB_SURFACE_PENDING_CONFLICTS"), default=True,
+                _profile_env("YANTRIKDB_SURFACE_PENDING_CONFLICTS"), default=True,
             ),
             pending_conflicts_poll_seconds=_parse_float(
-                os.environ.get("YANTRIKDB_PENDING_CONFLICTS_POLL_SECONDS"), 60.0,
+                _profile_env("YANTRIKDB_PENDING_CONFLICTS_POLL_SECONDS"), 60.0,
             ),
             pending_conflicts_max_surfaced=_parse_int(
-                os.environ.get("YANTRIKDB_PENDING_CONFLICTS_MAX_SURFACED"), 3,
+                _profile_env("YANTRIKDB_PENDING_CONFLICTS_MAX_SURFACED"), 3,
             ),
             extraction_enabled=_parse_bool(
-                os.environ.get("YANTRIKDB_EXTRACTION_ENABLED"), default=True,
+                _profile_env("YANTRIKDB_EXTRACTION_ENABLED"), default=True,
             ),
-            extraction_tier=os.environ.get(
+            extraction_tier=_profile_env(
                 "YANTRIKDB_EXTRACTION_TIER", "cheap",
             ).strip().lower(),
             extraction_certainty=_parse_float(
-                os.environ.get("YANTRIKDB_EXTRACTION_CERTAINTY"), 0.4,
+                _profile_env("YANTRIKDB_EXTRACTION_CERTAINTY"), 0.4,
             ),
             recall_includes_candidates=_parse_bool(
-                os.environ.get("YANTRIKDB_RECALL_INCLUDES_CANDIDATES"),
+                _profile_env("YANTRIKDB_RECALL_INCLUDES_CANDIDATES"),
                 default=False,
             ),
-            shared_brain_namespace=os.environ.get(
+            shared_brain_namespace=_profile_env(
                 "YANTRIKDB_SHARED_BRAIN_NAMESPACE", "",
             ).strip(),
-            agent_name=os.environ.get("YANTRIKDB_AGENT_NAME", "").strip(),
+            agent_name=_profile_env("YANTRIKDB_AGENT_NAME", "").strip(),
             self_tuning_recall=_parse_bool(
-                os.environ.get("YANTRIKDB_SELF_TUNING_RECALL"), default=False,
+                _profile_env("YANTRIKDB_SELF_TUNING_RECALL"), default=False,
             ),
             self_tuning_max_boost=_parse_float(
-                os.environ.get("YANTRIKDB_SELF_TUNING_MAX_BOOST"), 0.15,
+                _profile_env("YANTRIKDB_SELF_TUNING_MAX_BOOST"), 0.15,
             ),
             surface_hygiene=_parse_bool(
-                os.environ.get("YANTRIKDB_SURFACE_HYGIENE"), default=False,
+                _profile_env("YANTRIKDB_SURFACE_HYGIENE"), default=False,
             ),
             hygiene_max_surfaced=_parse_int(
-                os.environ.get("YANTRIKDB_HYGIENE_MAX_SURFACED"), 3,
+                _profile_env("YANTRIKDB_HYGIENE_MAX_SURFACED"), 3,
             ),
             conversation_buffer_enabled=_parse_bool(
-                os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_ENABLED"),
+                _profile_env("YANTRIKDB_CONVERSATION_BUFFER_ENABLED"),
                 default=True,
             ),
             conversation_buffer_max_turns=_parse_int(
-                os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_MAX_TURNS"), 10,
+                _profile_env("YANTRIKDB_CONVERSATION_BUFFER_MAX_TURNS"), 10,
             ),
             surface_conversation_buffer=_parse_bool(
-                os.environ.get("YANTRIKDB_SURFACE_CONVERSATION_BUFFER"),
+                _profile_env("YANTRIKDB_SURFACE_CONVERSATION_BUFFER"),
                 default=False,
             ),
             conversation_buffer_surface_limit=_parse_int(
-                os.environ.get("YANTRIKDB_CONVERSATION_BUFFER_SURFACE_LIMIT"), 6,
+                _profile_env("YANTRIKDB_CONVERSATION_BUFFER_SURFACE_LIMIT"), 6,
             ),
             gap_detection=_parse_bool(
-                os.environ.get("YANTRIKDB_GAP_DETECTION"), default=False,
+                _profile_env("YANTRIKDB_GAP_DETECTION"), default=False,
             ),
             auto_gap_tasks=_parse_bool(
-                os.environ.get("YANTRIKDB_AUTO_GAP_TASKS"), default=True,
+                _profile_env("YANTRIKDB_AUTO_GAP_TASKS"), default=True,
             ),
             gap_task_max=_parse_int(
-                os.environ.get("YANTRIKDB_GAP_TASK_MAX"), 3,
+                _profile_env("YANTRIKDB_GAP_TASK_MAX"), 3,
             ),
             gap_task_min_count=_parse_int(
-                os.environ.get("YANTRIKDB_GAP_TASK_MIN_COUNT"), 3,
+                _profile_env("YANTRIKDB_GAP_TASK_MIN_COUNT"), 3,
             ),
             gap_max_avg_top_score=_parse_float(
-                os.environ.get("YANTRIKDB_GAP_MAX_AVG_TOP_SCORE"), 0.30,
+                _profile_env("YANTRIKDB_GAP_MAX_AVG_TOP_SCORE"), 0.30,
             ),
             surface_agenda=_parse_bool(
-                os.environ.get("YANTRIKDB_SURFACE_AGENDA"), default=True,
+                _profile_env("YANTRIKDB_SURFACE_AGENDA"), default=True,
             ),
             agenda_max_items=_parse_int(
-                os.environ.get("YANTRIKDB_AGENDA_MAX_ITEMS"), 5,
+                _profile_env("YANTRIKDB_AGENDA_MAX_ITEMS"), 5,
             ),
             sync_user_messages=_parse_bool(
-                os.environ.get("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
+                _profile_env("YANTRIKDB_SYNC_USER_MESSAGES"), default=True,
             ),
             owner_scoping=_parse_bool(
-                os.environ.get("YANTRIKDB_OWNER_SCOPING"), default=False,
+                _profile_env("YANTRIKDB_OWNER_SCOPING"), default=False,
             ),
             include_base_namespace_recall=_parse_bool(
-                os.environ.get("YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL"),
+                _profile_env("YANTRIKDB_INCLUDE_BASE_NAMESPACE_RECALL"),
                 default=True,
             ),
             include_legacy_actor_namespace_recall=_parse_bool(
-                os.environ.get("YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL"),
+                _profile_env("YANTRIKDB_INCLUDE_LEGACY_ACTOR_NAMESPACE_RECALL"),
                 default=True,
             ),
-            identity_map_path=os.environ.get("YANTRIKDB_IDENTITY_MAP_PATH", ""),
-            identity_map_json=os.environ.get("YANTRIKDB_IDENTITY_MAP_JSON", ""),
-            namespace=os.environ.get("YANTRIKDB_NAMESPACE", DEFAULT_NAMESPACE),
-            top_k=_parse_int(os.environ.get("YANTRIKDB_TOP_K"), DEFAULT_TOP_K),
+            identity_map_path=_profile_env("YANTRIKDB_IDENTITY_MAP_PATH", ""),
+            identity_map_json=_profile_env("YANTRIKDB_IDENTITY_MAP_JSON", ""),
+            namespace=_profile_env("YANTRIKDB_NAMESPACE", DEFAULT_NAMESPACE),
+            top_k=_parse_int(_profile_env("YANTRIKDB_TOP_K"), DEFAULT_TOP_K),
             connect_timeout=_parse_float(
-                os.environ.get("YANTRIKDB_CONNECT_TIMEOUT"), DEFAULT_CONNECT_TIMEOUT,
+                _profile_env("YANTRIKDB_CONNECT_TIMEOUT"), DEFAULT_CONNECT_TIMEOUT,
             ),
             read_timeout=_parse_float(
-                os.environ.get("YANTRIKDB_READ_TIMEOUT"), DEFAULT_READ_TIMEOUT,
+                _profile_env("YANTRIKDB_READ_TIMEOUT"), DEFAULT_READ_TIMEOUT,
             ),
             retry_total=_parse_int(
-                os.environ.get("YANTRIKDB_RETRY_TOTAL"), DEFAULT_RETRY_TOTAL,
+                _profile_env("YANTRIKDB_RETRY_TOTAL"), DEFAULT_RETRY_TOTAL,
             ),
             max_text_len=_parse_int(
-                os.environ.get("YANTRIKDB_MAX_TEXT_LEN"), DEFAULT_MAX_TEXT_LEN,
+                _profile_env("YANTRIKDB_MAX_TEXT_LEN"), DEFAULT_MAX_TEXT_LEN,
             ),
         )
 
