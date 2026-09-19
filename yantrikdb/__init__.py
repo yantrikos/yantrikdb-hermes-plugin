@@ -1523,7 +1523,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         commands were renamed during the v0.7.x refactor and the docs page
         hasn't caught up yet).
         """
-        mode = os.environ.get("YANTRIKDB_MODE", "embedded").strip().lower()
+        mode = YantrikDBConfig.load().mode
         readme_install = (
             "https://github.com/yantrikos/yantrikdb-hermes-plugin"
             "#install-default--embedded-backend"

@@ -3,6 +3,37 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [Unreleased] — a multiplexed gateway keeps each profile's YantrikDB settings to itself
+
+**Behaviour change for multiplexed gateways** (`gateway.multiplex_profiles`, on by default in
+Hermes): every `YANTRIKDB_*` setting is now read from the active profile's own `.env`, through
+Hermes' `agent.secret_scope.get_secret`, and never from the gateway's process environment.
+
+Why: Hermes loads the launch profile's `~/.hermes/.env` into `os.environ` at startup, and the
+plugin read its settings from there. So on a multiplexed gateway, a second profile with no
+`YANTRIKDB_*` of its own ran with whatever the launch profile set (token, namespace, db path),
+and its memories could land in another profile's store. Measured against Hermes' own
+`get_secret`: before, a secondary profile resolved `token=<launch token>, namespace=launch`;
+now it resolves the defaults.
+
+What to check if you run a multiplexed gateway: a `YANTRIKDB_*` value that is set only in the
+process environment (docker `-e`, systemd `Environment=`) and not in the profile's `.env` is now
+ignored for that profile, and the default applies. For `YANTRIKDB_MODE=http` that means an
+embedded store. The plugin logs one warning per ignored name (the name, never the value), and the
+fix is to put the setting in that profile's `.env`. The launch profile's settings in
+`~/.hermes/.env`, where the README puts them, still apply to the launch profile. A secondary
+profile that was silently running on them now needs its own `.env` entries. Gateways with
+multiplexing off, and use outside Hermes, behave exactly as before: they never consult the
+scope. That is deliberate. Hermes 0.19.0 treats an installed scope as authoritative even
+without multiplexing and installs a `.env`-only scope around every cron job, while
+hermes-agent main falls back to the process environment. Reading through the scope outside
+multiplexing would make a single-profile setup's config depend on the Hermes version and on
+which code path installed a scope. (The plugin skips cron sessions, so on 0.19.0 that
+difference stopped at config resolution and never reached a write.)
+
+The setup schema's mode lookup now uses the same profile-aware config, and so also honours a
+`yantrikdb.json` override. Relates to #89.
+
 ### Gate v1.5.0 — the 4k comparison gate no longer measures the clock
 
 v1.4 could not tell a ranking change from the time of day. Three comparator runs over the same
