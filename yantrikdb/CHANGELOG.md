@@ -23,7 +23,13 @@ embedded store. The plugin logs one warning per ignored name (the name, never th
 fix is to put the setting in that profile's `.env`. The launch profile's settings in
 `~/.hermes/.env`, where the README puts them, still apply to the launch profile. A secondary
 profile that was silently running on them now needs its own `.env` entries. Gateways with
-multiplexing off, and use outside Hermes, behave exactly as before.
+multiplexing off, and use outside Hermes, behave exactly as before: they never consult the
+scope. That is deliberate. Hermes 0.19.0 treats an installed scope as authoritative even
+without multiplexing and installs a `.env`-only scope around every cron job, while
+hermes-agent main falls back to the process environment. Reading through the scope outside
+multiplexing would make a single-profile setup's config depend on the Hermes version and on
+which code path installed a scope. (The plugin skips cron sessions, so on 0.19.0 that
+difference stopped at config resolution and never reached a write.)
 
 The setup schema's mode lookup now uses the same profile-aware config, and so also honours a
 `yantrikdb.json` override. Relates to #89.

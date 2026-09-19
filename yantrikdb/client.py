@@ -58,15 +58,27 @@ def _profile_env(name: str, default: str = "") -> str:
     """Read a profile-scoped YantrikDB setting without crossing Hermes profiles.
 
     A multiplexed Hermes gateway keeps the launch/default profile's .env in
-    os.environ; the active profile's values live in agent.secret_scope. Outside
-    Hermes (packaging, standalone tests), fall back to the process environment.
+    os.environ; the active profile's values live in agent.secret_scope. So
+    under multiplexing, read through the scope. Everywhere else (a
+    single-profile gateway, packaging, standalone tests) read os.environ
+    exactly as before.
+
+    Multiplexing is the only case that goes through the scope. Hermes 0.19.0
+    treats an installed scope as authoritative even without multiplexing (a
+    miss returns the default, never os.environ) and installs a .env-only
+    scope around every cron job, while hermes-agent main falls through to
+    os.environ. Staying off the scope outside multiplexing keeps a
+    single-profile setup's config identical to before on every Hermes
+    version, whichever code paths happen to install a scope.
 
     Do not catch UnscopedSecretError here. In multiplex mode an unscoped read
     must fail closed rather than borrow another profile's value.
     """
     try:
-        from agent.secret_scope import get_secret
+        from agent.secret_scope import get_secret, is_multiplex_active
     except (ImportError, AttributeError):
+        return os.environ.get(name, default)
+    if not is_multiplex_active():
         return os.environ.get(name, default)
 
     value = get_secret(name, default)
@@ -82,15 +94,13 @@ def _warn_if_process_env_ignored(name: str) -> None:
     sets it (docker ``-e``, systemd ``Environment=``, or the launch profile's
     .env). For ``YANTRIKDB_MODE`` that silently swaps an http backend for an
     empty embedded store, so the drop has to be visible. Logs the name only,
-    never the value: the value may be a token.
+    never the value: the value may be a token. Only called under multiplexing.
     """
     if name in _IGNORED_ENV_WARNED or name not in os.environ:
         return
     try:
-        from agent.secret_scope import current_secret_scope, is_multiplex_active
+        from agent.secret_scope import current_secret_scope
     except (ImportError, AttributeError):
-        return
-    if not is_multiplex_active():
         return
     scope = current_secret_scope()
     if scope is None or name in scope:

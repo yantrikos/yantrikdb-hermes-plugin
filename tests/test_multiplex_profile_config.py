@@ -1,9 +1,12 @@
 """YANTRIKDB_* settings resolve through Hermes' profile secret scope (#89).
 
-The fake below models ``agent.secret_scope.get_secret`` as of hermes-agent
-35f69a9: with a scope installed, a miss returns the default under
-multiplexing and falls through to os.environ otherwise; with no scope,
-multiplexing raises and a single-profile process reads os.environ.
+The fake below models ``agent.secret_scope.get_secret`` in two Hermes
+versions. Both agree that with no scope, multiplexing raises and a
+single-profile process reads os.environ, and that under multiplexing a scope
+miss returns the default. They differ on a scope miss WITHOUT multiplexing:
+hermes-agent main (35f69a9) falls through to os.environ, while the released
+0.19.0 treats the scope as authoritative and returns the default. 0.19.0
+installs a scope around every cron job, so that difference is live.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ def _install_secret_scope(
     scope: dict[str, str] | None,
     *,
     multiplex: bool = True,
+    hermes: str = "main",
 ):
     mod = types.ModuleType("agent.secret_scope")
 
@@ -32,7 +36,9 @@ def _install_secret_scope(
             val = scope.get(name)
             if val is not None:
                 return val
-            return default if multiplex else os.environ.get(name, default)
+            if multiplex or hermes == "0.19.0":
+                return default
+            return os.environ.get(name, default)
         if multiplex:
             raise UnscopedSecretError(name)
         return os.environ.get(name, default)
@@ -96,16 +102,33 @@ def test_unscoped_multiplex_read_fails_closed(client_module, monkeypatch):
         client_module.YantrikDBConfig.from_env()
 
 
-@pytest.mark.parametrize("scope", [None, {}], ids=["no-scope", "empty-scope"])
-def test_single_profile_process_env_still_applies(client_module, monkeypatch, scope):
+@pytest.mark.parametrize("hermes", ["main", "0.19.0"])
+@pytest.mark.parametrize("scope", [None, {}], ids=["no-scope", "cron-scope"])
+def test_single_profile_process_env_still_applies(client_module, monkeypatch, scope, hermes):
+    """Without multiplexing, config resolves from the process environment on
+    every path, including under cron-scope: the .env-only scope Hermes 0.19.0
+    installs around each cron job, which on 0.19.0 is authoritative."""
     monkeypatch.setenv("YANTRIKDB_MODE", "http")
     monkeypatch.setenv("YANTRIKDB_URL", "http://ydb:7438")
     monkeypatch.setenv("YANTRIKDB_TOKEN", "ydb_docker")
-    _install_secret_scope(monkeypatch, scope, multiplex=False)
+    _install_secret_scope(monkeypatch, scope, multiplex=False, hermes=hermes)
 
     cfg = client_module.YantrikDBConfig.from_env()
 
     assert (cfg.mode, cfg.url, cfg.token) == ("http", "http://ydb:7438", "ydb_docker")
+
+
+def test_hermes_without_multiplex_flag_reads_process_env(client_module, monkeypatch):
+    mod = types.ModuleType("agent.secret_scope")
+
+    def get_secret(name: str, default: str | None = None) -> str | None:
+        raise AssertionError("scope consulted on a Hermes without multiplexing")
+
+    mod.get_secret = get_secret
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", mod)
+    monkeypatch.setenv("YANTRIKDB_MODE", "http")
+
+    assert client_module.YantrikDBConfig.from_env().mode == "http"
 
 
 def test_process_env_setting_dropped_under_multiplex_is_logged(
