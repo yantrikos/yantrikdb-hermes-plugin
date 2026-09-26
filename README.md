@@ -1,7 +1,7 @@
 # yantrikdb-hermes-plugin
 
 [![CI](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-497%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
+[![Tests](https://img.shields.io/badge/tests-500%2B%20passing-brightgreen)](https://github.com/yantrikos/yantrikdb-hermes-plugin/actions)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/yantrikos/yantrikdb-hermes-plugin)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/yantrikdb-hermes-plugin)](https://pypi.org/project/yantrikdb-hermes-plugin/)
@@ -439,7 +439,7 @@ DeepSeek wasn't told the reason codes existed; it parsed them from the tool resp
 
 ## Verification
 
-- **96 unit tests** covering request formation, error taxonomy, provider contract, hook semantics, circuit breaker, text truncation, mode-aware availability — all mocked, no network required.
+- **500+ tests** covering request formation, error taxonomy, provider contract, hook semantics, circuit breaker, text truncation, mode-aware availability. The unit suite is mocked and needs no network (511 pass with the engine absent, 522 with it installed); a separate CI job runs the plugin's calls against the real engine.
 - **2 live integration tests** (`tests/integration/test_live.py`) that exercise the full flow against a real `yantrikdb-server`. Skipped by default; run with `YANTRIKDB_INTEGRATION_URL` + `YANTRIKDB_INTEGRATION_TOKEN` set.
 - **End-to-end Hermes demos** against an unmodified Hermes 0.9.0 install for both backends, captured in **[VERIFICATION.md](VERIFICATION.md)** — DeepSeek-driven sessions calling all 8 tools, with `why_retrieved` reason codes flowing through the model's reasoning verbatim.
 
@@ -494,7 +494,7 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 
 ## Status
 
-**v0.4.2** (current) — first-class embedder loaders for the `model2vec` family and the HF `sentence-transformers` ecosystem; embedding dim auto-probed; default install stays slim via optional `[model2vec]` and `[sentence-transformers]` pip extras. 151 tests passing on Python 3.11/3.12/3.13. **Standalone-by-design** per Hermes maintainer guidance — Hermes is not accepting new memory providers upstream; standalone plugins installed via `pip` are the recommended pattern. PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989) closed 2026-05-13 with that resolution.
+**v0.27.0** (current, 2026-09-19) — a multiplexed Hermes gateway now reads each profile's `YANTRIKDB_*` settings from that profile's own `.env` instead of the launch profile's environment; v0.26.0 fixed `think()` (consolidation, conflict scan) failing on every call on the embedded backend with engine 0.15.3 and later. Engine range `>=0.12.1,<0.24.0`. 500+ tests, CI on Python 3.11–3.14. **Standalone-by-design** per Hermes maintainer guidance — Hermes is not accepting new memory providers upstream; standalone plugins installed via `pip` are the recommended pattern. PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989) closed 2026-05-13 with that resolution.
 
 ### Release cadence
 
@@ -506,14 +506,25 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 | v0.3.1 | 2026-05-09 | PyPI distribution + `yantrikdb-hermes` CLI installer |
 | v0.4.1 | 2026-05-12 | Pluggable embedders (custom Python class via `YANTRIKDB_EMBEDDER_CLASS`) |
 | v0.4.2 | 2026-05-12 | First-class `model2vec` + `sentence-transformers` loaders, auto-probed dim |
+| v0.5.0 | 2026-05-31 | Active memory: the substrate stops waiting |
+| v0.6.0 | 2026-06-05 | Benchmarked recall, self-tuning ranking, hygiene |
+| v0.7.0 | 2026-06-29 | Gap-closers, conversation and task storage |
+| v0.8.0 | 2026-07-13 | The self-directing substrate |
+| v0.9.0 | 2026-07-17 | Idempotent writes, typed errors, contract gate |
+| v0.10.0 | 2026-07-25 | The install is the product |
+| v0.13.0 | 2026-08-05 | Built for fleets, not single agents |
+| v0.26.0 | 2026-09-17 | Self-maintenance (`think()`) runs again on the default backend |
+| v0.27.0 | 2026-09-19 | Multiplexed gateway keeps each profile's settings separate |
+
+58 tagged releases in total; every one is in the [CHANGELOG](yantrikdb/CHANGELOG.md).
 
 ### Durability signals
 
 The maintainer doesn't promise "I won't quit" — promises like that aren't testable. What's testable:
 
-- Every release ships with tests + CI (Python 3.11 / 3.12 / 3.13) + tagged CHANGELOG + a publish gate where 151 tests + ruff + mypy must pass before the wheel uploads to PyPI.
+- Every release ships with tests + CI (Python 3.11 / 3.12 / 3.13 / 3.14) + tagged CHANGELOG + a publish gate where the full test suite + ruff + mypy must pass before the wheel uploads to PyPI.
 - First user issue on this repo (multilingual embedding support) was filed and shipped to PyPI the same day — 25 minutes from raised to released.
-- Underlying yantrikdb engine: ~11.3k/mo PyPI downloads; flagship server repo has 171 GitHub stars. Cross-stack ownership (engine + HTTP server + MCP server + this plugin) — 14+ months of parallel maintenance, not a one-week hobby.
+- Underlying yantrikdb engine: ~8.2k/mo PyPI downloads; flagship server repo has 175 GitHub stars. Cross-stack ownership (engine + HTTP server + MCP server + this plugin) — 14+ months of parallel maintenance, not a one-week hobby.
 - Independent recognition: accepted into the [Cursor Directory](https://cursor.directory/plugins/yantrikdb) (300k+ developer reach) and (sibling project) the Anthropic MCP Directory.
 - Substrate design deposited as a peer-citable preprint: [10.5281/zenodo.20128887](https://doi.org/10.5281/zenodo.20128887).
 
