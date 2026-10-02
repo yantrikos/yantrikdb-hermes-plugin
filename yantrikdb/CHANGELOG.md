@@ -3,7 +3,50 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
-### Unreleased — `yantrik` mode: a Yantrik machine's shared memory
+## [0.28.0] — 2026-10-01 — `yantrik` mode, with Hermes's own memory credential
+
+### Hermes's own credential, not the machine's token
+
+A Yantrik desktop now grants each mind its own memory credential and hands it over, with the
+memory's address, on every turn. Hermes's platform adapter puts them in the gateway's
+environment, and yantrik mode reads both **on every request**:
+
+- `YANTRIK_MEMORY_CREDENTIAL` — `mem-` and 64 hex digits. Sent as the bearer when it is set and
+  well-formed; a malformed value is never sent. Without one, the machine's token file is used, so
+  older machines keep working. With neither, every call is refused with "this Yantrik machine has
+  not granted Hermes its memory yet: grant it in Settings › Minds".
+- `YANTRIK_MEMORY_URL` — `http://127.0.0.1:7440/mcp`, or `unix:/run/yantrik-mind/<uid>/memory.sock`
+  for the person's own socket: the same MCP streamable-HTTP requests over a unix domain socket
+  (a small urllib3 transport behind `requests`, no new dependency). The machine token is never
+  sent on the socket, which only accepts a credential. A changed address drops the MCP session.
+- The credential is a secret: never logged, redacted from every error message (anything
+  credential-shaped is), and shown as `mem-<redacted>` by `repr`. The client no longer trusts the
+  environment's proxies or `.netrc` (`trust_env = False`): either could carry the bearer off the
+  machine or replace it. Plain HTTP to a host other than loopback is refused.
+- Refusals are clear and never fatal. A 401/403 is retried once only if the credential changed
+  since it was read (a new turn's), never in a loop; then it is `YantrikMemoryNotGranted`, a client
+  error that does not count against the circuit breaker. A tool refused for a grant Hermes lacks
+  (`recall_ordinary`, `believe`, `remember`) is the same error, naming the grant, and the session
+  carries on with the tools that are granted. `on_memory_write` and `on_delegation` no longer count
+  a refused write against the breaker.
+- `is_available()` is now always true in yantrik mode: the grant arrives with a turn, and a provider
+  Hermes drops at startup stays dropped for the session.
+
+### Reading and writing the memory Yantrik Mind reads
+
+- **Facts about the person are written as beliefs.** Yantrik Mind's turns read beliefs, not flat
+  memories, so a fact stored with `remember` was never seen by it. The remember tool, turn
+  extraction and the MEMORY.md / USER.md mirror now call the server's `believe`
+  (`direction: "supports"`; provenance `extracted` at half strength for an extracted candidate,
+  `told` otherwise). Only Hermes's own notes stay flat memories in its namespace: the verbatim turn,
+  a delegation's result, anything `episodic` or `procedural`. The returned rid is `belief:<id>`, so
+  a belief Hermes wrote can be forgotten by its statement.
+- **Every recall is `include: "all"` with no namespace** — beliefs plus flat memories from every
+  namespace — including the tool's `memory_type` filter, which now narrows the results locally.
+  Prefetch is one recall, not one per fallback namespace, and the shared-brain mirror is off in
+  this mode (the memory is already shared).
+
+### `yantrik` mode: a Yantrik machine's shared memory
 
 On a Yantrik machine one memory file is shared by whichever mind is active — Yantrik Mind or
 Hermes — and only one process may hold it with a live engine (a second engine on the same file

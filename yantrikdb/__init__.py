@@ -1514,12 +1514,16 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
         - embedded mode: available iff `yantrikdb` Python package is importable.
         - http mode: available iff a token is configured.
-        - yantrik mode: available iff the memory server's token file is readable.
+        - yantrik mode: always. The desktop hands Hermes its memory credential
+          with each turn (``YANTRIK_MEMORY_CREDENTIAL``), so at startup there
+          may be none yet; whether Hermes may use the memory is answered per
+          call. Without a grant each call is refused with a plain "not granted
+          yet" client error, and the next turn that brings one just works. A
+          provider dropped here would stay dropped for the whole session.
         """
         cfg = YantrikDBConfig.load()
         if cfg.mode == "yantrik":
-            from .yantrik_memory import read_token
-            return bool(read_token(cfg))
+            return True
         if cfg.mode == "embedded":
             try:
                 import yantrikdb._yantrikdb_rust  # noqa: F401
@@ -1581,8 +1585,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 {
                     "key": "memory_server_url",
                     "description": (
-                        "The Yantrik memory server. Empty uses the machine's "
-                        "default, http://127.0.0.1:7440/mcp."
+                        "The Yantrik memory server: http://127.0.0.1:7440/mcp "
+                        "or unix:/run/yantrik-mind/<uid>/memory.sock. On a "
+                        "Yantrik desktop the platform adapter sets "
+                        "YANTRIK_MEMORY_URL every turn, and that wins. Empty "
+                        "uses http://127.0.0.1:7440/mcp."
                     ),
                     "default": "",
                     "env_var": "YANTRIK_MEMORY_URL",
@@ -1590,8 +1597,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 {
                     "key": "memory_server_token_file",
                     "description": (
-                        "File holding the memory server's token, written by "
-                        "whichever process owns the memory. Empty uses "
+                        "Older Yantrik machines only: the machine-wide token "
+                        "file, used when the desktop has not handed Hermes a "
+                        "per-mind credential (YANTRIK_MEMORY_CREDENTIAL). "
+                        "Never used on the unix socket. Empty uses "
                         "~/.local/share/yantrik-mind/yantrik-memory.token."
                     ),
                     "default": "",
@@ -2059,6 +2068,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
             top_k=top_k,
             domain=domain,
         ).get("results", []) or []
+        if self._config is not None and self._config.mode == "yantrik":
+            # One recall already reads the whole machine's memory (no namespace is sent), so a
+            # fallback namespace would only ask the same question again.
+            return scoped[:top_k]
         fallback_sets: list[list[dict[str, Any]]] = []
         for namespace in self._fallback_recall_namespaces():
             fallback_sets.append(
@@ -2675,6 +2688,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
     def _shared_brain_namespace(self) -> str:
         """Resolved shared-brain namespace; empty string when opted out."""
         if self._config is None:
+            return ""
+        if self._config.mode == "yantrik":
+            # The machine's memory is already shared by every mind; a mirror would write each
+            # fact twice (as two pieces of evidence for one belief).
             return ""
         ns = (self._config.shared_brain_namespace or "").strip()
         return ns
@@ -4638,6 +4655,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     metadata=metadata,
                 )
                 self._record_success()
+            except YantrikDBClientError as e:
+                # Refused (e.g. no grant in yantrik mode): the backend is fine, so not a failure.
+                logger.debug("YantrikDB on_delegation rejected: %s", e)
             except YantrikDBError as e:
                 self._record_failure()
                 logger.debug("YantrikDB on_delegation failed: %s", e)
@@ -4686,6 +4706,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     },
                 )
                 self._record_success()
+            except YantrikDBClientError as e:
+                # Refused (e.g. no grant in yantrik mode): the backend is fine, so not a failure.
+                logger.debug("YantrikDB on_memory_write rejected: %s", e)
             except YantrikDBError as e:
                 self._record_failure()
                 logger.debug("YantrikDB on_memory_write failed: %s", e)

@@ -329,6 +329,62 @@ Sharing is on by default; set `YANTRIKDB_SHARE_ENGINE=false` to restore per-prov
 
 Full config, tool reference, troubleshooting: **[yantrikdb/README.md](yantrikdb/README.md)**.
 
+## Install (Yantrik machine — `yantrik` mode)
+
+On a [Yantrik](https://yantrikos.com) machine, Hermes and Yantrik Mind share **one** memory. The plugin never opens the memory file; it speaks MCP (streamable HTTP) to the machine's memory server. The machine's memory server is `mind-memory-mcp`. Yantrik Mind serves it while it runs, and the standalone `yantrik-memory` service serves it otherwise.
+
+```bash
+pip install yantrikdb-hermes-plugin
+yantrikdb-hermes install
+```
+
+```yaml
+# ~/.hermes/config.yaml
+memory:
+  provider: yantrikdb
+  memory_enabled: false          # see "Only this memory" below
+  user_profile_enabled: false
+```
+
+```bash
+# ~/.hermes/.env
+YANTRIKDB_MODE=yantrik
+```
+
+Then grant Hermes its memory on the desktop, in **Settings › Minds**.
+
+### The environment contract
+
+The desktop gives each granted mind its **own** credential and hands it over, with the memory's address, on every turn. The Hermes platform adapter for Yantrik puts both into the gateway process's environment before each turn:
+
+| variable | value | |
+|---|---|---|
+| `YANTRIK_MEMORY_CREDENTIAL` | `mem-` + 64 hex digits | This mind's credential. It can change from turn to turn, and it is revoked when the mind detaches. |
+| `YANTRIK_MEMORY_URL` | `http://127.0.0.1:7440/mcp` or `unix:/run/yantrik-mind/<uid>/memory.sock` | Where the memory is. A `unix:` address is the person's own socket: the same MCP requests over a unix domain socket. There the server also checks the caller's uid. |
+
+The plugin reads both **on every request**. It never caches them. It follows these rules:
+
+- **Which bearer it sends.** It sends the credential when the variable is set and well-formed. It never sends a malformed value. Without a credential it falls back to the machine's token file (`YANTRIK_MEMORY_TOKEN_FILE`, default `~/.local/share/yantrik-mind/yantrik-memory.token`), so older machines keep working. The token file is never sent on the unix socket, which accepts only a credential.
+- **No grant.** With neither a credential nor a token file, every call gets a plain, non-fatal error: *"this Yantrik machine has not granted Hermes its memory yet: grant it in Settings › Minds"*. When a later turn brings a grant, memory works on that turn.
+- **Refusals.** The server checks every credential with the desktop and refuses tools that the grants don't cover:
+  - `recall_ordinary` covers recall and conflicts;
+  - `believe` covers writing facts and relate;
+  - `remember` covers Hermes's own notes;
+  - forget works only on what Hermes wrote.
+
+  Each refusal is a clear tool error that names the missing grant. Refusals, including a 401/403 for a revoked credential, never trip the circuit breaker and are never retried in a loop. The plugin re-reads the bearer once after a 401/403, and only sends it again if it has changed.
+- **Keeping the credential secret.** The plugin never logs the credential and redacts it from every error message. `repr` shows it as `mem-<redacted>`. The plugin ignores proxy and `.netrc` settings from the environment, and it refuses plain HTTP to any host other than loopback.
+
+### What the shared memory looks like from Hermes
+
+- **Reads.** Every recall, both prefetch and the tool, asks for `include: "all"` with no namespace. That returns Yantrik Mind's beliefs plus flat memories from every namespace, each labelled by kind. Beliefs come back with `memory_type: "belief"` and their confidence.
+- **Writes.** Facts about the person go to `believe` as supporting evidence: preferences, facts and decisions from the remember tool, from turn extraction, and from Hermes's MEMORY.md / USER.md mirror. Yantrik Mind's turns read beliefs, so a flat `remember` would never reach it. Only Hermes's own notes stay flat memories in its namespace: the verbatim turn, a delegation's result, and anything `episodic` or `procedural`. The server stamps who wrote what; the plugin doesn't try to.
+- **What the server doesn't offer.** Consolidation, stats, triggers, tasks, skills, packs and idempotency keys are refused rather than faked. They are also left out of the model's tool list.
+
+### Only this memory
+
+`memory.provider` adds a provider **alongside** Hermes's built-in memory; it doesn't replace it. Hermes's defaults set `memory.memory_enabled` and `memory.user_profile_enabled` to `true`, which injects MEMORY.md and USER.md into every prompt next to this provider's block. Set both to `false` (as above) to make the machine's memory the only memory. Hermes still offers its built-in `memory` tool, which then answers "Memory is not available". Its `add` calls are still passed to this provider's `on_memory_write`, which writes them as beliefs.
+
 ## What it does
 
 The differentiator versus other Hermes memory plugins is not the vector store — it's what happens *after* the write:
@@ -494,7 +550,7 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 
 ## Status
 
-**v0.27.0** (current, 2026-09-19) — a multiplexed Hermes gateway now reads each profile's `YANTRIKDB_*` settings from that profile's own `.env` instead of the launch profile's environment; v0.26.0 fixed `think()` (consolidation, conflict scan) failing on every call on the embedded backend with engine 0.15.3 and later. Engine range `>=0.12.1,<0.24.0`. 500+ tests, CI on Python 3.11–3.14. **Standalone-by-design** per Hermes maintainer guidance — Hermes is not accepting new memory providers upstream; standalone plugins installed via `pip` are the recommended pattern. PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989) closed 2026-05-13 with that resolution.
+**v0.28.0** (current, 2026-10-01) — `yantrik` mode: on a Yantrik machine, Hermes shares the machine's memory with Yantrik Mind, presenting its own per-mind credential instead of the machine-wide token; v0.27.0 made a multiplexed Hermes gateway read each profile's `YANTRIKDB_*` settings from that profile's own `.env` instead of the launch profile's environment. Engine range `>=0.12.1,<0.24.0`. 500+ tests, CI on Python 3.11–3.14. **Standalone-by-design** per Hermes maintainer guidance — Hermes is not accepting new memory providers upstream; standalone plugins installed via `pip` are the recommended pattern. PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989) closed 2026-05-13 with that resolution.
 
 ### Release cadence
 
@@ -515,6 +571,7 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 | v0.13.0 | 2026-08-05 | Built for fleets, not single agents |
 | v0.26.0 | 2026-09-17 | Self-maintenance (`think()`) runs again on the default backend |
 | v0.27.0 | 2026-09-19 | Multiplexed gateway keeps each profile's settings separate |
+| v0.28.0 | 2026-10-01 | `yantrik` mode: a Yantrik machine's shared memory, with Hermes's own credential |
 
 58 tagged releases in total; every one is in the [CHANGELOG](yantrikdb/CHANGELOG.md).
 
