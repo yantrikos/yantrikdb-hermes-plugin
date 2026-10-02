@@ -2,7 +2,51 @@
 
 Two end-to-end runs against an unmodified Hermes 0.9.0 install on Proxmox LXC 129. The Apr 14 run validated the v0.1 HTTP backend; the May 9 run validated the v0.2 embedded backend. Both run real DeepSeek-driven sessions; transcripts cited verbatim.
 
-Reading order: the May 9 (v0.2) section is at the top because it's the current shipping default; the Apr 14 (v0.1) section is preserved below for the contrast and because the bug-it-caught is still worth documenting.
+Reading order: the May 9 (v0.2) section is at the top because it's the current shipping default; the Apr 14 (v0.1) section is preserved below for the contrast and because the bug-it-caught is still worth documenting. The v0.28 `yantrik` mode section first says what has been verified so far and what has not.
+
+---
+
+## v0.28 — `yantrik` mode with a per-mind credential — 2026-10-01
+
+**Status: verified against the wire, not yet live on a Yantrik desktop.** The yantrik-mode tests in `tests/test_yantrik_memory.py` run against a fake memory server. The fake speaks the real transport: MCP streamable HTTP, SSE replies, session ids and bearer authentication. It refuses tools for missing grants using the wording of the real server (`mind-memory-mcp`, `server.rs` `need()`). The real unix-socket round trip (`TestUnixSocket::test_mcp_over_a_real_unix_socket`) is skipped on Windows, which has no `AF_UNIX`. It passed on Linux (WSL Ubuntu, Python 3.12, requests 2.34.2, urllib3 2.8.0): 136 passed.
+
+### The credential contract under test
+
+The Hermes platform adapter for Yantrik hands the credential over in memory, per Hermes session, before each turn:
+
+```python
+set_desktop_credential(session_key, credential, memory_url)  # e.g. agent:main:yantrik:dm:<chat>, mem-…, unix:/run/yantrik-mind/1000/memory.sock
+set_desktop_credential(session_key, None, None)              # detached
+```
+
+What the tests establish:
+
+- **Who gets the credential.**
+  - Only a provider Hermes initialized for `platform="yantrik"` presents it, and only for its own session.
+  - A `telegram` provider in the same process, even one given the desktop's session key, is refused and sends nothing. So is another `yantrik` session.
+  - The credential never appears in `os.environ`, and a `YANTRIK_MEMORY_CREDENTIAL` set there is ignored.
+  - A copy of the module loaded under a second name shares the same registry.
+- **Revocation.**
+  - Cleared means refused, before anything goes on the wire.
+  - A new turn's credential is used on the very next request, on the same MCP session.
+  - A credential the server stops vouching for gives one request per call, never a retry loop.
+  - Once the desktop harness is present, the machine token is never sent. That holds when the registry was used, when a `yantrik` session started, and when the gateway knows a `yantrik` platform.
+- **Bad handovers.** A malformed credential (five shapes) or a non-local address (ten shapes: LAN IP, `.local` name, `https`, userinfo, a lookalike host, ftp, a relative socket path, no scheme, a bad port) raises `ValueError` and clears the session's grant. Loopback `http://` (127.0.0.0/8, `[::1]`, `localhost`) and `unix:` sockets are accepted.
+- **Grants.** Each tool is refused for its own grant (`recall_ordinary`, `believe`, `remember`). The error names the grant, the session carries on with what is granted, and the circuit breaker stays shut, including for background writes.
+- **Secrecy.** The credential does not appear in `repr` or in error messages, including when the server echoes it back.
+- **Reads.** Every recall sends `include: "all"` with no namespace, and prefetch is exactly one recall.
+- **Writes.** Facts go to `believe`: the remember tool, extracted turn facts (`provenance: extracted`) and USER.md writes. The verbatim turn and a delegation's result stay `remember` (`episodic`) in Hermes's namespace.
+
+### To verify live on a Yantrik desktop
+
+The following checks have **not been run yet**:
+
+1. Turn on Hermes in **Settings › Minds**.
+2. Confirm that the gateway's environment has **no** `YANTRIK_MEMORY_CREDENTIAL`, and that a desktop turn's memory works.
+3. Tell Hermes a fact about yourself. Then ask Yantrik Mind about it. It should answer from the belief Hermes wrote, and `explain` on that belief should list `hermes` as a contributor.
+4. Withdraw the `believe` grant. Hermes's next attempt to save a fact should say that it has no `believe` grant, and recall should keep working.
+5. From another platform on the same gateway (Telegram, say), ask Hermes what it remembers about you. It should say the memory is not granted.
+6. Detach Hermes. Its next memory call should say it is not granted, and the gateway log should show no credential.
 
 ---
 
