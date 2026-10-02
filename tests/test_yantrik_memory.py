@@ -19,6 +19,7 @@ import json
 import os
 import socket
 import socketserver
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -228,6 +229,20 @@ def memory_server():
     server.server_close()
 
 
+# The Hermes gateway session key of the desktop's chat: what Hermes hands memory providers as
+# `gateway_session_key`, and what the Yantrik platform adapter registers the credential under.
+SK = "agent:main:yantrik:dm:desk-1"
+OTHER_SK = "agent:main:telegram:dm:42"
+
+
+@pytest.fixture(autouse=True)
+def fresh_registry():
+    """Every test starts on a machine with no desktop harness: the registry is process-global."""
+    sys.modules.pop("yantrik_desktop_memory_grants", None)
+    yield
+    sys.modules.pop("yantrik_desktop_memory_grants", None)
+
+
 @pytest.fixture
 def yantrik_env(memory_server, tmp_path, monkeypatch):
     token_file = tmp_path / "yantrik-memory.token"
@@ -245,14 +260,6 @@ def yantrik_env(memory_server, tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def granted(memory_server, yantrik_env, monkeypatch):
-    """A machine whose desktop has granted Hermes its memory: CRED in the environment."""
-    memory_server.credentials[CRED] = ALL_GRANTS
-    monkeypatch.setenv("YANTRIK_MEMORY_CREDENTIAL", CRED)
-    return memory_server
-
-
-@pytest.fixture
 def ym(plugin, yantrik_env):
     """The yantrik_memory module, imported under the test package."""
     import importlib
@@ -260,8 +267,27 @@ def ym(plugin, yantrik_env):
 
 
 @pytest.fixture
+def granted(memory_server, ym):
+    """The desktop has granted Hermes its memory, for the desktop session SK, in memory."""
+    memory_server.credentials[CRED] = ALL_GRANTS
+    ym.set_desktop_credential(SK, CRED, memory_server.url)
+    return memory_server
+
+
+@pytest.fixture
 def client(ym, client_module):
+    """A client that Hermes said nothing about: an older machine's, on the token file."""
     c = ym.YantrikMemoryClient(client_module.YantrikDBConfig.from_env())
+    yield c
+    c.close()
+
+
+@pytest.fixture
+def desk(ym, client_module):
+    """The client of Hermes's Yantrik desktop session SK."""
+    c = ym.YantrikMemoryClient(
+        client_module.YantrikDBConfig.from_env(), platform="yantrik", session_keys=(SK,),
+    )
     yield c
     c.close()
 
@@ -272,6 +298,22 @@ def provider(provider_module, yantrik_env, ym):
     p.initialize("sess-1", agent_workspace="home", agent_identity="hermes", platform="cli")
     yield p
     p.shutdown()
+
+
+@pytest.fixture
+def desk_provider(provider_module, yantrik_env, ym):
+    """The provider exactly as Hermes's gateway initializes it for a Yantrik desktop turn."""
+    p = provider_module.YantrikDBMemoryProvider()
+    p.initialize(
+        "20261002_desk", agent_workspace="hermes", agent_identity="default",
+        platform="yantrik", gateway_session_key=SK, agent_context="primary",
+    )
+    yield p
+    p.shutdown()
+
+
+def _env_has_no_credential() -> bool:
+    return not any(CRED in v or CRED_2 in v for v in os.environ.values())
 
 
 def _minimal_args(schema: dict[str, Any]) -> dict[str, Any]:
@@ -559,39 +601,110 @@ class TestProvider:
 
 
 # ---------------------------------------------------------------------------
-# This mind's own credential
+# The desktop's credential, handed over in memory
 # ---------------------------------------------------------------------------
 
-class TestCredential:
-    def test_the_credential_is_preferred_over_the_token_file(self, granted, client):
-        client.recall("anything")
+class TestDesktopRegistry:
+    def test_the_desktop_session_presents_its_own_credential(self, granted, desk):
+        desk.recall("anything")
         assert granted.bearers and set(granted.bearers) == {CRED}
 
-    def test_without_a_credential_the_token_file_is_still_used(self, client, memory_server):
-        client.recall("anything")
-        assert set(memory_server.bearers) == {TOKEN}
+    def test_the_credential_never_touches_the_environment(self, granted, desk, desk_provider):
+        desk.recall("anything")
+        desk_provider.handle_tool_call("yantrikdb_recall", {"query": "where do they live"})
+        assert _env_has_no_credential()
+        assert "YANTRIK_MEMORY_CREDENTIAL" not in os.environ
 
-    def test_the_credential_is_redacted_in_repr(self, granted, client, ym):
-        assert CRED not in repr(client)
-        assert "mem-<redacted>" in repr(client)
-        bearer = ym.resolve_bearer(client.config)
-        assert bearer.source == "credential"
-        assert CRED not in repr(bearer) and CRED not in str(bearer)
-        assert CRED not in f"{bearer}"
+    def test_another_platform_never_gets_the_credential(
+        self, granted, ym, client_module, provider_module, yantrik_env
+    ):
+        # The same gateway process, a Telegram user's turn, even one that knows the desktop's key.
+        for keys in ((OTHER_SK,), (SK,)):
+            c = ym.YantrikMemoryClient(
+                client_module.YantrikDBConfig.from_env(), platform="telegram", session_keys=keys,
+            )
+            with pytest.raises(ym.YantrikMemoryNotGranted) as e:
+                c.recall("what does the person like")
+            assert "not granted Hermes its memory" in str(e.value) and "telegram" in str(e.value)
+            c.close()
+        p = provider_module.YantrikDBMemoryProvider()
+        p.initialize("tg-1", platform="telegram", gateway_session_key=SK, agent_context="primary")
+        try:
+            out = p.handle_tool_call("yantrikdb_recall", {"query": "where do they live"})
+            assert "has not granted Hermes its memory yet" in out
+        finally:
+            p.shutdown()
+        assert granted.bearers == []  # nothing at all was sent: no credential, no machine token
 
-    def test_the_credential_is_redacted_in_errors(self, granted, client, client_module):
-        with pytest.raises(client_module.YantrikDBError) as e:
-            client._call("echo_bearer", {})
-        assert granted.bearers[-1] == CRED  # it was sent, and the server said it back
-        assert CRED not in str(e.value)
-        assert "mem-<redacted>" in str(e.value)
+    def test_another_session_on_the_yantrik_platform_does_not_borrow_this_ones(
+        self, granted, ym, client_module
+    ):
+        c = ym.YantrikMemoryClient(
+            client_module.YantrikDBConfig.from_env(), platform="yantrik",
+            session_keys=("agent:main:yantrik:dm:someone-else",),
+        )
+        with pytest.raises(ym.YantrikMemoryNotGranted):
+            c.recall("anything")
+        c.close()
+        assert granted.bearers == []
 
-    def test_a_refused_credential_says_so_without_showing_it(self, granted, client, ym, monkeypatch):
-        granted.credentials.clear()  # the desktop no longer vouches for it
-        with pytest.raises(ym.YantrikMemoryNotGranted) as e:
-            client.recall("anything")
-        assert CRED not in str(e.value)
-        assert "Settings › Minds" in str(e.value)
+    def test_cleared_means_refused(self, granted, desk, ym):
+        desk.recall("first turn")
+        sent = len(granted.bearers)
+        ym.set_desktop_credential(SK, None, None)  # Hermes was detached
+        for _ in range(3):
+            with pytest.raises(ym.YantrikMemoryNotGranted) as e:
+                desk.recall("after detaching")
+            assert str(e.value) == ym.NOT_GRANTED_MESSAGE
+        assert len(granted.bearers) == sent  # refused before anything goes on the wire
+
+    def test_clear_all_takes_back_every_session(self, granted, desk, ym):
+        ym.clear_desktop_credentials()
+        with pytest.raises(ym.YantrikMemoryNotGranted):
+            desk.recall("anything")
+
+    def test_the_credential_is_read_again_on_every_request(self, granted, desk, ym):
+        desk.recall("first turn")
+        first = len(granted.bearers)
+        granted.credentials[CRED_2] = ALL_GRANTS
+        ym.set_desktop_credential(SK, CRED_2, granted.url)  # the next turn's credential
+        desk.recall("second turn")
+        assert set(granted.bearers[:first]) == {CRED}
+        assert set(granted.bearers[first:]) == {CRED_2}
+        assert granted.initializations == 1  # the server authenticates each request; same session
+
+    def test_a_credential_that_changes_after_a_refusal_is_tried_once(self, granted, desk, ym):
+        desk.recall("first turn")
+        del granted.credentials[CRED]
+        granted.credentials[CRED_2] = ALL_GRANTS
+        ym.set_desktop_credential(SK, CRED_2, granted.url)
+        assert desk.recall("second turn")["results"] is not None
+
+    def test_a_revoked_credential_is_refused_once_never_in_a_loop(self, granted, desk, ym):
+        desk.recall("first turn")
+        del granted.credentials[CRED]  # the desktop stopped vouching for it
+        before = len(granted.bearers)
+        for _ in range(3):
+            with pytest.raises(ym.YantrikMemoryNotGranted) as e:
+                desk.recall("after revoking")
+            assert CRED not in str(e.value) and "Settings › Minds" in str(e.value)
+        assert len(granted.bearers) - before == 3  # one request per call, no retry
+
+    def test_the_session_id_is_accepted_as_the_key_too(self, memory_server, ym, client_module):
+        memory_server.credentials[CRED] = ALL_GRANTS
+        ym.set_desktop_credential("20261002_desk", CRED, memory_server.url)
+        c = ym.YantrikMemoryClient(
+            client_module.YantrikDBConfig.from_env(), platform="yantrik",
+            session_keys=(SK, "20261002_desk"),
+        )
+        c.recall("anything")
+        c.close()
+        assert set(memory_server.bearers) == {CRED}
+
+    def test_the_provider_serves_its_own_desktop_session(self, granted, desk_provider):
+        out = json.loads(desk_provider.handle_tool_call("yantrikdb_recall", {"query": "where do they live"}))
+        assert any(r["text"] == "The person lives in Bentonville" for r in out["results"])
+        assert set(granted.bearers) == {CRED}
 
     @pytest.mark.parametrize("malformed", [
         "mem-" + "1f" * 31,          # too short
@@ -600,51 +713,94 @@ class TestCredential:
         "1f" * 32,                   # no prefix
         "Bearer " + "mem-" + "1f" * 32,
     ])
-    def test_a_malformed_credential_is_not_sent(self, client, memory_server, monkeypatch, malformed):
-        monkeypatch.setenv("YANTRIK_MEMORY_CREDENTIAL", malformed)
-        client.recall("anything")
-        assert malformed not in memory_server.bearers
-        assert set(memory_server.bearers) == {TOKEN}  # the older machine's token, as before
-
-    def test_a_malformed_credential_and_no_token_sends_nothing(
-        self, client, memory_server, yantrik_env, ym, monkeypatch
+    def test_a_malformed_credential_is_never_sent_and_clears_the_old_one(
+        self, granted, desk, ym, malformed
     ):
-        monkeypatch.setenv("YANTRIK_MEMORY_CREDENTIAL", "mem-not-a-credential")
-        yantrik_env.unlink()
+        desk.recall("first turn")
+        sent = len(granted.bearers)
+        with pytest.raises(ValueError) as e:
+            ym.set_desktop_credential(SK, malformed, granted.url)
+        assert malformed not in str(e.value) and CRED not in str(e.value)
+        with pytest.raises(ym.YantrikMemoryNotGranted):
+            desk.recall("after a bad handover")
+        assert len(granted.bearers) == sent
+
+    def test_a_session_key_is_required(self, ym):
+        for bad in ("", "   ", None):
+            with pytest.raises(ValueError):
+                ym.set_desktop_credential(bad, CRED, None)  # type: ignore[arg-type]
+
+    def test_one_registry_however_many_times_the_plugin_is_loaded(
+        self, ym, memory_server, client_module, monkeypatch
+    ):
+        # Hermes may load a copied plugin under its own module name while the adapter imports the
+        # pip package: two module objects. The grant must reach both.
+        import importlib.util
+        name = f"{ym.__package__}.yantrik_memory_second_copy"
+        spec = importlib.util.spec_from_file_location(name, ym.__file__)
+        second = importlib.util.module_from_spec(spec)
+        monkeypatch.setitem(sys.modules, name, second)
+        spec.loader.exec_module(second)
+        assert second is not ym
+        memory_server.credentials[CRED] = ALL_GRANTS
+        second.set_desktop_credential(SK, CRED, memory_server.url)
+        assert ym.desktop_grant(SK) is not None
+        c = ym.YantrikMemoryClient(
+            client_module.YantrikDBConfig.from_env(), platform="yantrik", session_keys=(SK,),
+        )
+        c.recall("anything")
+        c.close()
+        assert set(memory_server.bearers) == {CRED}
+
+    def test_a_credential_in_the_environment_is_ignored(self, memory_server, desk, ym, monkeypatch):
+        memory_server.credentials[CRED] = ALL_GRANTS
+        monkeypatch.setenv("YANTRIK_MEMORY_CREDENTIAL", CRED)
+        with pytest.raises(ym.YantrikMemoryNotGranted):
+            desk.recall("anything")
+        assert memory_server.bearers == []
+
+
+class TestNoMachineTokenUnderTheDesktop:
+    def test_an_older_machine_still_uses_the_token_file(self, client, memory_server):
+        client.recall("anything")
+        assert set(memory_server.bearers) == {TOKEN}
+
+    def test_once_the_registry_is_used_the_token_file_is_never_used(self, client, memory_server, ym):
+        ym.set_desktop_credential(SK, None, None)  # the harness exists, even with nothing granted
         with pytest.raises(ym.YantrikMemoryNotGranted):
             client.recall("anything")
         assert memory_server.bearers == []
 
-    def test_the_credential_is_read_again_on_every_request(self, granted, client, monkeypatch):
-        client.recall("first turn")
-        first = len(granted.bearers)
-        granted.credentials[CRED_2] = ALL_GRANTS
-        monkeypatch.setenv("YANTRIK_MEMORY_CREDENTIAL", CRED_2)  # the next turn's credential
-        client.recall("second turn")
-        assert set(granted.bearers[:first]) == {CRED}
-        assert set(granted.bearers[first:]) == {CRED_2}
-        assert granted.initializations == 1  # the server authenticates each request; same session
+    def test_a_revoked_grant_means_no_access_not_the_token(self, granted, desk, ym, memory_server):
+        desk.recall("first turn")
+        ym.set_desktop_credential(SK, None, None)
+        with pytest.raises(ym.YantrikMemoryNotGranted):
+            desk.recall("after revoking")
+        assert TOKEN not in memory_server.bearers
 
-    def test_a_credential_that_changes_after_a_refusal_is_tried_once(self, granted, client, monkeypatch):
-        client.recall("first turn")
-        # The desktop revoked CRED and handed over CRED_2 between the read and the refusal.
-        del granted.credentials[CRED]
-        granted.credentials[CRED_2] = ALL_GRANTS
-        monkeypatch.setenv("YANTRIK_MEMORY_CREDENTIAL", CRED_2)
-        assert client.recall("second turn")["results"] is not None
+    def test_a_yantrik_session_marks_the_harness(self, ym, client_module, client, memory_server):
+        ym.YantrikMemoryClient(
+            client_module.YantrikDBConfig.from_env(), platform="yantrik", session_keys=(SK,),
+        ).close()
+        with pytest.raises(ym.YantrikMemoryNotGranted):
+            client.recall("anything")
+        assert memory_server.bearers == []
 
-    def test_a_revoked_credential_is_refused_once_never_in_a_loop(self, granted, client, ym):
-        client.recall("first turn")
-        del granted.credentials[CRED]  # Hermes was detached
-        before = len(granted.bearers)
-        for _ in range(3):
-            with pytest.raises(ym.YantrikMemoryNotGranted):
-                client.recall("after detaching")
-        assert len(granted.bearers) - before == 3  # one request per call, no retry
-
-    def test_with_neither_a_credential_nor_a_token_nothing_is_sent(
-        self, client, memory_server, yantrik_env, ym
+    def test_a_gateway_that_knows_the_yantrik_platform_marks_the_harness(
+        self, ym, client, memory_server, monkeypatch
     ):
+        import types as _types
+        entry = _types.SimpleNamespace(name="yantrik")
+        registry = _types.SimpleNamespace(plugin_entries=lambda: [entry])
+        fake = _types.ModuleType("gateway.platform_registry")
+        fake.platform_registry = registry
+        monkeypatch.setitem(sys.modules, "gateway.platform_registry", fake)
+        assert ym.desktop_harness_present()
+        with pytest.raises(ym.YantrikMemoryNotGranted):
+            client.recall("anything")
+        assert memory_server.bearers == []
+
+    def test_with_neither_a_grant_nor_a_token_nothing_is_sent(self, client, memory_server, yantrik_env, ym):
         yantrik_env.unlink()
         with pytest.raises(ym.YantrikMemoryNotGranted) as e:
             client.recall("anything")
@@ -655,17 +811,65 @@ class TestCredential:
         assert isinstance(e.value, ym.YantrikMemoryUnsupported)
         assert memory_server.bearers == []
 
-    def test_not_granted_yet_is_a_plain_tool_error_and_spares_the_breaker(
-        self, provider, yantrik_env
-    ):
-        yantrik_env.unlink()
+    def test_not_granted_yet_is_a_plain_tool_error_and_spares_the_breaker(self, desk_provider):
         for _ in range(10):
-            out = provider.handle_tool_call("yantrikdb_recall", {"query": "where do they live"})
+            out = desk_provider.handle_tool_call("yantrikdb_recall", {"query": "where do they live"})
             assert "has not granted Hermes its memory yet" in out
-        assert provider._failure_count == 0
-        assert not provider._breaker_open()
+        assert desk_provider._failure_count == 0
+        assert not desk_provider._breaker_open()
 
-    def test_plain_http_off_this_machine_is_refused(self, ym, client_module, monkeypatch):
+
+class TestSecrecy:
+    def test_the_credential_is_redacted_in_repr(self, granted, desk, ym):
+        assert CRED not in repr(desk)
+        assert "mem-<redacted>" in repr(desk)
+        grant = ym.desktop_grant(SK)
+        assert CRED not in repr(grant) and CRED not in str(grant) and CRED not in f"{grant}"
+        bearer = ym.Bearer(CRED, "credential")
+        assert CRED not in repr(bearer) and CRED not in str(bearer)
+
+    def test_the_credential_is_redacted_in_errors(self, granted, desk, client_module):
+        with pytest.raises(client_module.YantrikDBError) as e:
+            desk._call("echo_bearer", {})
+        assert granted.bearers[-1] == CRED  # it was sent, and the server said it back
+        assert CRED not in str(e.value)
+        assert "mem-<redacted>" in str(e.value)
+
+
+class TestMemoryAddress:
+    @pytest.mark.parametrize("url", [
+        "http://127.0.0.1:7440/mcp",
+        "http://127.0.0.1:7440",
+        "http://127.8.9.10:7440/mcp",
+        "http://[::1]:7440/mcp",
+        "http://localhost:7440/mcp",
+        "unix:/run/yantrik-mind/1000/memory.sock",
+        "unix:///run/yantrik-mind/1000/memory.sock",
+    ])
+    def test_loopback_and_the_socket_are_accepted(self, ym, url):
+        ym.set_desktop_credential(SK, CRED, url)
+        assert ym.desktop_grant(SK) is not None
+
+    @pytest.mark.parametrize("url", [
+        "http://192.168.4.65:7440/mcp",
+        "http://yantrik.local:7440/mcp",
+        "https://127.0.0.1:7440/mcp",
+        "https://example.com/mcp",
+        "http://127.0.0.1.evil.example/mcp",
+        "http://user:pw@127.0.0.1:7440/mcp",
+        "ftp://127.0.0.1/mcp",
+        "unix:relative/memory.sock",
+        "127.0.0.1:7440",
+        "http://127.0.0.1:notaport/mcp",
+    ])
+    def test_anything_else_is_refused_and_clears_the_grant(self, granted, desk, ym, url):
+        with pytest.raises(ValueError):
+            ym.set_desktop_credential(SK, CRED, url)
+        assert ym.desktop_grant(SK) is None
+        with pytest.raises(ym.YantrikMemoryNotGranted):
+            desk.recall("anything")
+
+    def test_a_configured_address_off_this_machine_is_refused(self, ym, client_module, monkeypatch):
         monkeypatch.setenv("YANTRIK_MEMORY_URL", "http://192.168.4.65:7440/mcp")
         c = ym.YantrikMemoryClient(client_module.YantrikDBConfig.from_env())
         with pytest.raises(ym.YantrikMemoryUnsupported):
@@ -673,18 +877,18 @@ class TestCredential:
 
 
 class TestGrants:
-    def _grant(self, memory: FakeMemory, monkeypatch, grants: set[str]) -> None:
+    def _grant(self, memory: FakeMemory, ym, grants: set[str]) -> None:
         memory.credentials[CRED] = frozenset(grants)
-        monkeypatch.setenv("YANTRIK_MEMORY_CREDENTIAL", CRED)
+        ym.set_desktop_credential(SK, CRED, memory.url)
 
-    def test_a_missing_grant_names_the_grant_and_is_not_fatal(self, client, memory_server, ym, monkeypatch):
-        self._grant(memory_server, monkeypatch, {"recall_ordinary"})
+    def test_a_missing_grant_names_the_grant_and_is_not_fatal(self, desk, memory_server, ym):
+        self._grant(memory_server, ym, {"recall_ordinary"})
         with pytest.raises(ym.YantrikMemoryNotGranted) as e:
-            client.remember("The person prefers tea")
+            desk.remember("The person prefers tea")
         assert (e.value.tool, e.value.grant) == ("believe", "believe")
         assert "has not granted Hermes `believe`" in str(e.value)
         # The session survives: what is granted still works.
-        assert client.recall("tea")["results"] is not None
+        assert desk.recall("tea")["results"] is not None
 
     @pytest.mark.parametrize("grants, call, grant", [
         ({"believe", "remember"}, lambda c: c.recall("x"), "recall_ordinary"),
@@ -692,37 +896,35 @@ class TestGrants:
         ({"recall_ordinary", "remember"}, lambda c: c.relate("a", "b", "knows"), "believe"),
         ({"recall_ordinary", "believe"}, lambda c: c.remember("note", memory_type="episodic"), "remember"),
     ])
-    def test_each_tool_is_refused_for_its_own_grant(
-        self, client, memory_server, ym, monkeypatch, grants, call, grant
-    ):
-        self._grant(memory_server, monkeypatch, grants)
+    def test_each_tool_is_refused_for_its_own_grant(self, desk, memory_server, ym, grants, call, grant):
+        self._grant(memory_server, ym, grants)
         with pytest.raises(ym.YantrikMemoryNotGranted) as e:
-            call(client)
+            call(desk)
         assert e.value.grant == grant
 
     def test_a_missing_grant_is_a_clear_tool_error_that_spares_the_breaker(
-        self, provider, memory_server, monkeypatch
+        self, desk_provider, memory_server, ym
     ):
-        self._grant(memory_server, monkeypatch, {"recall_ordinary"})
+        self._grant(memory_server, ym, {"recall_ordinary"})
         for _ in range(10):
-            out = provider.handle_tool_call("yantrikdb_remember", {"text": "The person prefers tea"})
+            out = desk_provider.handle_tool_call("yantrikdb_remember", {"text": "The person prefers tea"})
             assert "has not granted Hermes `believe`" in out
-        assert provider._failure_count == 0
-        assert not provider._breaker_open()
-        out = json.loads(provider.handle_tool_call("yantrikdb_recall", {"query": "where do they live"}))
+        assert desk_provider._failure_count == 0
+        assert not desk_provider._breaker_open()
+        out = json.loads(desk_provider.handle_tool_call("yantrikdb_recall", {"query": "where do they live"}))
         assert any(r["text"] == "The person lives in Bentonville" for r in out["results"])
 
     def test_background_writes_refused_for_a_grant_spare_the_breaker(
-        self, provider, memory_server, monkeypatch
+        self, desk_provider, memory_server, ym
     ):
-        self._grant(memory_server, monkeypatch, {"recall_ordinary"})
+        self._grant(memory_server, ym, {"recall_ordinary"})
         for i in range(8):
-            provider.sync_turn(f"I prefer tea number {i}.", "Noted.")
-            _wait(provider._sync_thread)
-            provider.on_memory_write("add", "user", f"Prefers tea {i}")
+            desk_provider.sync_turn(f"I prefer tea number {i}.", "Noted.")
+            _wait(desk_provider._sync_thread)
+            desk_provider.on_memory_write("add", "user", f"Prefers tea {i}")
         time.sleep(0.3)  # on_memory_write's thread is not kept
-        assert provider._failure_count == 0
-        assert not provider._breaker_open()
+        assert desk_provider._failure_count == 0
+        assert not desk_provider._breaker_open()
 
 
 # ---------------------------------------------------------------------------
@@ -730,32 +932,32 @@ class TestGrants:
 # ---------------------------------------------------------------------------
 
 class TestSharedMemoryPaths:
-    def test_recall_asks_for_everything_with_no_namespace(self, granted, client):
+    def test_recall_asks_for_everything_with_no_namespace(self, granted, desk):
         for memory_type in (None, "semantic", "episodic", "belief"):
-            client.recall("anything", namespace="hermes:home:hermes", memory_type=memory_type)
+            desk.recall("anything", namespace="hermes:home:hermes", memory_type=memory_type)
         sent = granted.calls_to("recall")
         assert len(sent) == 4
         assert all(a["include"] == "all" and "namespace" not in a for a in sent)
 
-    def test_prefetch_is_one_recall_of_everything(self, granted, provider):
+    def test_prefetch_is_one_recall_of_everything(self, granted, desk_provider):
         granted.calls.clear()
-        provider.queue_prefetch("where does the person live", session_id="sess-1")
-        _wait(provider._prefetch_thread)
+        desk_provider.queue_prefetch("where does the person live", session_id="20261002_desk")
+        _wait(desk_provider._prefetch_thread)
         sent = granted.calls_to("recall")
         assert len(sent) == 1
         assert sent[0]["include"] == "all" and "namespace" not in sent[0]
-        block = provider.prefetch("where does the person live", session_id="sess-1")
+        block = desk_provider.prefetch("where does the person live", session_id="20261002_desk")
         assert "The person lives in Bentonville" in block
 
-    def test_memory_type_narrows_what_comes_back(self, granted, client):
+    def test_memory_type_narrows_what_comes_back(self, granted, desk):
         granted.tool("remember", {"text": "Ran the backup", "memory_type": "episodic"})
-        kinds = lambda mt: {h["memory_type"] for h in client.recall("x", memory_type=mt)["results"]}  # noqa: E731
+        kinds = lambda mt: {h["memory_type"] for h in desk.recall("x", memory_type=mt)["results"]}  # noqa: E731
         assert kinds("belief") == {"belief"}
         assert kinds("episodic") == {"episodic"}
         assert "belief" in kinds("semantic")
 
-    def test_the_remember_tool_writes_a_fact_as_a_belief(self, granted, provider):
-        out = json.loads(provider.handle_tool_call(
+    def test_the_remember_tool_writes_a_fact_as_a_belief(self, granted, desk_provider):
+        out = json.loads(desk_provider.handle_tool_call(
             "yantrikdb_remember", {"text": "The person's daughter is called Mira"}))
         believed = granted.calls_to("believe")
         assert [b["statement"] for b in believed] == ["The person's daughter is called Mira"]
@@ -765,9 +967,9 @@ class TestSharedMemoryPaths:
         assert granted.calls_to("remember") == []
         assert out["rid"].startswith("belief:")
 
-    def test_a_fact_from_a_turn_is_a_belief_and_the_turn_itself_a_note(self, granted, provider):
-        provider.sync_turn("I prefer tabs over spaces.", "Noted.")
-        _wait(provider._sync_thread)
+    def test_a_fact_from_a_turn_is_a_belief_and_the_turn_itself_a_note(self, granted, desk_provider):
+        desk_provider.sync_turn("I prefer tabs over spaces.", "Noted.")
+        _wait(desk_provider._sync_thread)
         believed = granted.calls_to("believe")
         assert [b["statement"] for b in believed] == ["user prefers tabs"]
         assert believed[0]["provenance"] == "extracted"
@@ -775,27 +977,27 @@ class TestSharedMemoryPaths:
         notes = granted.calls_to("remember")
         assert [n["text"] for n in notes] == ["I prefer tabs over spaces."]
         assert notes[0]["memory_type"] == "episodic"
-        assert notes[0]["namespace"] == provider._namespace
+        assert notes[0]["namespace"] == desk_provider._namespace
 
-    def test_hermes_user_profile_writes_are_beliefs(self, granted, provider):
-        provider.on_memory_write("add", "user", "Pranab prefers dark mode")
+    def test_hermes_user_profile_writes_are_beliefs(self, granted, desk_provider):
+        desk_provider.on_memory_write("add", "user", "Pranab prefers dark mode")
         deadline = time.time() + 5
         while not granted.calls_to("believe") and time.time() < deadline:
             time.sleep(0.02)
         assert [b["statement"] for b in granted.calls_to("believe")] == ["Pranab prefers dark mode"]
 
-    def test_a_delegation_result_stays_hermes_own_note(self, granted, provider):
-        provider.on_delegation("Sort the photos", "Sorted 120 photos by year", child_session_id="c1")
+    def test_a_delegation_result_stays_hermes_own_note(self, granted, desk_provider):
+        desk_provider.on_delegation("Sort the photos", "Sorted 120 photos by year", child_session_id="c1")
         deadline = time.time() + 5
         while not granted.calls_to("remember") and time.time() < deadline:
             time.sleep(0.02)
         assert granted.calls_to("believe") == []
         note = granted.calls_to("remember")[0]
-        assert note["memory_type"] == "episodic" and note["namespace"] == provider._namespace
+        assert note["memory_type"] == "episodic" and note["namespace"] == desk_provider._namespace
 
-    def test_a_belief_hermes_wrote_can_be_forgotten_by_its_statement(self, granted, client):
-        rid = client.remember("The person likes hiking")["rid"]
-        assert client.forget(rid)["found"] is True
+    def test_a_belief_hermes_wrote_can_be_forgotten_by_its_statement(self, granted, desk):
+        rid = desk.remember("The person likes hiking")["rid"]
+        assert desk.forget(rid)["found"] is True
         assert granted.forgotten == [("belief", "The person likes hiking")]
 
 
@@ -806,41 +1008,36 @@ class TestSharedMemoryPaths:
 class TestUnixSocket:
     SOCK = "/run/yantrik-mind/1000/memory.sock"
 
-    def test_a_unix_url_builds_a_unix_socket_transport(self, granted, ym, client_module, monkeypatch):
-        monkeypatch.setenv("YANTRIK_MEMORY_URL", f"unix:{self.SOCK}")
-        c = ym.YantrikMemoryClient(client_module.YantrikDBConfig.from_env())
-        try:
-            ep = c._current_endpoint()
-            assert ep.socket_path == self.SOCK
-            adapter = c._http.get_adapter(ep.mcp_url)
-            assert isinstance(adapter, ym.UnixSocketAdapter)
-            assert adapter.socket_path == self.SOCK
-            assert adapter.pool.conn_kw["socket_path"] == self.SOCK
-            assert adapter.pool.ConnectionCls.__name__ == "_UnixHTTPConnection"
-            # Nothing addressed to TCP goes through it.
-            assert not isinstance(c._http.get_adapter("http://127.0.0.1:7440/mcp"), ym.UnixSocketAdapter)
-        finally:
-            c.close()
+    def test_a_unix_url_builds_a_unix_socket_transport(self, granted, desk, ym):
+        ym.set_desktop_credential(SK, CRED, f"unix:{self.SOCK}")
+        ep, _ = desk._current()
+        assert ep.socket_path == self.SOCK
+        adapter = desk._http.get_adapter(ep.mcp_url)
+        assert isinstance(adapter, ym.UnixSocketAdapter)
+        assert adapter.socket_path == self.SOCK
+        assert adapter.pool.conn_kw["socket_path"] == self.SOCK
+        assert adapter.pool.ConnectionCls.__name__ == "_UnixHTTPConnection"
+        # Nothing addressed to TCP goes through it.
+        assert not isinstance(desk._http.get_adapter("http://127.0.0.1:7440/mcp"), ym.UnixSocketAdapter)
 
     @pytest.mark.parametrize("url", ["unix:/run/x/memory.sock", "unix:///run/x/memory.sock"])
-    def test_both_spellings_of_a_socket_path(self, ym, client_module, monkeypatch, url):
-        monkeypatch.setenv("YANTRIK_MEMORY_URL", url)
-        assert ym.resolve_endpoint(client_module.YantrikDBConfig.from_env()).socket_path == "/run/x/memory.sock"
+    def test_both_spellings_of_a_socket_path(self, ym, url):
+        assert ym.endpoint_for(url).socket_path == "/run/x/memory.sock"
 
     def test_the_machine_token_is_never_sent_on_the_socket(self, client, ym, monkeypatch):
         monkeypatch.setenv("YANTRIK_MEMORY_URL", f"unix:{self.SOCK}")
         with pytest.raises(ym.YantrikMemoryNotGranted):
             client.recall("anything")  # the token file is there; the socket does not take it
 
-    def test_a_changed_address_drops_the_session(self, granted, client, monkeypatch):
-        client.recall("first")
-        assert client._session_id
-        monkeypatch.setenv("YANTRIK_MEMORY_URL", f"unix:{self.SOCK}")
-        client._current_endpoint()
-        assert client._session_id is None
+    def test_a_changed_address_drops_the_session(self, granted, desk, ym):
+        desk.recall("first")
+        assert desk._session_id
+        ym.set_desktop_credential(SK, CRED, f"unix:{self.SOCK}")
+        desk._current()
+        assert desk._session_id is None
 
     @pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="no unix sockets on this platform")
-    def test_mcp_over_a_real_unix_socket(self, granted, ym, client_module, monkeypatch, tmp_path):
+    def test_mcp_over_a_real_unix_socket(self, granted, ym, desk):
         import tempfile
         sock_dir = tempfile.mkdtemp(prefix="ym-")  # short: AF_UNIX paths are capped near 108 bytes
         path = os.path.join(sock_dir, "memory.sock")
@@ -848,16 +1045,15 @@ class TestUnixSocket:
         server = socketserver.ThreadingUnixStreamServer(path, _handler(granted))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        monkeypatch.setenv("YANTRIK_MEMORY_URL", f"unix:{path}")
-        c = ym.YantrikMemoryClient(client_module.YantrikDBConfig.from_env())
+        ym.set_desktop_credential(SK, CRED, f"unix:{path}")
         try:
-            assert c.health()["served_by"] == "yantrik-mind"
-            assert c.remember("The person’s café is Zoë’s")["rid"].startswith("belief:")
-            hits = c.recall("café")["results"]
+            assert desk.health()["served_by"] == "yantrik-mind"
+            assert desk.remember("The person’s café is Zoë’s")["rid"].startswith("belief:")
+            hits = desk.recall("café")["results"]
             assert any(h["text"] == "The person’s café is Zoë’s" for h in hits)
             assert set(granted.bearers) == {CRED}
         finally:
-            c.close()
+            desk.close()
             server.shutdown()
             server.server_close()
             with contextlib.suppress(OSError):

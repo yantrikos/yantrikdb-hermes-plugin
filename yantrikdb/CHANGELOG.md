@@ -8,29 +8,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semanti
 ### Hermes's own credential, not the machine's token
 
 A Yantrik desktop now grants each mind its own memory credential and hands it over, with the
-memory's address, on every turn. Hermes's platform adapter puts them in the gateway's
-environment, and yantrik mode reads both **on every request**:
+memory's address, on every turn. Hermes's Yantrik platform adapter, in the same gateway process,
+hands them to the plugin **in memory**, per Hermes session:
+`yantrik_memory.set_desktop_credential(session_key, credential, memory_url)`, with `None` to take
+it back. The plugin reads it on every request.
 
-- `YANTRIK_MEMORY_CREDENTIAL` — `mem-` and 64 hex digits. Sent as the bearer when it is set and
-  well-formed; a malformed value is never sent. Without one, the machine's token file is used, so
-  older machines keep working. With neither, every call is refused with "this Yantrik machine has
-  not granted Hermes its memory yet: grant it in Settings › Minds".
-- `YANTRIK_MEMORY_URL` — `http://127.0.0.1:7440/mcp`, or `unix:/run/yantrik-mind/<uid>/memory.sock`
-  for the person's own socket: the same MCP streamable-HTTP requests over a unix domain socket
-  (a small urllib3 transport behind `requests`, no new dependency). The machine token is never
-  sent on the socket, which only accepts a credential. A changed address drops the MCP session.
-- The credential is a secret: never logged, redacted from every error message (anything
-  credential-shaped is), and shown as `mem-<redacted>` by `repr`. The client no longer trusts the
-  environment's proxies or `.netrc` (`trust_env = False`): either could carry the bearer off the
-  machine or replace it. Plain HTTP to a host other than loopback is refused.
-- Refusals are clear and never fatal. A 401/403 is retried once only if the credential changed
-  since it was read (a new turn's), never in a loop; then it is `YantrikMemoryNotGranted`, a client
-  error that does not count against the circuit breaker. A tool refused for a grant Hermes lacks
-  (`recall_ordinary`, `believe`, `remember`) is the same error, naming the grant, and the session
-  carries on with the tools that are granted. `on_memory_write` and `on_delegation` no longer count
-  a refused write against the breaker.
-- `is_available()` is now always true in yantrik mode: the grant arrives with a turn, and a provider
-  Hermes drops at startup stays dropped for the session.
+- **Only the desktop's own session.** A credential is used only by a provider Hermes initialized
+  for `platform == "yantrik"`, and only for its own session, looked up by `gateway_session_key`
+  and then the Hermes session id. One gateway serves every platform. A Telegram or Discord turn,
+  or another session, is refused with the plain "not granted" error and sends nothing.
+- **Never in the environment.** The credential is never kept in `os.environ`, which every platform's
+  turn and every child process would see. `YANTRIK_MEMORY_CREDENTIAL` in the environment is
+  ignored, with a warning. The registry lives in one object in `sys.modules`, so a copied plugin
+  loaded under Hermes's own module name shares it with the pip package the adapter imports.
+- **Bad handovers fail closed.** A malformed credential, or a memory address that is not loopback
+  `http://` (127.0.0.0/8, `[::1]`, `localhost`) or `unix:/absolute/path`, raises `ValueError`
+  (never containing the credential) and clears that session's grant. Neither is ever sent.
+- **No machine-token fallback under the desktop.** Once the harness is present (the registry has
+  been used, a `yantrik` session started, or the gateway knows a `yantrik` platform), the
+  machine's token file is never used: a withdrawn grant means no access. Only an older machine,
+  with no desktop harness, still uses the token file, and never on the unix socket.
+- **No grant.** Without a grant, every call is refused with "this Yantrik machine has not granted
+  Hermes its memory yet: grant it in Settings › Minds", a client error that spares the breaker.
+- **The person's socket.** `unix:/run/yantrik-mind/<uid>/memory.sock` carries the same MCP requests
+  over a unix domain socket, through a small urllib3 transport behind `requests` (no new
+  dependency). A changed address drops the MCP session.
+- **Secrecy.** The credential is never logged, is redacted from every error message (anything
+  credential-shaped is), and is shown as `mem-<redacted>` by `repr`. The client ignores the
+  environment's proxies and `.netrc` (`trust_env = False`), either of which could carry the
+  bearer off the machine or replace it.
+- **Refusals are clear and never fatal.** A 401/403 is retried once, and only if the session's
+  credential changed since it was read. It is never retried in a loop. After that it is
+  `YantrikMemoryNotGranted`, a client error that does not count against the circuit breaker.
+  A tool refused for a grant Hermes lacks (`recall_ordinary`, `believe`, `remember`) raises the
+  same error, naming the grant, and the session carries on with the tools that are granted.
+  `on_memory_write` and `on_delegation` no longer count a refused write against the breaker.
+- **`is_available()` is always true in yantrik mode.** The grant arrives with a turn, and a
+  provider Hermes drops at startup stays dropped for the session.
 
 ### Reading and writing the memory Yantrik Mind reads
 

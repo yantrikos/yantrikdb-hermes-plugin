@@ -42,24 +42,42 @@ Who Hermes is, to the server
 
 A Yantrik desktop grants each mind its own memory credential (``mem-`` and 64
 hex digits) and hands it over, with the memory's address, on every turn.
-Hermes's platform adapter puts them in this process's environment:
+Hermes's Yantrik platform adapter, running in the same gateway process, hands
+them to this module **in memory**, per Hermes session::
 
-- ``YANTRIK_MEMORY_CREDENTIAL`` — the credential;
-- ``YANTRIK_MEMORY_URL`` — ``http://127.0.0.1:7440/mcp``, or
-  ``unix:/run/yantrik-mind/<uid>/memory.sock`` for the person's own socket,
-  where the server also checks the caller's uid and accepts only a credential.
+    from yantrikdb_hermes_plugin.yantrik_memory import set_desktop_credential
+    set_desktop_credential(session_key, credential, memory_url)   # each turn
+    set_desktop_credential(session_key, None, None)               # detached
 
-Both are read on **every request**, never cached: the credential can change
-between turns and is revoked when the mind detaches. The server asks the
-desktop about each credential and refuses the tools its grants do not cover
-(``recall_ordinary`` for recall, conflicts and the like; ``believe`` for
+``session_key`` is the Hermes gateway session key of the desktop's chat — the
+value Hermes passes to memory providers as ``gateway_session_key``, e.g.
+``agent:main:yantrik:dm:<chat_id>``. ``memory_url`` is
+``http://127.0.0.1:7440/mcp`` (or another loopback address), or
+``unix:/run/yantrik-mind/<uid>/memory.sock`` for the person's own socket,
+where the server also checks the caller's uid and accepts only a credential.
+
+Why in memory and not in ``os.environ``: one Hermes gateway process serves
+every platform. A credential in the environment would be presented for a
+Telegram or Discord user's turn as readily as for the desktop's, and handed to
+every child process Hermes spawns. So the credential is used only by a provider
+Hermes initialized for ``platform == "yantrik"``, and only for that provider's
+own session; every other platform is refused with the plain "not granted"
+error. ``YANTRIK_MEMORY_CREDENTIAL`` in the environment is ignored (with a
+warning), whatever Hermes says or does not say about the session.
+
+The registry is read on **every request**, never cached: the credential can
+change between turns and is revoked when the mind detaches. The server asks
+the desktop about each credential and refuses the tools its grants do not
+cover (``recall_ordinary`` for recall, conflicts and the like; ``believe`` for
 believe and relate; ``remember`` for remember; forget only on Hermes's own
 writes). Each refusal is a :class:`YantrikMemoryNotGranted`, a client error
 that says what is missing and never trips the breaker or retries.
 
-On older machines, with no credential in the environment, the machine's token
-file is used instead. With neither, every call is refused with "this Yantrik
-machine has not granted Hermes its memory yet".
+On older machines, with no desktop harness at all, the machine's token file is
+used instead. Once the harness is present — the registry has been used in this
+process, a provider was initialized for the ``yantrik`` platform, or the
+gateway knows a ``yantrik`` platform — the token file is never used: a revoked
+grant means no access.
 
 The credential is a secret. It is never logged, never put in an exception
 message, and shown redacted by ``repr``.
@@ -75,7 +93,9 @@ import logging
 import os
 import re
 import socket
+import sys
 import threading
+import types
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -227,34 +247,24 @@ class Bearer:
     __str__ = __repr__
 
 
-def read_credential() -> str:
-    """This mind's credential from the environment, read now. Empty unless well-formed.
-
-    A malformed value is never sent: it could only be refused, and it may be part of something
-    that should not leave this process.
-    """
-    raw = (os.environ.get(CREDENTIAL_ENV) or "").strip()
-    if not raw:
-        return ""
-    if _CREDENTIAL_RE.fullmatch(raw):
-        return raw
-    _warn_once(
-        "malformed-credential",
-        "%s is set but is not a memory credential (mem- and 64 hex digits); it is not sent",
-        CREDENTIAL_ENV,
-    )
-    return ""
-
-
-def resolve_memory_url(config: YantrikDBConfig) -> str:
-    """Where the memory is, read now: the environment, then the config, then the default."""
-    raw = (os.environ.get(URL_ENV) or "").strip()
-    if not raw:
-        raw = (getattr(config, "memory_server_url", "") or "").strip() or DEFAULT_MEMORY_URL
+def _normalize_url(raw: str) -> str:
+    raw = raw.strip()
     if raw.startswith("unix:"):
         return raw
     url = raw.rstrip("/")
     return url if url.endswith("/mcp") else f"{url}/mcp"
+
+
+def resolve_memory_url(config: YantrikDBConfig) -> str:
+    """The configured address (older machines): the environment, the config, then the default.
+
+    Not a secret, so the environment is fine here. On a Yantrik desktop session the address
+    handed over with the credential wins.
+    """
+    raw = (os.environ.get(URL_ENV) or "").strip()
+    if not raw:
+        raw = (getattr(config, "memory_server_url", "") or "").strip() or DEFAULT_MEMORY_URL
+    return _normalize_url(raw)
 
 
 def resolve_token_file(config: YantrikDBConfig) -> Path:
@@ -270,16 +280,133 @@ def read_token(config: YantrikDBConfig) -> str:
         return ""
 
 
-def resolve_bearer(config: YantrikDBConfig, *, token_file_allowed: bool = True) -> Bearer | None:
-    """This mind's credential when the desktop has handed one over, else the token file."""
-    credential = read_credential()
-    if credential:
-        return Bearer(credential, "credential")
-    if token_file_allowed:
-        token = read_token(config)
-        if token:
-            return Bearer(token, "token file")
+# -- the desktop's grants, in this process's memory -------------------------------------------
+#
+# Kept in one object in sys.modules, not in this module's globals: Hermes may load this plugin
+# under its own module name (``_hermes_user_memory.yantrikdb``) while the Yantrik platform
+# adapter imports it as ``yantrikdb_hermes_plugin``. Two module objects, one registry.
+
+YANTRIK_PLATFORM = "yantrik"
+_REGISTRY_MODULE = "yantrik_desktop_memory_grants"
+
+
+@dataclass(frozen=True)
+class DesktopGrant:
+    """One Hermes session's credential and memory address, as the desktop handed them over."""
+
+    credential: str
+    memory_url: str | None
+
+    def __repr__(self) -> str:
+        return f"DesktopGrant(credential={_REDACTED!r}, memory_url={self.memory_url!r})"
+
+    __str__ = __repr__
+
+
+def _registry() -> Any:
+    reg = sys.modules.get(_REGISTRY_MODULE)
+    if reg is None:
+        fresh = types.ModuleType(
+            _REGISTRY_MODULE, "Yantrik desktop memory grants, per Hermes session (in memory only)."
+        )
+        fresh.grants = {}  # type: ignore[attr-defined]
+        fresh.lock = threading.Lock()  # type: ignore[attr-defined]
+        fresh.harness_seen = False  # type: ignore[attr-defined]
+        reg = sys.modules.setdefault(_REGISTRY_MODULE, fresh)
+    return reg
+
+
+def set_desktop_credential(
+    session_key: str, credential: str | None, memory_url: str | None = None,
+) -> None:
+    """Hand this Hermes session's memory credential over, or take it back with ``None``.
+
+    Called by Hermes's Yantrik platform adapter on every turn. ``session_key`` is the Hermes
+    gateway session key of the desktop's chat (what Hermes passes memory providers as
+    ``gateway_session_key``; the Hermes session id is accepted too). ``memory_url`` must be a
+    loopback ``http://`` address or ``unix:/absolute/path.sock``; ``None`` means the configured
+    address (default ``http://127.0.0.1:7440/mcp``).
+
+    Fails closed: a malformed credential or a refused address raises ``ValueError`` (which never
+    contains the credential) *after* clearing whatever this session had before.
+    """
+    if not isinstance(session_key, str) or not session_key.strip():
+        raise ValueError("session_key must be a non-empty string")
+    key = session_key.strip()
+    reg = _registry()
+    with reg.lock:
+        reg.harness_seen = True
+        reg.grants.pop(key, None)
+    if credential is None:
+        return
+    value = credential.strip() if isinstance(credential, str) else ""
+    if not _CREDENTIAL_RE.fullmatch(value):
+        raise ValueError(
+            "not a memory credential (mem- and 64 hex digits); this session's grant was cleared"
+        )
+    url = None
+    if memory_url:
+        url = _normalize_url(memory_url)
+        try:
+            endpoint_for(url)
+        except YantrikMemoryUnsupported as e:
+            raise ValueError(f"{e}; this session's grant was cleared") from None
+    with reg.lock:
+        reg.grants[key] = DesktopGrant(value, url)
+
+
+def clear_desktop_credentials() -> None:
+    """Take back every session's credential (the adapter is shutting down)."""
+    reg = _registry()
+    with reg.lock:
+        reg.harness_seen = True
+        reg.grants.clear()
+
+
+def desktop_grant(*session_keys: str) -> DesktopGrant | None:
+    """The grant for the first of ``session_keys`` that has one, read now."""
+    reg = _registry()
+    with reg.lock:
+        for key in session_keys:
+            if key and key in reg.grants:
+                return reg.grants[key]
     return None
+
+
+def mark_desktop_harness() -> None:
+    reg = _registry()
+    with reg.lock:
+        reg.harness_seen = True
+
+
+def desktop_harness_present() -> bool:
+    """Is this Hermes running under a Yantrik desktop? Then the machine token is never used.
+
+    Yes once the registry has been used, a provider was initialized for the ``yantrik``
+    platform, or the gateway's platform registry (when loaded) knows a ``yantrik`` platform.
+    """
+    reg = _registry()
+    with reg.lock:
+        if reg.harness_seen:
+            return True
+    platforms = sys.modules.get("gateway.platform_registry")
+    if platforms is not None:
+        with contextlib.suppress(Exception):
+            entries = platforms.platform_registry.plugin_entries()
+            if any(getattr(e, "name", "") == YANTRIK_PLATFORM for e in entries):
+                return True
+    return False
+
+
+def _warn_if_env_credential() -> None:
+    if os.environ.get(CREDENTIAL_ENV):
+        _warn_once(
+            "env-credential",
+            "%s is set in this process's environment and is ignored: one Hermes gateway serves "
+            "every platform, and its child processes inherit the environment. The Yantrik "
+            "platform adapter hands the credential over with set_desktop_credential() instead.",
+            CREDENTIAL_ENV,
+        )
 
 
 # -- the memory on the person's unix socket ---------------------------------------------------
@@ -354,30 +481,43 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
-def resolve_endpoint(config: YantrikDBConfig) -> Endpoint:
-    """The memory's address, read now, as the URLs requests are sent to."""
-    url = resolve_memory_url(config)
+def endpoint_for(url: str) -> Endpoint:
+    """The URLs requests go to for ``url``, which must be on this machine.
+
+    Only a loopback ``http://`` address (127.0.0.0/8, ``[::1]``, ``localhost``) or a
+    ``unix:/absolute/path.sock`` is accepted: the memory server binds nothing else, and the
+    bearer must not leave the machine. Anything else is refused, never contacted.
+    """
+    url = _normalize_url(url)
     if url.startswith("unix:"):
         path = url[len("unix:"):]
         if path.startswith("//"):  # unix:///run/... as well as unix:/run/...
             path = path[2:]
         if not path.startswith("/"):
             raise YantrikMemoryUnsupported(
-                f"{URL_ENV} must name an absolute socket path, like "
+                "the memory address must name an absolute socket path, like "
                 "unix:/run/yantrik-mind/1000/memory.sock"
             )
         base = f"http://{_UNIX_HOST}"
         return Endpoint(url, f"{base}/mcp", f"{base}/health", socket_path=path)
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        raise YantrikMemoryUnsupported(f"the memory server address is not a URL: {url}")
-    if parts.scheme == "http" and not _is_loopback(parts.hostname):
-        # The bearer would cross the network in the clear; the server binds loopback only.
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+        parts.port  # noqa: B018 - a malformed port raises here, not later
+    except ValueError:
+        raise YantrikMemoryUnsupported("the memory address is not a valid URL") from None
+    if parts.scheme != "http" or not host or not _is_loopback(host) or parts.username or parts.password:
         raise YantrikMemoryUnsupported(
-            f"refusing to send the memory credential over plain HTTP to {parts.hostname}: "
-            "the Yantrik memory server is on this machine (127.0.0.1, or its unix socket)"
+            f"refusing the memory address {redact(url)}: the Yantrik memory server is on this "
+            "machine, at a loopback http:// address (127.0.0.1, [::1], localhost) or its "
+            "unix: socket"
         )
     return Endpoint(url, url, url[: -len("/mcp")] + "/health")
+
+
+def resolve_endpoint(config: YantrikDBConfig) -> Endpoint:
+    """The configured address (older machines), as the URLs requests are sent to."""
+    return endpoint_for(resolve_memory_url(config))
 
 
 def _discard(resp: requests.Response) -> None:
@@ -390,7 +530,13 @@ def _discard(resp: requests.Response) -> None:
 class YantrikMemoryClient:
     """The plugin's backend surface over the Yantrik memory server's MCP tools."""
 
-    def __init__(self, config: YantrikDBConfig) -> None:
+    def __init__(
+        self,
+        config: YantrikDBConfig,
+        *,
+        platform: str | None = None,
+        session_keys: tuple[str, ...] = (),
+    ) -> None:
         if _is_owner_scoped(config):
             raise YantrikDBError(
                 "owner_scoping cannot be used in yantrik mode: it separates people "
@@ -414,14 +560,35 @@ class YantrikMemoryClient:
         self._beliefs_lock = threading.Lock()
         self._turns: dict[str, deque[dict[str, Any]]] = {}
         self._turns_lock = threading.Lock()
+        self._platform: str | None = None
+        self._session_keys: tuple[str, ...] = ()
+        self.bind_hermes_session(platform=platform, session_keys=session_keys)
+
+    def bind_hermes_session(
+        self, *, platform: str | None, session_keys: tuple[str, ...] | list[str] = (),
+    ) -> None:
+        """Which Hermes session this client serves, as Hermes's ``initialize`` said.
+
+        Only a ``yantrik`` session is ever given a desktop credential, and only its own (looked up
+        by ``session_keys``: the gateway session key, then the Hermes session id). ``platform``
+        None means Hermes said nothing (use outside Hermes): no credential, as for any other
+        platform.
+        """
+        self._platform = (platform or "").strip().lower() or None
+        self._session_keys = tuple(k.strip() for k in session_keys if k and k.strip())
+        if self._platform == YANTRIK_PLATFORM:
+            mark_desktop_harness()
 
     def __repr__(self) -> str:
         try:
-            where = resolve_memory_url(self.config)
-        except Exception:  # pragma: no cover - repr must not raise
-            where = "?"
-        bearer = resolve_bearer(self.config, token_file_allowed=not where.startswith("unix:"))
-        return f"YantrikMemoryClient(url={redact(where)!r}, bearer={bearer!r})"
+            ep, bearer = self._resolve()
+            where, shown = ep.display, repr(bearer)
+        except Exception as e:  # repr must not raise
+            where, shown = "?", f"none ({type(e).__name__})"
+        return (
+            f"YantrikMemoryClient(platform={self._platform!r}, url={redact(where)!r}, "
+            f"bearer={shown})"
+        )
 
     # -- transport ------------------------------------------------------
 
@@ -429,29 +596,54 @@ class YantrikMemoryClient:
         with self._ids_lock:
             return next(self._ids)
 
-    def _current_endpoint(self) -> Endpoint:
-        """The address as it is now. A changed address is a different server: the session goes."""
-        ep = resolve_endpoint(self.config)
-        with self._endpoint_lock:
-            if ep != self._endpoint:
-                if self._endpoint is not None:
-                    self._session_id = None
-                if ep.socket_path and (
-                    self._unix_adapter is None or self._unix_adapter.socket_path != ep.socket_path
-                ):
-                    old, self._unix_adapter = self._unix_adapter, UnixSocketAdapter(ep.socket_path)
-                    self._http.mount(f"http://{_UNIX_HOST}/", self._unix_adapter)
-                    if old is not None:
-                        old.close()
-                self._endpoint = ep
-        return ep
+    def _resolve(self) -> tuple[Endpoint, Bearer]:
+        """Where to send, and what to present, read now.
 
-    def _current_bearer(self, ep: Endpoint) -> Bearer:
-        """What to present, read now. The person's socket does not accept the machine token."""
-        bearer = resolve_bearer(self.config, token_file_allowed=ep.socket_path is None)
-        if bearer is None:
+        - A ``yantrik`` session: its own desktop grant from the registry, or "not granted".
+        - Anything else: never a credential. Under a Yantrik desktop, "not granted" -- the machine
+          token must not stand in for a grant the desktop withdrew or never gave. Only on an
+          older machine, with no desktop harness, the token file (never on the unix socket,
+          which accepts only a credential).
+        """
+        _warn_if_env_credential()
+        if self._platform == YANTRIK_PLATFORM:
+            grant = desktop_grant(*self._session_keys)
+            if grant is None:
+                raise YantrikMemoryNotGranted(NOT_GRANTED_MESSAGE)
+            ep = endpoint_for(grant.memory_url or resolve_memory_url(self.config))
+            return ep, Bearer(grant.credential, "credential")
+        if desktop_harness_present():
+            where = f", not to {self._platform}" if self._platform else ""
+            raise YantrikMemoryNotGranted(
+                f"{NOT_GRANTED_MESSAGE} (on this machine Hermes's memory is granted to its "
+                f"Yantrik desktop sessions only{where})"
+            )
+        ep = resolve_endpoint(self.config)
+        token = "" if ep.socket_path else read_token(self.config)
+        if not token:
             raise YantrikMemoryNotGranted(NOT_GRANTED_MESSAGE)
-        return bearer
+        return ep, Bearer(token, "token file")
+
+    def _use_endpoint(self, ep: Endpoint) -> None:
+        """Send to ``ep`` from now on. A changed address is a different server: the session goes."""
+        with self._endpoint_lock:
+            if ep == self._endpoint:
+                return
+            if self._endpoint is not None:
+                self._session_id = None
+            if ep.socket_path and (
+                self._unix_adapter is None or self._unix_adapter.socket_path != ep.socket_path
+            ):
+                old, self._unix_adapter = self._unix_adapter, UnixSocketAdapter(ep.socket_path)
+                self._http.mount(f"http://{_UNIX_HOST}/", self._unix_adapter)
+                if old is not None:
+                    old.close()
+            self._endpoint = ep
+
+    def _current(self) -> tuple[Endpoint, Bearer]:
+        ep, bearer = self._resolve()
+        self._use_endpoint(ep)
+        return ep, bearer
 
     def _headers(self, bearer: Bearer | None, *, with_session: bool = True) -> dict[str, str]:
         h = {
@@ -497,12 +689,14 @@ class YantrikMemoryClient:
         a new credential (or the memory's first owner just wrote the token) since this one was
         read. Only a bearer that has actually changed is tried, so this never loops.
         """
-        ep = self._current_endpoint()
-        bearer = self._current_bearer(ep)
+        ep, bearer = self._current()
         resp = self._send(ep, bearer, message, with_session=with_session)
         if resp.status_code in (401, 403):
-            fresh = resolve_bearer(self.config, token_file_allowed=ep.socket_path is None)
-            if fresh is not None and fresh.value != bearer.value:
+            try:
+                fresh_ep, fresh = self._resolve()
+            except YantrikMemoryNotGranted:
+                fresh_ep, fresh = ep, bearer  # taken back meanwhile: the refusal stands
+            if fresh_ep == ep and fresh.value != bearer.value:
                 _discard(resp)
                 bearer = fresh
                 resp = self._send(ep, bearer, message, with_session=with_session)
@@ -601,7 +795,7 @@ class YantrikMemoryClient:
         note.close()
 
     def _ensure_session(self) -> None:
-        self._current_endpoint()  # an address that changed since the session opened drops it
+        self._current()  # "not granted" is said here; a changed address drops the session
         if self._session_id:
             return
         with self._session_lock:
@@ -682,7 +876,7 @@ class YantrikMemoryClient:
 
     def health(self) -> dict[str, Any]:
         """Who is serving the memory, and whether this client may use it."""
-        ep = self._current_endpoint()
+        ep, _ = self._current()
         try:
             resp = self._http.get(
                 ep.health_url,
@@ -1071,7 +1265,9 @@ class YantrikMemoryClient:
         ep = self._endpoint
         if session_id and ep is not None:
             with contextlib.suppress(Exception):
-                bearer = resolve_bearer(self.config, token_file_allowed=ep.socket_path is None)
+                fresh_ep, bearer = self._resolve()
+                if fresh_ep != ep:
+                    raise LookupError  # the session belongs to the old address
                 self._http.delete(
                     ep.mcp_url,
                     headers={**self._headers(bearer, with_session=False),
@@ -1083,6 +1279,13 @@ class YantrikMemoryClient:
 
 __all__ = [
     "CREDENTIAL_ENV",
+    "YANTRIK_PLATFORM",
+    "DesktopGrant",
+    "clear_desktop_credentials",
+    "desktop_grant",
+    "desktop_harness_present",
+    "endpoint_for",
+    "set_desktop_credential",
     "DEFAULT_MEMORY_URL",
     "DEFAULT_TOKEN_FILE",
     "NOT_GRANTED_MESSAGE",
@@ -1093,10 +1296,8 @@ __all__ = [
     "YantrikMemoryClient",
     "YantrikMemoryNotGranted",
     "YantrikMemoryUnsupported",
-    "read_credential",
     "read_token",
     "redact",
-    "resolve_bearer",
     "resolve_endpoint",
     "resolve_memory_url",
     "resolve_token_file",

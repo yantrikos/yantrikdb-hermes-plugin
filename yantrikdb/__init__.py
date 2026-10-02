@@ -1515,9 +1515,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
         - embedded mode: available iff `yantrikdb` Python package is importable.
         - http mode: available iff a token is configured.
         - yantrik mode: always. The desktop hands Hermes its memory credential
-          with each turn (``YANTRIK_MEMORY_CREDENTIAL``), so at startup there
-          may be none yet; whether Hermes may use the memory is answered per
-          call. Without a grant each call is refused with a plain "not granted
+          with each turn (in memory, ``yantrik_memory.set_desktop_credential``),
+          so at startup there may be none yet; whether Hermes may use the memory
+          is answered per call. Without a grant each call is refused with a plain "not granted
           yet" client error, and the next turn that brings one just works. A
           provider dropped here would stay dropped for the whole session.
         """
@@ -1586,9 +1586,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     "key": "memory_server_url",
                     "description": (
                         "The Yantrik memory server: http://127.0.0.1:7440/mcp "
-                        "or unix:/run/yantrik-mind/<uid>/memory.sock. On a "
-                        "Yantrik desktop the platform adapter sets "
-                        "YANTRIK_MEMORY_URL every turn, and that wins. Empty "
+                        "or unix:/run/yantrik-mind/<uid>/memory.sock (loopback "
+                        "or the socket only). On a Yantrik desktop the address "
+                        "handed over with each turn's credential wins. Empty "
                         "uses http://127.0.0.1:7440/mcp."
                     ),
                     "default": "",
@@ -1598,9 +1598,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     "key": "memory_server_token_file",
                     "description": (
                         "Older Yantrik machines only: the machine-wide token "
-                        "file, used when the desktop has not handed Hermes a "
-                        "per-mind credential (YANTRIK_MEMORY_CREDENTIAL). "
-                        "Never used on the unix socket. Empty uses "
+                        "file. Never used under a Yantrik desktop (which hands "
+                        "each Hermes session its own credential) and never on "
+                        "the unix socket. Empty uses "
                         "~/.local/share/yantrik-mind/yantrik-memory.token."
                     ),
                     "default": "",
@@ -1850,6 +1850,15 @@ class YantrikDBMemoryProvider(MemoryProvider):
             logger.error("YantrikDB %s", msg)
             self._init_error = msg
             return
+        bind = getattr(backend, "bind_hermes_session", None)
+        if bind is not None:
+            # Yantrik mode: a desktop credential is used only by a provider Hermes initialized
+            # for the ``yantrik`` platform, and only for its own session. One gateway serves
+            # every platform; a Telegram turn must never present the desktop's grant.
+            bind(
+                platform=platform,
+                session_keys=(str(kwargs.get("gateway_session_key") or ""), self._session_id),
+            )
         with self._client_lock:
             self._client = backend
 

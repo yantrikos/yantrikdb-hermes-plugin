@@ -353,19 +353,31 @@ YANTRIKDB_MODE=yantrik
 
 Then grant Hermes its memory on the desktop, in **Settings › Minds**.
 
-### The environment contract
+### The credential contract
 
-The desktop gives each granted mind its **own** credential and hands it over, with the memory's address, on every turn. The Hermes platform adapter for Yantrik puts both into the gateway process's environment before each turn:
+The desktop gives each granted mind its **own** credential and hands it over, with the memory's address, on every turn. The Hermes platform adapter for Yantrik runs in the same gateway process and hands both to the plugin **in memory**, for the one Hermes session the turn belongs to:
 
-| variable | value | |
+```python
+from yantrikdb_hermes_plugin.yantrik_memory import set_desktop_credential
+
+set_desktop_credential(session_key, credential, memory_url)  # every turn
+set_desktop_credential(session_key, None, None)              # the mind detached
+```
+
+| argument | value | |
 |---|---|---|
-| `YANTRIK_MEMORY_CREDENTIAL` | `mem-` + 64 hex digits | This mind's credential. It can change from turn to turn, and it is revoked when the mind detaches. |
-| `YANTRIK_MEMORY_URL` | `http://127.0.0.1:7440/mcp` or `unix:/run/yantrik-mind/<uid>/memory.sock` | Where the memory is. A `unix:` address is the person's own socket: the same MCP requests over a unix domain socket. There the server also checks the caller's uid. |
+| `session_key` | the Hermes gateway session key of the desktop's chat, e.g. `agent:main:yantrik:dm:<chat_id>` | The value Hermes passes memory providers as `gateway_session_key`. The Hermes session id is accepted too. |
+| `credential` | `mem-` + 64 hex digits, or `None` | This mind's credential. It can change from turn to turn. `None` takes it back. |
+| `memory_url` | `http://127.0.0.1:7440/mcp` or `unix:/run/yantrik-mind/<uid>/memory.sock`, or `None` | Where the memory is. Only a loopback `http://` address (127.0.0.0/8, `[::1]`, `localhost`) or a `unix:` socket is accepted. On the person's own socket, the server also checks the caller's uid. `None` means the configured address. |
 
-The plugin reads both **on every request**. It never caches them. It follows these rules:
+The credential is never put in `os.environ`. One Hermes gateway process serves every platform, so a credential in the environment would be presented for a Telegram or Discord user's turn as readily as for the desktop's, and inherited by every child process Hermes spawns. `YANTRIK_MEMORY_CREDENTIAL` in the environment is ignored, with a warning.
 
-- **Which bearer it sends.** It sends the credential when the variable is set and well-formed. It never sends a malformed value. Without a credential it falls back to the machine's token file (`YANTRIK_MEMORY_TOKEN_FILE`, default `~/.local/share/yantrik-mind/yantrik-memory.token`), so older machines keep working. The token file is never sent on the unix socket, which accepts only a credential.
-- **No grant.** With neither a credential nor a token file, every call gets a plain, non-fatal error: *"this Yantrik machine has not granted Hermes its memory yet: grant it in Settings › Minds"*. When a later turn brings a grant, memory works on that turn.
+The plugin reads the registry **on every request** and never caches it. It follows these rules:
+
+- **Who gets the credential.** Only a provider that Hermes initialized for the `yantrik` platform gets it, and only for its own session. Every other platform, and every other session, gets the plain "not granted" error and sends nothing.
+- **Bad handovers.** A malformed credential or a refused address raises `ValueError` (which never contains the credential), and clears what that session had before. Neither is ever sent.
+- **No machine token under the desktop.** The plugin never falls back to the machine's token file once the desktop harness is present: the registry has been used, a `yantrik` session started, or the gateway knows a `yantrik` platform. A withdrawn grant means no access. Only an older machine, with no desktop harness, still uses the token file (`YANTRIK_MEMORY_TOKEN_FILE`, default `~/.local/share/yantrik-mind/yantrik-memory.token`), and never on the unix socket.
+- **No grant.** Without a grant, every call gets a plain, non-fatal error: *"this Yantrik machine has not granted Hermes its memory yet: grant it in Settings › Minds"*. When a later turn brings a grant, memory works on that turn.
 - **Refusals.** The server checks every credential with the desktop and refuses tools that the grants don't cover:
   - `recall_ordinary` covers recall and conflicts;
   - `believe` covers writing facts and relate;
@@ -373,7 +385,7 @@ The plugin reads both **on every request**. It never caches them. It follows the
   - forget works only on what Hermes wrote.
 
   Each refusal is a clear tool error that names the missing grant. Refusals, including a 401/403 for a revoked credential, never trip the circuit breaker and are never retried in a loop. The plugin re-reads the bearer once after a 401/403, and only sends it again if it has changed.
-- **Keeping the credential secret.** The plugin never logs the credential and redacts it from every error message. `repr` shows it as `mem-<redacted>`. The plugin ignores proxy and `.netrc` settings from the environment, and it refuses plain HTTP to any host other than loopback.
+- **Keeping the credential secret.** The plugin never logs the credential and redacts it from every error message. `repr` shows it as `mem-<redacted>`. The plugin ignores proxy and `.netrc` settings from the environment, and refuses any memory address that is not loopback `http://` or a `unix:` socket.
 
 ### What the shared memory looks like from Hermes
 
