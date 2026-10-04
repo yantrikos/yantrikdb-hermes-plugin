@@ -3,6 +3,17 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [Unreleased]
+
+### A missing embedder dependency now says which interpreter looked where (#92)
+
+- When `YANTRIKDB_EMBEDDER_CLASS` fails with an `ImportError`, the error now includes
+  `sys.executable` and `sys.path`, so "not installed" is distinguishable from "installed in a
+  different environment" or "user-site ignored under `-I`".
+- README: embedder dependencies (`model2vec`, `sentence-transformers`, whatever a custom class
+  imports) are not in the manifest, so Hermes drops hand-installed ones when it regenerates the
+  plugin environment. Making them a manifest dependency is still open.
+
 ## [0.27.0] — 2026-09-19 — a multiplexed gateway keeps each profile's YantrikDB settings to itself
 
 Pin unchanged (`yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0`). Gated against engine 0.23.1.

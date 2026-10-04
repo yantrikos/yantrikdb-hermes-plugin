@@ -266,6 +266,22 @@ class TestClassEmbedderPath:
         with pytest.raises(client_module.YantrikDBError, match="EMBEDDING_DIM"):
             embedded_module.EmbeddedYantrikDBClient(cfg)
 
+    def test_missing_dependency_error_names_interpreter(
+        self, embedded_module, mock_engine_class, make_config, client_module,
+    ):
+        import sys
+
+        cfg = make_config(
+            embedder_class="yantrikdb_no_such_module_92.Embedder",
+            embedding_dim=64,
+        )
+        with pytest.raises(client_module.YantrikDBError) as exc:
+            embedded_module.EmbeddedYantrikDBClient(cfg)
+        msg = str(exc.value)
+        assert "yantrikdb_no_such_module_92" in msg
+        assert sys.executable in msg
+        assert "sys.path" in msg
+
     def test_class_without_encode_method_raises(
         self, embedded_module, mock_engine_class, make_config, client_module,
     ):
