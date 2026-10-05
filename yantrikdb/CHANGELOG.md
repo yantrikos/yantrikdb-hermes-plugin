@@ -3,7 +3,7 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
-## [Unreleased]
+## [0.27.1] — 2026-10-05 — a missing embedder dependency says which interpreter looked where
 
 ### A missing embedder dependency now says which interpreter looked where (#92)
 
