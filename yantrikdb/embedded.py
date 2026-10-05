@@ -478,9 +478,22 @@ class EmbeddedYantrikDBClient:
             except YantrikDBError:
                 raise
             except Exception as e:
+                hint = ""
+                if isinstance(e, ImportError):
+                    # A bare "No module named 'x'" can't tell "not installed"
+                    # from "installed in a different environment" (e.g. Hermes
+                    # regenerated the plugin's uv env) or "user-site ignored
+                    # under -I". Name the interpreter and where it looked.
+                    hint = (
+                        f" [interpreter: {sys.executable}; sys.path: "
+                        f"{sys.path}. The embedder's dependencies must be "
+                        "installed in this interpreter's environment; "
+                        "packages added by hand to a Hermes-managed plugin "
+                        "environment are dropped when Hermes regenerates it.]"
+                    )
                 raise YantrikDBError(
                     f"failed to import / instantiate YANTRIKDB_EMBEDDER_CLASS="
-                    f"{custom_class!r}: {e}",
+                    f"{custom_class!r}: {e}{hint}",
                 ) from e
             if not callable(getattr(instance, "encode", None)):
                 raise YantrikDBError(

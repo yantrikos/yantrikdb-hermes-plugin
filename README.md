@@ -279,6 +279,8 @@ echo "YANTRIKDB_EMBEDDER_MODEL2VEC=minishlab/potion-multilingual-128M" >> ~/.her
 echo "YANTRIKDB_EMBEDDER_HF=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" >> ~/.hermes/.env
 ```
 
+> **Embedder dependencies and Hermes updates.** `model2vec`, `sentence-transformers`, and anything a custom `YANTRIKDB_EMBEDDER_CLASS` imports are *not* in the plugin manifest's `pip_dependencies` (only `yantrikdb` and `requests` are), so they are not installed for you. Recent Hermes versions build each plugin's environment from that manifest alone, so a package you installed by hand into that environment is dropped the next time Hermes regenerates it (for example on `hermes update`), and memory fails with `No module named '...'` until you reinstall it. If the embedder you configured stops loading after an update, reinstall its dependencies into the plugin's environment (`uv pip install --python <plugin-env>/bin/python model2vec`). The error message names the interpreter and `sys.path` it searched. Hermes runs plugins with `-I`, so `PYTHONPATH` and user-site installs don't help. The bundled default and `YANTRIKDB_EMBEDDER=potion-base-*` need no extra packages and are unaffected.
+
 ### Optional: quiet the HuggingFace embedder
 
 `YANTRIKDB_EMBEDDER_HF` uses `sentence-transformers`, which by default emits noise to stdout — tqdm progress bars on every encode and a one-time HF Hub auth warning at startup. The plugin disables the per-encode progress bars internally (v0.4.12+). For the rest, add to your `.env`:
