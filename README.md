@@ -20,7 +20,7 @@ This repository **is** the canonical distribution. Per Hermes maintainer guidanc
 ## Quick install
 
 ```bash
-pip install yantrikdb-hermes-plugin   # ~10 MB, in the same Python env as Hermes
+pip install yantrikdb-hermes-plugin   # ~53 MB download, no torch; same Python env as Hermes
 yantrikdb-hermes install              # registers the plugin with Hermes
 hermes memory setup                   # → select "yantrikdb"
 ```
@@ -158,7 +158,7 @@ The v0.2.0 default backend is **in-process**: no separate server, no token, no G
 ```bash
 source ~/.hermes/hermes-agent/venv/bin/activate
 hermes plugins install yantrikos/yantrikdb-hermes-plugin
-pip install yantrikdb                    # ~10 MB; in the same Python env as Hermes
+pip install yantrikdb                    # ~23 MB download; same Python env as Hermes
 hermes memory setup                      # → Select "yantrikdb" and press Enter
 hermes memory status                     # → Provider: yantrikdb  Status: available ✓
 ```
@@ -455,7 +455,7 @@ DeepSeek wasn't told the reason codes existed; it parsed them from the tool resp
 | `recall_text` p99 | 67.2 ms | 13.24 ms |
 | Cold start | n/a | 77 ms (one-time) |
 | Required infrastructure | yantrikdb-server + token | none |
-| `pip install` footprint | wheel + requests | wheel + yantrikdb + requests + model2vec (small, no torch) |
+| `pip install` footprint | wheel + requests | wheel + yantrikdb + requests + model2vec (~53 MB download, no torch) |
 
 Even embedded p99 tail latency is faster than HTTP p50 — bad-case embedded beats typical-case HTTP. Long-running soak validation is in progress upstream ([yantrikos/yantrikdb saga task #2](https://github.com/yantrikos/yantrikdb)); these numbers are 100-iteration micro-benchmarks, not 24-hour production traces.
 

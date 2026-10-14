@@ -1539,7 +1539,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "key": "mode",
                 "description": (
                     "Backend: 'embedded' (default since v0.2.0; in-process, "
-                    "~10 MB, no server) or 'http' (talks to a separately-run "
+                    "no server) or 'http' (talks to a separately-run "
                     "yantrikdb-server, for HA cluster setups)."
                 ),
                 "default": "embedded",

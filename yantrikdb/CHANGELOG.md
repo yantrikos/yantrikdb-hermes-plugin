@@ -18,6 +18,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semanti
   (now-removed) `[model2vec]` extra; it names the manifest and the `hermes update`
   regeneration as the cause.
 - README footprint note updated: the default install now includes `model2vec`.
+- Install-size claims corrected. The README, the package description and the setup
+  prompt said "~10 MB", which had been stale since well before this release (the engine
+  wheel alone is ~22 MB). Measured on Linux x86_64 / Python 3.13: ~23 MB download before
+  this release, ~53 MB with `model2vec` and its dependencies (numpy, tokenizers,
+  huggingface-hub); still no torch.
 
 ## [0.27.1] — 2026-10-05 — a missing embedder dependency says which interpreter looked where
 
