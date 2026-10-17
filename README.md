@@ -343,7 +343,7 @@ The differentiator versus other Hermes memory plugins is not the vector store �
 | Why did a memory rank? | ¯\\_(ツ)_/¯ | every `recall()` result carries a `why_retrieved` reason list |
 | Cross-entity recall | semantic-only | graph edges from `relate()` boost related memories |
 
-Twelve tools exposed to the agent by default: `yantrikdb_remember`, `_recall`, `_forget`, `_think`, `_conflicts`, `_resolve_conflict`, `_relate`, `_stats`, plus the trigger-lifecycle consumers `_pending_triggers`, `_acknowledge_trigger`, `_dismiss_trigger`, `_act_on_trigger` (v0.4.13+). Three additional **opt-in** skill tools (v0.3.0+): `_skill_search`, `_skill_define`, `_skill_outcome` — see [Skills](#skills-opt-in-v030) below.
+Thirteen tools exposed to the agent by default: `yantrikdb_remember`, `_recall`, `_links`, `_forget`, `_think`, `_conflicts`, `_resolve_conflict`, `_relate`, `_stats`, plus the trigger-lifecycle consumers `_pending_triggers`, `_acknowledge_trigger`, `_dismiss_trigger`, `_act_on_trigger` (v0.4.13+). Three additional **opt-in** skill tools (v0.3.0+): `_skill_search`, `_skill_define`, `_skill_outcome` — see [Skills](#skills-opt-in-v030) below.
 
 ### Tool response envelope (v0.4.16+)
 
@@ -373,6 +373,62 @@ Why this matters: tool failures used to be communicated as `{"error": "..."}` on
 - `yantrikdb_act_on_trigger` — agent took action; records an audit-trail entry.
 
 All three closers remove the trigger from `pending_triggers`. Without these tools (pre-v0.4.13) the pending queue grew indefinitely because the producer (`think()`) had no matching consumer surface.
+
+### Correction chains and historical recall (v0.28.0)
+
+Memory that cannot be corrected is memory you have to distrust. Before this
+release the plugin could store a corrected sentence, but nothing tied it to the
+sentence it replaced: both stayed live, and a recall that happened not to
+surface the newer one returned the refuted rule as current.
+
+Three additions close that gap without introducing a second correction store —
+they surface primitives the engine already has:
+
+- **`supersedes_rid` on `yantrikdb_remember`** writes a `supersedes` edge
+  (`new → old`) atomically with the new record. The new record is preferred in
+  recall; the old one stays on disk and remains retrievable.
+- **`include_superseded` on `yantrikdb_recall`** (default `false`) exposes the
+  whole chain. Default recall returns only the current head, so an agent does
+  not receive two contradictory rules and have to guess which is newer.
+- **`as_of` on `yantrikdb_recall`** answers "what was true at time T?" — the
+  predecessor that was current then is returned, the later successor is not.
+- **`yantrikdb_links`** reads the edges around a record (`outbound`, `inbound`,
+  `both`, optional `link_type`), so a correction can be audited rather than
+  merely trusted.
+
+`as_of` accepts a Unix timestamp, ISO-8601 with an explicit offset (`Z`,
+`+02:00`), or a naive ISO timestamp, which is interpreted in the host's local
+zone. A value that cannot be parsed is **rejected**; it never falls back to
+"now", because a silent fallback turns a historical question into a
+present-tense one.
+
+Boundary semantics of `as_of`: the cut-off is evaluated against the
+`supersedes` **edge** timestamp, not the successor's `created_at`. The edge is
+written a few hundred microseconds after the record itself (measured ≈0.5 ms).
+So `as_of == successor.created_at` returns the state immediately *before* the
+correction took effect: the predecessor is still current, the successor already
+exists. That is intentional — at that instant the correction did not exist yet.
+To see the successor as current, query at or after the edge timestamp (in
+practice: a timestamp clearly after the write). An inclusive cut-off anchored
+on `successor.created_at` is not expressible without redefining when a
+correction takes effect, so this plugin does not attempt it. Asserted in
+`tests/test_memory_integrity_v11.py`.
+
+**Backend support.** These additions are embedded-only. The HTTP backend has no
+endpoints for link creation or traversal, so the client accepts the new keyword
+arguments and refuses them loudly with `YantrikDBClientError` pointing at
+`YANTRIKDB_MODE=embedded`, instead of letting a `TypeError` escape at the first
+tool call:
+
+- `yantrikdb_remember(supersedes_rid=...)` → error
+- `yantrikdb_recall(include_superseded=true)` or `(as_of=...)` → error
+- `yantrikdb_links(...)` → error, always
+
+Calls that omit the new arguments behave exactly as before on both backends.
+
+`supersedes_rid` and `idempotency_key` are mutually exclusive: a superseding
+write must never collapse onto an existing rid, because that would silently
+turn a correction into a no-op.
 
 ### Compared to other Hermes memory providers
 

@@ -242,6 +242,16 @@ REMEMBER_SCHEMA = {
                     "python-fallback embedders."
                 ),
             },
+            "supersedes_rid": {
+                "type": "string",
+                "description": (
+                    "Optional rid of the memory this write REPLACES. Creates a "
+                    "'supersedes' link (new record = successor, old rid = "
+                    "predecessor). The predecessor stays queryable via "
+                    "include_superseded/as_of/history but is hidden from "
+                    "default recall. Mutually exclusive with idempotency_key."
+                ),
+            },
         },
         "required": ["text"],
     },
@@ -309,8 +319,53 @@ RECALL_SCHEMA = {
                     "acting on a recall result."
                 ),
             },
+            "include_superseded": {
+                "type": "boolean",
+                "description": (
+                    "Default false: superseded predecessors are hidden, the "
+                    "current successor is returned. true returns both for "
+                    "historical inspection."
+                ),
+            },
+            "as_of": {
+                "type": ["number", "string"],
+                "description": (
+                    "Optional instant: epoch seconds, an ISO-8601 date or "
+                    "datetime (explicit offset, Z, or naive local), or a "
+                    "relative term such as 'today'/'yesterday'. Unparseable "
+                    "values are rejected, never silently treated as now. "
+                    "Bitemporal recall: what the store believed at that "
+                    "moment (later supersedes do not suppress, corrections "
+                    "roll back)."
+                ),
+            },
         },
         "required": ["query"],
+    },
+}
+
+LINKS_SCHEMA = {
+    "name": "yantrikdb_links",
+    "description": (
+        "Traverse record-to-record links (supersedes/contradicts/supports/"
+        "derived_from). Use after a correction to find predecessor or "
+        "successor and to see which version is current."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "rid": {"type": "string", "description": "Memory id."},
+            "link_type": {
+                "type": "string",
+                "description": "Optional filter, e.g. 'supersedes'.",
+            },
+            "direction": {
+                "type": "string",
+                "enum": ["both", "outbound", "inbound"],
+                "description": "Default both.",
+            },
+        },
+        "required": ["rid"],
     },
 }
 
@@ -964,6 +1019,7 @@ TASKS_SCHEMA = {
 ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
+    LINKS_SCHEMA,
     FORGET_SCHEMA,
     THINK_SCHEMA,
     CONFLICTS_SCHEMA,
@@ -1010,6 +1066,7 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset({
     "yantrikdb_remember",
     "yantrikdb_recall",
     "yantrikdb_forget",
+    "yantrikdb_links",
     "yantrikdb_relate",
     "yantrikdb_conflicts",
     "yantrikdb_resolve_conflict",
@@ -1350,6 +1407,35 @@ def _parse_time_filter(value: Any) -> float | None:
         except ValueError:
             continue
     return None
+
+
+def _parse_as_of(value: Any) -> float | None:
+    """Parse an ``as_of`` argument into a UNIX timestamp.
+
+    MI1.1: a historical recall must never silently degrade into a current
+    recall. Unlike ``_parse_time_filter`` (used by since/until and left
+    untouched), a naive ISO value here is interpreted as LOCAL time so that
+    ``"2026-10-17"`` and ``"today"`` denote the same instant. Explicit
+    offsets and ``Z`` are honoured exactly. Returns None when unparseable;
+    the caller must reject that loudly.
+    """
+    if value is None:
+        return None
+    if not str(value).strip():
+        return None
+    num = _coerce_float(value, default=None)
+    if num is not None:
+        return num
+    s = str(value).strip()
+    import datetime as _dt
+    try:
+        dt = _dt.datetime.fromisoformat(s.replace("z", "+00:00").replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.astimezone()  # naive -> local, consistent with "today"
+        return dt.timestamp()
+    except ValueError:
+        pass
+    return _parse_time_filter(s)
 
 
 def _coerce_int(raw: Any, default: int) -> int:
@@ -1997,13 +2083,21 @@ class YantrikDBMemoryProvider(MemoryProvider):
         *,
         top_k: int,
         domain: str | None = None,
+        include_superseded: bool = False,
+        as_of: float | None = None,
     ) -> list[dict[str, Any]]:
         client = self._require_client()
+        extra: dict[str, Any] = {}
+        if include_superseded:
+            extra["include_superseded"] = True
+        if as_of is not None:
+            extra["as_of"] = as_of
         scoped = client.recall(
             query,
             namespace=self._namespace,
             top_k=top_k,
             domain=domain,
+            **extra,
         ).get("results", []) or []
         fallback_sets: list[list[dict[str, Any]]] = []
         for namespace in self._fallback_recall_namespaces():
@@ -2483,6 +2577,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_recall(args)
             elif tool_name == "yantrikdb_forget":
                 raw = self._do_forget(args)
+            elif tool_name == "yantrikdb_links":
+                raw = self._do_links(args)
             elif tool_name == "yantrikdb_think":
                 raw = self._do_think(args)
             elif tool_name == "yantrikdb_conflicts":
@@ -2552,13 +2648,30 @@ class YantrikDBMemoryProvider(MemoryProvider):
             self._record_failure()
             return tool_error(f"YantrikDB error: {e}", tool=tool_name)
 
+    def _do_links(self, args: dict[str, Any]) -> str:
+        rid = (args.get("rid") or "").strip()
+        if not rid:
+            return tool_error("Missing required parameter: rid", tool="yantrikdb_links")
+        client = self._require_client()
+        resp = client.linked_records(
+            rid,
+            link_type=(args.get("link_type") or "").strip() or None,
+            direction=(args.get("direction") or "both").strip(),
+        )
+        self._record_success()
+        return json.dumps(resp)
+
     def _do_remember(self, args: dict[str, Any]) -> str:
         text = (args.get("text") or "").strip()
         if not text:
             return tool_error("Missing required parameter: text")
         importance = _coerce_float(args.get("importance"), default=0.6)
         idempotency_key = (args.get("idempotency_key") or "").strip() or None
+        supersedes_rid = (args.get("supersedes_rid") or "").strip() or None
         client = self._require_client()
+        remember_kwargs: dict[str, Any] = {}
+        if supersedes_rid:
+            remember_kwargs["supersedes_rid"] = supersedes_rid
         resp = client.remember(
             text,
             namespace=self._namespace,
@@ -2566,6 +2679,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             domain=args.get("domain"),
             metadata={"session_id": self._session_id, **self._write_scope_metadata()},
             idempotency_key=idempotency_key,
+            **remember_kwargs,
         )
         # v0.9: a divergent-payload conflict under the same key — surface the
         # existing rid so the agent can fetch/correct the winner (T07). Not an
@@ -2646,10 +2760,24 @@ class YantrikDBMemoryProvider(MemoryProvider):
             include_candidates = self._config.recall_includes_candidates
         # Pull more than top_k since we may filter some out.
         engine_top_k = top_k * 2 if not include_candidates else top_k
+        raw_as_of = args.get("as_of")
+        if raw_as_of is not None and str(raw_as_of).strip():
+            parsed_as_of = _parse_as_of(raw_as_of)
+            if parsed_as_of is None:
+                return tool_error(
+                    f"as_of could not be parsed: {raw_as_of!r}. Use a UNIX "
+                    "timestamp, an ISO-8601 date/datetime, or a relative term "
+                    "such as 'today', 'yesterday' or '7d'.",
+                    tool="yantrikdb_recall",
+                )
+        else:
+            parsed_as_of = None
         results = self._recall_with_base_fallback(
             query,
             top_k=min(engine_top_k, 50),
             domain=args.get("domain"),
+            include_superseded=bool(args.get("include_superseded")),
+            as_of=parsed_as_of,
         )
         if not include_candidates:
             results = [
