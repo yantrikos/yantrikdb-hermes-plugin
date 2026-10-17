@@ -505,3 +505,36 @@ class TestTruncateText:
 
     def test_zero_max_len_unchanged(self, client_module):
         assert client_module.truncate_text("hello", 0) == "hello"
+
+
+# ---------------------------------------------------------------------------
+# Embedded-only capabilities
+# ---------------------------------------------------------------------------
+
+class TestEmbeddedOnlyGuards:
+    """The HTTP backend has no link endpoints.
+
+    These arguments must be refused with a clear error that names the working
+    alternative, not leak a ``TypeError`` from the signature at the first real
+    tool call.
+    """
+
+    def test_remember_refuses_supersedes_rid(self, client, client_module):
+        with pytest.raises(client_module.YantrikDBClientError, match="supersedes_rid"):
+            client.remember("a correction", supersedes_rid="01a10000-0000-7000-8000-000000000000")
+
+    def test_recall_refuses_as_of(self, client, client_module):
+        with pytest.raises(client_module.YantrikDBClientError, match="as_of"):
+            client.recall(query="what was true", as_of=1792240000.0)
+
+    def test_recall_refuses_include_superseded(self, client, client_module):
+        with pytest.raises(client_module.YantrikDBClientError, match="include_superseded"):
+            client.recall(query="the whole chain", include_superseded=True)
+
+    def test_links_always_refused(self, client, client_module):
+        with pytest.raises(client_module.YantrikDBClientError, match="linked_records"):
+            client.linked_records("01a10000-0000-7000-8000-000000000000")
+
+    def test_error_names_the_alternative(self, client, client_module):
+        with pytest.raises(client_module.YantrikDBClientError, match="YANTRIKDB_MODE=embedded"):
+            client.linked_records("01a10000-0000-7000-8000-000000000000")

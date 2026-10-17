@@ -1012,7 +1012,16 @@ class YantrikDBClient:
         memory_type: str | None = None,
         metadata: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
+        supersedes_rid: str | None = None,
     ) -> dict[str, Any]:
+        # Correction chains are an embedded-only capability: the HTTP backend
+        # has no endpoint for link creation. Refuse loudly instead of letting
+        # the kwarg fall into a TypeError at the first tool call.
+        if supersedes_rid:
+            raise YantrikDBClientError(
+                "supersedes_rid is not available over the HTTP backend; "
+                "use the embedded backend (YANTRIKDB_MODE=embedded)"
+            )
         # Honest surface (ecosystem agreement #6): forward an idempotency key
         # only if the server advertises support (v0.9.1 capability probe);
         # otherwise REFUSE loudly rather than forward-and-silently-drop.
@@ -1074,7 +1083,18 @@ class YantrikDBClient:
         top_k: int | None = None,
         memory_type: str | None = None,
         domain: str | None = None,
+        include_superseded: bool = False,
+        as_of: float | str | None = None,
     ) -> dict[str, Any]:
+        # Historical recall is an embedded-only capability: the HTTP backend
+        # neither filters superseded predecessors nor resolves a past instant.
+        # Refuse loudly rather than return present-tense data to a historical
+        # question.
+        if include_superseded or as_of is not None:
+            raise YantrikDBClientError(
+                "include_superseded/as_of are not available over the HTTP backend; "
+                "use the embedded backend (YANTRIKDB_MODE=embedded)"
+            )
         body: dict[str, Any] = {
             "query": query,
             "namespace": namespace or self.config.namespace,
@@ -1088,6 +1108,15 @@ class YantrikDBClient:
 
     def forget(self, rid: str) -> dict[str, Any]:
         return self._request("POST", "/v1/forget", {"rid": rid})
+
+    def linked_records(self, rid: str, *, link_type: str | None = None,
+                       direction: str = "both") -> dict[str, Any]:
+        # Link traversal is an embedded-only capability; the HTTP backend has
+        # no endpoint for it.
+        raise YantrikDBClientError(
+            "linked_records is not available over the HTTP backend; "
+            "use the embedded backend (YANTRIKDB_MODE=embedded)"
+        )
 
     def think(
         self,
