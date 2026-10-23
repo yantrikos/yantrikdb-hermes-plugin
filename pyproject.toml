@@ -60,8 +60,18 @@ dev = [
 # Hermes' uv-managed environment regeneration (#92). sentence-transformers
 # pulls in PyTorch, so it stays optional — install only if you use
 # YANTRIKDB_EMBEDDER_HF.
+#
+# The optional extra carries `sys_platform != 'android' and sys_platform !=
+# 'emscripten'` on its requirement. Hermes' PM resolves the WHOLE workspace —
+# every enabled plugin's pyproject, with every optional-dependency — when it
+# builds a generation, so an extra that cannot resolve on a non-host fork
+# fails the resolve for every plugin in the selection and PM evicts them all
+# (NousResearch/hermes-agent#143254), silently clearing memory.provider when
+# this plugin is the configured provider. sentence-transformers<6 needs torch
+# (and scipy / scikit-learn), none of which ship wheels for those forks. The
+# extra stays fully available on every platform Hermes actually runs on.
 sentence-transformers = [
-  "sentence-transformers>=2.7,<6.0.0",
+  "sentence-transformers>=2.7,<6.0.0; sys_platform != 'android' and sys_platform != 'emscripten'",
 ]
 
 [project.urls]
