@@ -4451,7 +4451,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             m for m in messages[:-6]
             if isinstance(m, dict) and m.get("role") in {"user", "assistant"}
         ]
-        if middle:
+        if middle and (self._config is None or self._config.compression_gist):
             gist = self._compose_compression_gist(middle)
             if gist:
                 try:
