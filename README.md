@@ -279,7 +279,7 @@ echo "YANTRIKDB_EMBEDDER_MODEL2VEC=minishlab/potion-multilingual-128M" >> ~/.her
 echo "YANTRIKDB_EMBEDDER_HF=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2" >> ~/.hermes/.env
 ```
 
-> **Embedder dependencies and Hermes updates.** `model2vec` is declared as a hard runtime dependency in the plugin manifest's `pip_dependencies` (and `pyproject.toml`'s `[project] dependencies`) on `main`, fixing #92 so it survives Hermes' uv-managed environment regeneration — `hermes update` will no longer silently drop it once this ships in the next release (current published release is v0.27.1; this fix is merged but unreleased). Until then, `model2vec` can still be dropped on `hermes update` and may need reinstalling. Only `sentence-transformers` (which pulls in PyTorch) and anything a custom `YANTRIKDB_EMBEDDER_CLASS` imports remain outside the manifest: if you configure `YANTRIKDB_EMBEDDER_HF`, reinstall its dependencies into the plugin's environment after a regeneration (`uv pip install --python <plugin-env>/bin/python 'yantrikdb-hermes-plugin[sentence-transformers]'` or `sentence-transformers`). If an embedder stops loading after an update, the error message names the interpreter (`sys.executable`) and `sys.path` it searched. Hermes runs plugins with `-I`, so `PYTHONPATH` and user-site installs don't help. The bundled default and `YANTRIKDB_EMBEDDER=potion-base-*` need no extra packages and are unaffected.
+> **Embedder dependencies and Hermes updates.** `model2vec` is declared as a hard runtime dependency in the plugin manifest's `pip_dependencies` (and `pyproject.toml`'s `[project] dependencies`) on `main`, fixing #92 so it survives Hermes' uv-managed environment regeneration — `hermes update` no longer silently drops it as of v0.28.0. On earlier versions, `model2vec` can still be dropped on `hermes update` and may need reinstalling. Only `sentence-transformers` (which pulls in PyTorch) and anything a custom `YANTRIKDB_EMBEDDER_CLASS` imports remain outside the manifest: if you configure `YANTRIKDB_EMBEDDER_HF`, reinstall its dependencies into the plugin's environment after a regeneration (`uv pip install --python <plugin-env>/bin/python 'yantrikdb-hermes-plugin[sentence-transformers]'` or `sentence-transformers`). If an embedder stops loading after an update, the error message names the interpreter (`sys.executable`) and `sys.path` it searched. Hermes runs plugins with `-I`, so `PYTHONPATH` and user-site installs don't help. The bundled default and `YANTRIKDB_EMBEDDER=potion-base-*` need no extra packages and are unaffected.
 
 ### Optional: quiet the HuggingFace embedder
 
@@ -552,7 +552,7 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 
 ## Status
 
-**v0.27.1** (current, 2026-10-05) — embedder `ImportError`s now name `sys.executable`/`sys.path`; the v0.27.0 multiplexed gateway reads each profile's `YANTRIKDB_*` settings from that profile's own `.env` instead of the launch profile's environment; v0.26.0 fixed `think()` (consolidation, conflict scan) failing on every call on the embedded backend with engine 0.15.3 and later. `model2vec` becoming a manifest hard dependency (fixes #92) is merged to `main`, pending the next release (unreleased). Engine range `>=0.12.1,<0.24.0`. 500+ tests, CI on Python 3.11–3.14. **Standalone-by-design** per Hermes maintainer guidance — Hermes is not accepting new memory providers upstream; standalone plugins installed via `pip` are the recommended pattern. PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989) closed 2026-05-13 with that resolution.
+**v0.28.0** (current, 2026-11-03) — correction chains (`supersedes_rid`), historical recall (`include_superseded`, `as_of`) and the `yantrikdb_links` tool; `model2vec` is now a manifest hard dependency (fixes #92); the `sentence-transformers` extra no longer breaks Hermes' resolve on android/emscripten. v0.27.1 (2026-10-05) — embedder `ImportError`s now name `sys.executable`/`sys.path`; the v0.27.0 multiplexed gateway reads each profile's `YANTRIKDB_*` settings from that profile's own `.env` instead of the launch profile's environment; v0.26.0 fixed `think()` (consolidation, conflict scan) failing on every call on the embedded backend with engine 0.15.3 and later. Engine range `>=0.12.1,<0.24.0`. 500+ tests, CI on Python 3.11–3.14. **Standalone-by-design** per Hermes maintainer guidance — Hermes is not accepting new memory providers upstream; standalone plugins installed via `pip` are the recommended pattern. PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989) closed 2026-05-13 with that resolution.
 
 ### Release cadence
 
@@ -574,8 +574,9 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 | v0.26.0 | 2026-09-17 | Self-maintenance (`think()`) runs again on the default backend |
 | v0.27.0 | 2026-09-19 | Multiplexed gateway keeps each profile's settings separate |
 | v0.27.1 | 2026-10-05 | Embedder ImportErrors name `sys.executable`/`sys.path` |
+| v0.28.0 | 2026-11-03 | Correction chains, historical recall, `yantrikdb_links`; `model2vec` hard dependency; android/emscripten-safe extra |
 
-59 tagged releases in total; every one is in the [CHANGELOG](yantrikdb/CHANGELOG.md) (`model2vec` becoming a manifest hard dependency, fixes #92, is merged to `main` as the next one, v0.27.2, not yet tagged/released).
+60 tagged releases in total; every one is in the [CHANGELOG](yantrikdb/CHANGELOG.md) (v0.27.2 was never tagged separately; it ships inside v0.28.0).
 
 ### Durability signals
 

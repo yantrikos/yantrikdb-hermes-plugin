@@ -3,7 +3,7 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
-## [Unreleased]
+## [0.28.0] — 2026-11-03 — correction chains, historical recall and link traversal
 
 ### Correction chains, historical recall and `yantrikdb_links`
 
@@ -28,6 +28,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semanti
   refused with a `YantrikDBClientError` pointing at `YANTRIKDB_MODE=embedded`
   (`supersedes_rid`, `include_superseded`, `as_of`, `yantrikdb_links`). Calls
   without them are unchanged.
+
+### Also in this release
+
+- `sentence-transformers` extra no longer breaks Hermes' workspace resolve on the
+  `android` / `emscripten` forks: its requirement carries a
+  `sys_platform != 'android' and sys_platform != 'emscripten'` marker (#99, #100 —
+  thanks @wolf-crazy).
+- New `YANTRIKDB_COMPRESSION_GIST` switch to disable the pre-compression gist write
+  (#102, #103 — thanks @TianHengZhuang).
+- Includes everything in 0.27.2 below (`model2vec` as a manifest hard dependency, #92),
+  which was merged but never tagged.
+- Correction chains and link traversal contributed by @Huy3ko (#98).
 
 ## [0.27.2] — 2026-10-12 — model2vec is now a manifest hard dependency (fixes #92)
 
