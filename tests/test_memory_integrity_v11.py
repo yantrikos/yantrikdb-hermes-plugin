@@ -191,7 +191,7 @@ def test_bare_date_is_local_midnight_and_z_is_utc(provider_module):
     On a UTC host the two coincide, so the local-midnight half is skipped
     there rather than asserted vacuously.
     """
-    utc_midnight = dt.datetime(2026, 10, 17, tzinfo=dt.timezone.utc).timestamp()
+    utc_midnight = dt.datetime(2026, 10, 17, tzinfo=dt.UTC).timestamp()
     assert provider_module._parse_as_of("2026-10-17T00:00:00Z") == pytest.approx(utc_midnight)
 
     if dt.datetime.now().astimezone().utcoffset() != dt.timedelta(0):
@@ -260,7 +260,7 @@ def test_cutoff_is_the_edge_timestamp_not_the_record(chain, provider):
     """The takeover instant is the edge's timestamp, written just after C."""
     links = _call(provider, "yantrikdb_links",
                   {"rid": chain["rids"]["C"], "direction": "outbound"})
-    edges = [l for l in links.get("links", []) if l.get("link_type") == "supersedes"]
+    edges = [e for e in links.get("links", []) if e.get("link_type") == "supersedes"]
     assert edges, "expected a supersedes edge on C"
     edge_ts = edges[0]["created_at"]
 
