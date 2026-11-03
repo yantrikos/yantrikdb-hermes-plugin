@@ -1423,9 +1423,10 @@ def _parse_as_of(value: Any) -> float | None:
         return None
     if not str(value).strip():
         return None
-    num = _coerce_float(value, default=None)
-    if num is not None:
-        return num
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
     s = str(value).strip()
     import datetime as _dt
     try:

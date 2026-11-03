@@ -27,8 +27,26 @@ from __future__ import annotations
 import datetime as dt
 import json
 import time
+from importlib import metadata
 
 import pytest
+
+
+# Real-engine tests: skipped where the engine is absent (the CI matrix
+# jobs); the engine-contract job installs it and runs them.
+def _engine_installed() -> bool:
+    # Probe the DISTRIBUTION, not the import: the plugin package is itself named
+    # ``yantrikdb`` and importing it here would shadow/reorder the engine.
+    try:
+        metadata.distribution("yantrikdb")
+    except metadata.PackageNotFoundError:
+        return False
+    return True
+
+
+pytestmark = pytest.mark.skipif(
+    not _engine_installed(), reason="real yantrikdb engine not installed"
+)
 
 TEXTS = ("MI1-A", "MI1-B", "MI1-C")
 LOCAL_TZ = dt.timezone(dt.timedelta(hours=2))
