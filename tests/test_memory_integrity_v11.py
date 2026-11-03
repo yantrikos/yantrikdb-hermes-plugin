@@ -30,6 +30,10 @@ import time
 
 import pytest
 
+# Real-engine tests: skipped where the engine is absent (the CI matrix
+# jobs); the engine-contract job installs it and runs them.
+pytest.importorskip("yantrikdb")
+
 TEXTS = ("MI1-A", "MI1-B", "MI1-C")
 LOCAL_TZ = dt.timezone(dt.timedelta(hours=2))
 
