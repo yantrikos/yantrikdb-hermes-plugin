@@ -616,11 +616,28 @@ class EmbeddedYantrikDBClient:
         memory_type: str | None = None,
         metadata: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
+        supersedes_rid: str | None = None,
     ) -> dict[str, Any]:
         safe_text = truncate_text(text, self.config.max_text_len)
         ns = namespace or self.config.namespace
         mt = memory_type or "semantic"
         dom = domain or "general"
+        if supersedes_rid:
+            if idempotency_key:
+                raise YantrikDBClientError(
+                    "supersedes_rid and idempotency_key are mutually exclusive: "
+                    "a superseding write must never collapse onto an existing rid."
+                )
+            try:
+                rid = self._db.record_with_links(
+                    safe_text,
+                    [{"target_rid": supersedes_rid, "link_type": "supersedes"}],
+                    memory_type=mt, importance=float(importance),
+                    namespace=ns, domain=dom, metadata=metadata,
+                )
+            except Exception as e:
+                raise _map_engine_error("remember(supersedes)", e) from e
+            return {"rid": rid, "supersedes": supersedes_rid}
         if idempotency_key:
             return self._remember_idempotent(
                 safe_text, key=idempotency_key, memory_type=mt,
@@ -688,15 +705,29 @@ class EmbeddedYantrikDBClient:
         top_k: int | None = None,
         memory_type: str | None = None,
         domain: str | None = None,
+        include_superseded: bool = False,
+        as_of: float | None = None,
     ) -> dict[str, Any]:
         try:
-            results = self._db.recall(
-                query=query,
-                top_k=int(top_k or self.config.top_k),
-                namespace=namespace or self.config.namespace,
-                domain=domain,
-                memory_type=memory_type,
-            )
+            if as_of is not None:
+                results = self._db.recall_as_of(
+                    as_of=float(as_of),
+                    query=query,
+                    top_k=int(top_k or self.config.top_k),
+                    namespace=namespace or self.config.namespace,
+                    memory_type=memory_type,
+                )
+                if domain:
+                    results = [r for r in results if r.get("domain") == domain]
+            else:
+                results = self._db.recall(
+                    query=query,
+                    top_k=int(top_k or self.config.top_k),
+                    namespace=namespace or self.config.namespace,
+                    domain=domain,
+                    memory_type=memory_type,
+                    include_superseded=bool(include_superseded),
+                )
         except Exception as e:
             raise _map_engine_error("recall", e) from e
         items = list(results) if results else []
@@ -710,6 +741,15 @@ class EmbeddedYantrikDBClient:
             # provider's 4xx handling kicks in (no breaker trip).
             raise YantrikDBClientError(f"forget failed: {e}") from e
         return {"rid": rid, "found": found}
+
+    def linked_records(self, rid: str, *, link_type: str | None = None,
+                       direction: str = "both") -> dict[str, Any]:
+        try:
+            links = self._db.linked_records(
+                rid, direction=direction, link_type=link_type)
+        except Exception as e:
+            raise _map_engine_error("linked_records", e) from e
+        return {"rid": rid, "links": [dict(x) for x in (links or [])]}
 
     # -- Maintenance --------------------------------------------------
 

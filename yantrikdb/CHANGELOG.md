@@ -3,6 +3,32 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [Unreleased]
+
+### Correction chains, historical recall and `yantrikdb_links`
+
+- `yantrikdb_remember` accepts `supersedes_rid`, creating a `supersedes` edge
+  (`new → old`) atomically with the new record. `supersedes_rid` and
+  `idempotency_key` are mutually exclusive: a superseding write must never
+  collapse onto an existing rid.
+- `yantrikdb_recall` accepts `include_superseded` (default `false`) to return
+  the full chain, and `as_of` to answer "what was current at time T?".
+- `as_of` accepts Unix timestamps, ISO-8601 with an explicit offset, and naive
+  local ISO timestamps. Unparseable values are rejected rather than silently
+  falling back to the current state.
+- New tool `yantrikdb_links` reads the edges around a record (`outbound`,
+  `inbound`, `both`, optional `link_type`).
+- Known boundary: the `as_of` cut-off is evaluated against the `supersedes`
+  edge timestamp, which is written ≈0.5 ms after the successor's `created_at`.
+  `as_of == successor.created_at` therefore still shows the predecessor as
+  current — correctly, since the correction did not exist yet at that instant.
+  Query at or after the edge timestamp. Covered by
+  `tests/test_memory_integrity_v11.py`.
+- Embedded-only: over the HTTP backend the new arguments are accepted and
+  refused with a `YantrikDBClientError` pointing at `YANTRIKDB_MODE=embedded`
+  (`supersedes_rid`, `include_superseded`, `as_of`, `yantrikdb_links`). Calls
+  without them are unchanged.
+
 ## [0.27.2] — 2026-10-12 — model2vec is now a manifest hard dependency (fixes #92)
 
 ### model2vec is now a manifest dependency (#92)
