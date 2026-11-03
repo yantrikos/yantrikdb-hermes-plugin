@@ -26,10 +26,11 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-from importlib import metadata
 import time
+from importlib import metadata
 
 import pytest
+
 
 # Real-engine tests: skipped where the engine is absent (the CI matrix
 # jobs); the engine-contract job installs it and runs them.
