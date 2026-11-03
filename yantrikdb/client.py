@@ -256,6 +256,10 @@ class YantrikDBConfig:
     # flood the substrate.
     capture_delegations: bool = True
     delegation_max_len: int = 4000
+    # compression_gist: snapshot the pre-compression gist of the dropped
+    # middle into the substrate (see on_pre_compress). On by default; set
+    # False to skip the write when gists keep merging into unrelated records.
+    compression_gist: bool = True
     # tool_profile (v0.10.0): how many tools the model sees every turn.
     #
     #   "core" (default) — the 7 tools an agent actually reaches for. ~1.1k
@@ -555,6 +559,9 @@ class YantrikDBConfig:
             ),
             capture_delegations=_parse_bool(
                 _profile_env("YANTRIKDB_CAPTURE_DELEGATIONS"), default=True,
+            ),
+            compression_gist=_parse_bool(
+                _profile_env("YANTRIKDB_COMPRESSION_GIST"), default=True,
             ),
             maintenance_cadence_turns=_parse_int(
                 _profile_env("YANTRIKDB_MAINTENANCE_CADENCE_TURNS"), 40,

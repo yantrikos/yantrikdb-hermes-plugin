@@ -2603,6 +2603,25 @@ class TestWaveDPreCompressGist:
         ]
         assert compression_writes == []
 
+    def test_compression_gist_disabled_writes_nothing(self, provider, mock_client):
+        provider._config.compression_gist = False
+        messages = [
+            {"role": "user", "content": "investigate the deploy outage"},
+            {"role": "assistant", "content": "started kubectl logs..."},
+            {"role": "user", "content": "tail1"},
+            {"role": "user", "content": "tail2"},
+            {"role": "user", "content": "tail3"},
+            {"role": "user", "content": "tail4"},
+            {"role": "user", "content": "tail5"},
+            {"role": "user", "content": "tail6"},
+        ]
+        provider.on_pre_compress(messages)
+        compression_writes = [
+            c for c in mock_client.remember.call_args_list
+            if (c.kwargs.get("metadata") or {}).get("pre_compression") is True
+        ]
+        assert compression_writes == []
+
 
 class TestWaveECrossAgentSharedBrain:
     """v0.5 Wave E — opt-in cross-agent shared brain. When
