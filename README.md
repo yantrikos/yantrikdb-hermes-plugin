@@ -124,12 +124,12 @@ Mounting is refused when a pack's vectors come from a different embedding space 
 
 ### Context cost
 
-Tool schemas are re-sent on every request, so the tool surface is a per-turn cost. Since v0.10.0 the default profile is `core` — 7 tools, ~1.7k tokens — instead of all 18 (~3.6k):
+Tool schemas are re-sent on every request, so the tool surface is a per-turn cost. Since v0.10.0 the default profile is `core` — 8 tools, ~1.7k tokens — instead of all 19 (~3.6k). (Tool counts verified against `CORE_TOOL_NAMES`/`ALL_TOOL_SCHEMAS` in `yantrikdb/__init__.py` as of v0.28.0, which added `yantrikdb_links` to both; the ≈tokens/turn figures predate that addition and haven't been re-measured.)
 
 | `YANTRIKDB_TOOL_PROFILE` | tools | ≈ tokens/turn |
 |---|---|---|
-| `core` (default) | 7 | ~1,725 |
-| `full` | 18 | ~3,606 |
+| `core` (default) | 8 | ~1,725 |
+| `full` | 19 | ~3,606 |
 
 Nothing is disabled by `core`: `think()` runs automatically at session end, conflicts/hygiene/gaps surface in the system prompt, and the remaining tools are operator diagnostics that stay fully callable. Set `full` to expose them to the model.
 
@@ -584,7 +584,7 @@ The maintainer doesn't promise "I won't quit" — promises like that aren't test
 
 - Every release ships with tests + CI (Python 3.11 / 3.12 / 3.13 / 3.14) + tagged CHANGELOG + a publish gate where the full test suite + ruff + mypy must pass before the wheel uploads to PyPI.
 - First user issue on this repo (multilingual embedding support) was filed and shipped to PyPI the same day — 25 minutes from raised to released.
-- Underlying yantrikdb engine: ~6.7k/mo PyPI downloads; flagship server repo has 176 GitHub stars. Cross-stack ownership (engine + HTTP server + MCP server + this plugin) — 7+ months of parallel maintenance, not a one-week hobby.
+- Underlying yantrikdb engine: ~4.9k/mo PyPI downloads (pypistats `overall`, trailing 30 days); flagship server repo has 179 GitHub stars. Cross-stack ownership (engine + HTTP server + MCP server + this plugin) — 8+ months of parallel maintenance, not a one-week hobby.
 - Independent recognition: accepted into the [Cursor Directory](https://cursor.directory/plugins/yantrikdb) (300k+ developer reach) and (sibling project) the Anthropic MCP Directory.
 - Substrate design deposited as a peer-citable preprint: [10.5281/zenodo.20128887](https://doi.org/10.5281/zenodo.20128887).
 
