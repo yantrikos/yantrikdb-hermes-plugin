@@ -469,7 +469,30 @@ class EmbeddedYantrikDBClient:
                         f"YANTRIKDB_EMBEDDER_CLASS={custom_class!r} must be a "
                         "dotted import path 'module.submodule.ClassName'."
                     )
-                mod = importlib.import_module(mod_path)
+                # `python3 -I` (Hermes' gateway launch) ignores PYTHONPATH and the
+                # bootstrap drops it as well, so a custom class living outside
+                # sys.path can never be imported by name — the provider then
+                # starts without a memory and reports success. YANTRIKDB_EMBEDDER_FILE
+                # names the file directly; spec_from_file_location needs no
+                # sys.path entry. Without the variable this branch is unchanged.
+                mod_file = (os.environ.get("YANTRIKDB_EMBEDDER_FILE") or "").strip()
+                if mod_file:
+                    import importlib.util as _ilu
+
+                    if not os.path.isfile(mod_file):
+                        raise YantrikDBError(
+                            f"YANTRIKDB_EMBEDDER_FILE={mod_file!r} does not exist"
+                        )
+                    _spec = _ilu.spec_from_file_location(mod_path, mod_file)
+                    if _spec is None or _spec.loader is None:
+                        raise YantrikDBError(
+                            f"YANTRIKDB_EMBEDDER_FILE={mod_file!r} is not importable"
+                        )
+                    mod = _ilu.module_from_spec(_spec)
+                    sys.modules[mod_path] = mod
+                    _spec.loader.exec_module(mod)
+                else:
+                    mod = importlib.import_module(mod_path)
                 cls = getattr(mod, cls_name, None)
                 if cls is None:
                     raise YantrikDBError(

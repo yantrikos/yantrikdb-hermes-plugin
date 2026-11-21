@@ -27,6 +27,13 @@ import pytest
 # Fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _no_embedder_file(monkeypatch):
+    """A host-level YANTRIKDB_EMBEDDER_FILE changes which loader the class path
+    takes, so the suite must not inherit one — production sets it."""
+    monkeypatch.delenv("YANTRIKDB_EMBEDDER_FILE", raising=False)
+
+
 @pytest.fixture
 def embedded_module(plugin):
     """The yantrikdb_plugin_under_test.embedded submodule, loaded via conftest."""
@@ -595,3 +602,72 @@ class TestListRecordsNamespaceForwarding:
         assert (call["limit"], call["order"], call["domain"], call["since_rid"]) == (
             7, "desc", "work", "rid-9",
         )
+
+
+# ---------------------------------------------------------------------------
+# Path 3b — the class comes from a FILE, not from an import path
+# ---------------------------------------------------------------------------
+
+class TestEmbedderFileLoader:
+    """YANTRIKDB_EMBEDDER_FILE resolves the class from a file path.
+
+    Hermes launches the gateway with ``python3 -I`` and drops PYTHONPATH, so a
+    custom embedder that is not importable by name leaves the provider without
+    a memory while reporting success. The file path must resolve a class that
+    sits outside ``sys.path`` entirely (issue: embedder unreachable under -I).
+    """
+
+    def _write_embedder(self, directory):
+        directory.mkdir()
+        path = directory / "file_emb.py"
+        path.write_text(
+            "class Emb:\n"
+            "    embedding_dim = 8\n"
+            "    def encode(self, text):\n"
+            "        return [0.1] * 8\n"
+        )
+        return path
+
+    def test_class_resolved_from_file_outside_sys_path(
+        self, embedded_module, mock_engine_class, make_config, tmp_path, monkeypatch,
+    ):
+        path = self._write_embedder(tmp_path / "outside")
+        assert str(path.parent) not in sys.path
+
+        monkeypatch.setenv("YANTRIKDB_EMBEDDER_FILE", str(path))
+        cfg = make_config(embedder_class="file_emb.Emb", embedding_dim=8)
+
+        embedded_module.EmbeddedYantrikDBClient(cfg)
+
+        passed = mock_engine_class.return_value.set_embedder.call_args.args[0]
+        assert type(passed).__name__ == "Emb"
+        assert type(passed).__module__ == "file_emb"
+        mock_engine_class.return_value.set_embedder_named.assert_not_called()
+
+    def test_missing_file_says_which_file(
+        self, embedded_module, mock_engine_class, make_config, tmp_path,
+        monkeypatch, client_module,
+    ):
+        missing = tmp_path / "nope.py"
+        monkeypatch.setenv("YANTRIKDB_EMBEDDER_FILE", str(missing))
+        cfg = make_config(embedder_class="nope.Emb", embedding_dim=8)
+
+        with pytest.raises(client_module.YantrikDBError) as exc:
+            embedded_module.EmbeddedYantrikDBClient(cfg)
+        assert "does not exist" in str(exc.value)
+        assert str(missing) in str(exc.value)
+
+    def test_without_the_variable_the_import_path_is_used(
+        self, embedded_module, mock_engine_class, make_config, tmp_path, monkeypatch,
+    ):
+        """The branch is additive: no variable, unchanged behaviour."""
+        monkeypatch.delenv("YANTRIKDB_EMBEDDER_FILE", raising=False)
+        path = self._write_embedder(tmp_path / "importable")
+        monkeypatch.syspath_prepend(str(path.parent))
+        cfg = make_config(embedder_class="file_emb.Emb", embedding_dim=8)
+
+        embedded_module.EmbeddedYantrikDBClient(cfg)
+
+        passed = mock_engine_class.return_value.set_embedder.call_args.args[0]
+        assert type(passed).__name__ == "Emb"
+        assert type(passed).__module__ == "file_emb"
