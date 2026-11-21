@@ -781,9 +781,9 @@ class TestHandleToolCall:
             "yantrikdb_relate",
             {"entity": "Alice", "target": "Acme", "relationship": "works_at"},
         )
-        mock_client.relate.assert_called_once_with(
-            "Alice", "Acme", "works_at", namespace="hermes:workspace:coder",
-        )
+        # No namespace: the wrapper dropped it (edges are store-wide) and now
+        # refuses it, so passing one here only looked like scoping.
+        mock_client.relate.assert_called_once_with("Alice", "Acme", "works_at")
         assert json.loads(out)["edge_id"] == "e1"
 
     def test_relate_requires_all_three_fields(self, provider, mock_client):

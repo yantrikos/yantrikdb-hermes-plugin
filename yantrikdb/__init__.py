@@ -2938,10 +2938,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
             return tool_error(
                 "Missing required parameters: entity, target, relationship"
             )
-        resp = self._require_client().relate(
-            entity, target, relationship,
-            namespace=self._namespace,
-        )
+        # No namespace: edges are store-wide (engine relate() takes source,
+        # target and type only). Passing it looked like scoping and was dropped
+        # in the wrapper; the wrapper now refuses it, so stop pretending.
+        resp = self._require_client().relate(entity, target, relationship)
         self._record_success()
         return json.dumps({"edge_id": resp.get("edge_id"), "stored": True})
 
