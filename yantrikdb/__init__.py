@@ -1016,11 +1016,34 @@ TASKS_SCHEMA = {
     },
 }
 
+REJECT_RECALLED_SCHEMA = {
+    "name": "yantrikdb_reject_recalled",
+    "description": (
+        "Reject memories a recall returned but that did not fit the query they "
+        "answered. Not a deletion — nothing is forgotten; the engine records the "
+        "irrelevance as a label, and that label is what the learning loop counts. "
+        "Use it when a recall surfaces something wrong, especially when the same "
+        "wrong memory keeps coming back."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "rids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Memory ids as returned by yantrikdb_recall.",
+            },
+        },
+        "required": ["rids"],
+    },
+}
+
 ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     REMEMBER_SCHEMA,
     RECALL_SCHEMA,
     LINKS_SCHEMA,
     FORGET_SCHEMA,
+    REJECT_RECALLED_SCHEMA,
     THINK_SCHEMA,
     CONFLICTS_SCHEMA,
     RESOLVE_CONFLICT_SCHEMA,
@@ -1066,6 +1089,7 @@ CORE_TOOL_NAMES: frozenset[str] = frozenset({
     "yantrikdb_remember",
     "yantrikdb_recall",
     "yantrikdb_forget",
+    "yantrikdb_reject_recalled",
     "yantrikdb_links",
     "yantrikdb_relate",
     "yantrikdb_conflicts",
@@ -2578,6 +2602,8 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_recall(args)
             elif tool_name == "yantrikdb_forget":
                 raw = self._do_forget(args)
+            elif tool_name == "yantrikdb_reject_recalled":
+                raw = self._do_reject_recalled(args)
             elif tool_name == "yantrikdb_links":
                 raw = self._do_links(args)
             elif tool_name == "yantrikdb_think":
@@ -2809,6 +2835,25 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # results. Silent no-op when self-tuning is off or no sidecar.
         self_tuning = bool(self._config and self._config.self_tuning_recall)
         reinforce_rids = _coerce_str_list(args.get("reinforce"))
+        # Two consumers, one event — and they are switched separately on purpose.
+        # The sidecar feeds THIS install's local re-rank boost (self_tuning); the
+        # engine label feeds the learning loop, and that loop needs it whether or
+        # not the local boost is on. Without it, run_learning() stays at
+        # insufficient_evidence however often a memory proves useful.
+        # Never fatal: a recall must not fail because a label did.
+        if reinforce_rids:
+            # handle_tool_call guarantees a client here; naming it once also
+            # keeps the Optional out of the loop (mypy union-attr).
+            client = self._require_client()
+            for _rid in reinforce_rids:
+                try:
+                    client.recall_feedback(
+                        _rid, "relevant", query_text=query,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("YantrikDB recall_feedback(%s) failed: %s", _rid, e)
+                    break
+
         if self_tuning and reinforce_rids:
             self._bump_recall_feedback(reinforce_rids, "reinforced")
 
@@ -2881,6 +2926,14 @@ class YantrikDBMemoryProvider(MemoryProvider):
         resp = self._require_client().forget(rid)
         self._record_success()
         return json.dumps({"rid": rid, "found": bool(resp.get("found", False))})
+
+    def _do_reject_recalled(self, args: dict[str, Any]) -> str:
+        rids = _coerce_str_list(args.get("rids"))
+        if not rids:
+            return tool_error("Missing required parameter: rids (non-empty list)")
+        resp = self._require_client().reject_recalled(rids)
+        self._record_success()
+        return json.dumps({"rejected": resp.get("rejected", rids)})
 
     def _do_think(self, args: dict[str, Any]) -> str:
         resp = self._require_client().think(

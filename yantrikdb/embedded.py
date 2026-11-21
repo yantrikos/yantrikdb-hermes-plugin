@@ -597,6 +597,52 @@ class EmbeddedYantrikDBClient:
 
     # -- Operational --------------------------------------------------
 
+    def recall_feedback(
+        self,
+        rid: str,
+        feedback: str,
+        *,
+        query_text: str | None = None,
+        score: float | None = None,
+        rank: int | None = None,
+    ) -> dict[str, Any]:
+        """Explicit relevance feedback for one recall result (engine ``recall_feedback``).
+
+        ``feedback`` is ``"relevant"`` or ``"irrelevant"``. This is the gold-label
+        source the learning loop counts — without rows here, ``run_learning()``
+        reports ``insufficient_evidence`` however many impressions exist.
+        """
+        if feedback not in ("relevant", "irrelevant"):
+            raise YantrikDBError(
+                f"feedback must be 'relevant' or 'irrelevant', got {feedback!r}"
+            )
+        try:
+            self._db.recall_feedback(
+                query_text=query_text,
+                query_embedding=None,
+                rid=rid,
+                feedback=feedback,
+                score_at_retrieval=score,
+                rank_at_retrieval=rank,
+            )
+        except Exception as e:
+            raise _map_engine_error("recall_feedback", e) from e
+        return {"ok": True, "rid": rid, "feedback": feedback}
+
+    def reject_recalled(self, rids: list[str]) -> dict[str, Any]:
+        """Reject served results as irrelevant to the query they were served for.
+
+        Not a deletion: the engine records the label and keeps the memory.
+        """
+        ids = [str(r) for r in rids if r]
+        if not ids:
+            raise YantrikDBError("rids must name at least one memory")
+        try:
+            self._db.reject_recalled(ids)
+        except Exception as e:
+            raise _map_engine_error("reject_recalled", e) from e
+        return {"ok": True, "rejected": ids}
+
     def health(self) -> dict[str, Any]:
         return {
             "status": "ok",

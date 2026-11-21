@@ -229,6 +229,7 @@ EXPECTED_TOOL_NAMES = {
     "yantrikdb_recall",
     "yantrikdb_links",
     "yantrikdb_forget",
+    "yantrikdb_reject_recalled",
     "yantrikdb_think",
     "yantrikdb_conflicts",
     "yantrikdb_resolve_conflict",
@@ -290,7 +291,7 @@ class TestToolSchemas:
             "yantrikdb_skill_search", "yantrikdb_skill_define",
             "yantrikdb_skill_outcome", "yantrikdb_packs", "yantrikdb_fleet",
         }
-        assert len(names) == 19
+        assert len(names) == 20
 
     def test_core_profile_is_materially_cheaper(self, provider_module, monkeypatch):
         """The point of the profile is per-turn token cost — pin the win so a

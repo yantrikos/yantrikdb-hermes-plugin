@@ -1220,6 +1220,22 @@ class YantrikDBClient:
             body["weight"] = float(weight)
         return self._request("POST", "/v1/relate", body)
 
+    def recall_feedback(
+        self, rid: str, feedback: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        raise YantrikDBClientError(
+            "recall_feedback is only available in embedded mode: the HTTP API has "
+            "no feedback route, so a remote store cannot record relevance labels "
+            "and its learning loop stays at insufficient_evidence. Use "
+            "YANTRIKDB_MODE=embedded to collect feedback."
+        )
+
+    def reject_recalled(self, rids: list[str]) -> dict[str, Any]:
+        raise YantrikDBClientError(
+            "reject_recalled is only available in embedded mode: the HTTP API has "
+            "no feedback route. Use YANTRIKDB_MODE=embedded."
+        )
+
     def stats(self, *, namespace: str | None = None) -> dict[str, Any]:
         params = {"namespace": namespace} if namespace else None
         return self._request("GET", "/v1/stats", params=params)
