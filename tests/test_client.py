@@ -188,7 +188,10 @@ class TestRequestFormation:
         mock_session.request.return_value = _make_response(200, {"rid": "r1"})
         client.remember("x", metadata={"session_id": "s1"})
         body = mock_session.request.call_args.kwargs["json"]
-        assert body["metadata"] == {"session_id": "s1"}
+        # The caller's keys survive; the provenance cut adds its two (DD-01).
+        assert body["metadata"]["session_id"] == "s1"
+        assert body["metadata"]["temporal_kind"] == "observation"
+        assert body["metadata"]["confidence_basis"] == "asserted"
 
     def test_remember_skips_optional_fields_when_absent(
         self, client, mock_session,
@@ -198,7 +201,10 @@ class TestRequestFormation:
         body = mock_session.request.call_args.kwargs["json"]
         assert "domain" not in body
         assert "memory_type" not in body
-        assert "metadata" not in body
+        # Not absent any more: every write carries a provenance claim now.
+        assert body["metadata"] == {
+            "temporal_kind": "observation", "confidence_basis": "asserted",
+        }
 
     def test_recall_body(self, client, mock_session):
         mock_session.request.return_value = _make_response(200, {"results": []})
