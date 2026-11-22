@@ -2958,6 +2958,13 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 "importance": r.get("importance"),
                 "domain": r.get("domain"),
                 "created_at": r.get("created_at"),
+                # Memory area and lifecycle state, passed through from the hit
+                # (the engine already returns all three; no lookup, no default).
+                # "consolidation_status" is deliberately absent: this plugin never
+                # asks for consolidated records, so the value could not vary.
+                "namespace": r.get("namespace"),
+                "current_status": r.get("current_status"),
+                "superseded_by": r.get("superseded_by"),
                 # Explainable recall — server returns a list of reasons per result.
                 "why_retrieved": why,
             })
