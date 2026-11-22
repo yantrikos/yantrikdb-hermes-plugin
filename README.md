@@ -281,6 +281,32 @@ echo "YANTRIKDB_EMBEDDER_HF=sentence-transformers/paraphrase-multilingual-MiniLM
 
 > **Embedder dependencies and Hermes updates.** `model2vec` is declared as a hard runtime dependency in the plugin manifest's `pip_dependencies` (and `pyproject.toml`'s `[project] dependencies`) on `main`, fixing #92 so it survives Hermes' uv-managed environment regeneration — `hermes update` no longer silently drops it as of v0.28.0. On earlier versions, `model2vec` can still be dropped on `hermes update` and may need reinstalling. Only `sentence-transformers` (which pulls in PyTorch) and anything a custom `YANTRIKDB_EMBEDDER_CLASS` imports remain outside the manifest: if you configure `YANTRIKDB_EMBEDDER_HF`, reinstall its dependencies into the plugin's environment after a regeneration (`uv pip install --python <plugin-env>/bin/python 'yantrikdb-hermes-plugin[sentence-transformers]'` or `sentence-transformers`). If an embedder stops loading after an update, the error message names the interpreter (`sys.executable`) and `sys.path` it searched. Hermes runs plugins with `-I`, so `PYTHONPATH` and user-site installs don't help. The bundled default and `YANTRIKDB_EMBEDDER=potion-base-*` need no extra packages and are unaffected.
 
+### Custom embedder outside `sys.path`: `YANTRIKDB_EMBEDDER_FILE`
+
+`YANTRIKDB_EMBEDDER_CLASS` is a **dotted import path**, so the module has to be importable by
+name. Hermes launches the gateway with `python3 -I` and the bootstrap drops `PYTHONPATH`, so
+a class that lives anywhere else — a file next to your store, a checkout, an ops directory —
+is unreachable, and the provider starts without a memory.
+
+`YANTRIKDB_EMBEDDER_FILE` names the **file** instead. It is loaded with
+`importlib.util.spec_from_file_location`, which needs no `sys.path` entry:
+
+```bash
+YANTRIKDB_EMBEDDER_CLASS=my_embedder.OllamaBge      # module name, used as the load key
+YANTRIKDB_EMBEDDER_FILE=/opt/models/my_embedder.py  # where the file actually is
+YANTRIKDB_EMBEDDING_DIM=1024
+```
+
+Examples:
+
+- `/opt/models/my_embedder.py` stays outside every `site-packages`.
+- A venv-blind deploy where the class ships with the store rather than with the plugin.
+
+Without the variable the behaviour is unchanged: the class is imported by name as before. A
+missing or unloadable file raises with the path in the message instead of a bare
+`ModuleNotFoundError`, because "the file is not there" and "the module is not on the path" are
+different problems with different fixes.
+
 ### Optional: quiet the HuggingFace embedder
 
 `YANTRIKDB_EMBEDDER_HF` uses `sentence-transformers`, which by default emits noise to stdout — tqdm progress bars on every encode and a one-time HF Hub auth warning at startup. The plugin disables the per-encode progress bars internally (v0.4.12+). For the rest, add to your `.env`:
