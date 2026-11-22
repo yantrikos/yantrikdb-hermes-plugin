@@ -1493,6 +1493,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # dir), capture the reason here so system_prompt_block can surface
         # it to the model instead of yantrikdb appearing silently absent.
         self._init_error: str | None = None
+        # A derived namespace that holds nothing while the base namespace does:
+        # the store is healthy, the session reads an empty scope, and every
+        # count still says "ok". Rendered into the prompt block, not raised —
+        # an empty scope is not a failure, but it must not look like a memory.
+        self._namespace_hint: str | None = None
+        self._scope_checked = False
         # v0.9.2: count writes dropped because the backend never initialized,
         # and log the first one loudly (issue #50, layer 2). A silent drop lets
         # the model believe a memory was saved when it was not.
@@ -1897,6 +1903,36 @@ class YantrikDBMemoryProvider(MemoryProvider):
 
         self._auto_mount_packs()
 
+    def _check_namespace_scope(self) -> None:
+        """Tell an empty scope apart from a healthy session.
+
+        The namespace is derived per agent identity (``base:workspace:identity``,
+        plus the owner shard when owner scoping is on). That isolation is
+        correct by design — but when the store's records live in the base
+        namespace, the session reads an empty one, recall returns nothing, and
+        every status line still says "ok". Two one-row probes separate the two
+        states; anything unreadable answers "cannot tell" and stays quiet.
+        """
+        if self._client is None or self._config is None:
+            return
+        resolved, base = self._namespace, self._config.namespace
+        if not resolved or not base or resolved == base:
+            return
+        try:
+            here = self._client.list_records(namespace=resolved, limit=1)
+            there = self._client.list_records(namespace=base, limit=1)
+        except (YantrikDBError, AttributeError):
+            # Older engines have no list_records; an absent probe is not a
+            # finding, and inventing a scope warning would be worse than silence.
+            return
+        if not here.get("records") and there.get("records"):
+            self._namespace_hint = (
+                f"this session reads namespace `{resolved}`, which holds no "
+                f"records, while `{base}` does — recall here returns nothing "
+                f"although the store is not empty"
+            )
+            logger.warning("YantrikDB scope: %s", self._namespace_hint)
+
     def _auto_mount_packs(self) -> None:
         """Mount the operator's declared packs for this session (v0.11).
 
@@ -2149,6 +2185,9 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     "for diagnostics."
                 )
             return rules
+        if not self._scope_checked:
+            self._check_namespace_scope()
+            self._scope_checked = True
         scope_line = (
             "Owner scoping enabled; memories are isolated by resolved owner namespace.\n"
             if self._scope_metadata
@@ -2165,7 +2204,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "# YantrikDB Memory\n"
             f"Active. Namespace: `{self._namespace}`.\n"
             f"{scope_line}"
-            "Self-maintaining memory: canonicalizes duplicates, surfaces "
+            + (
+                f"> **Memory scope.** {self._namespace_hint}.\n"
+                if self._namespace_hint
+                else ""
+            )
+            + "Self-maintaining memory: canonicalizes duplicates, surfaces "
             "contradictions, ranks with recency awareness, and explains recall. "
             "Use `yantrikdb_recall` before claiming facts about the user or "
             "past decisions — each result includes a why_retrieved reason list. "
