@@ -963,12 +963,22 @@ class EmbeddedYantrikDBClient:
         # the kwarg keep working. When the provider derives a workspace-
         # scoped namespace, this routes the edge into that namespace
         # rather than the engine's constructor-time default.
+        # Edges have no namespace: `link()`/`relate()` on the engine take
+        # (source, target, rel_type) and nothing else, so an edge lives in the
+        # store, not in a scope. Accepting the argument and dropping it made a
+        # caller believe the edge was scoped — it was not, and nothing said so.
+        # Refuse it instead; a silent no-op is the one outcome nobody can debug.
+        if namespace is not None:
+            raise YantrikDBError(
+                "namespace is not supported for edges: the engine's relate()/"
+                "link() take (source, target, rel_type) only and store edges "
+                "store-wide. Omit the argument, or filter by namespace on the "
+                "records instead of the edge."
+            )
         rel_kwargs: dict[str, Any] = {
             "rel_type": relationship,
             "weight": float(weight) if weight is not None else 1.0,
         }
-        # NOTE: namespace kwarg is intentionally NOT forwarded to the engine
-        # until the engine adds namespace-scoped edge support.
         try:
             edge_id = self._db.relate(entity, target, **rel_kwargs)
         except Exception as e:
