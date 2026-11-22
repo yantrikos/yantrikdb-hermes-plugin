@@ -266,6 +266,29 @@ def find_engine_ext_path() -> str | None:
     return None
 
 
+def _with_default_provenance(metadata: Any, *, temporal_kind: str = "observation") -> Any:
+    """Give every write from this plugin a provenance claim (DD-01, 2026-11-21).
+
+    Records written before this cut stay unmarked **on purpose**: their origin is
+    not knowable, and inventing one afterwards would be worse than the gap. The
+    default says the honest thing about an automatic write — the user said it
+    (``asserted``), it is an observation, not a decision.
+
+    Explicit values always win: a caller who knows the basis sets it. Values come
+    from the engine's own vocabulary, because ``provenance_gate_mode=enforce``
+    rejects anything else.
+    """
+    if metadata is not None and not isinstance(metadata, dict):
+        # Not ours to interpret; leave an input we do not understand alone
+        # rather than reshaping it. `None` is the normal case and must not
+        # take this branch — a payload-free write still gets a claim.
+        return metadata
+    meta = dict(metadata or {})
+    meta.setdefault("temporal_kind", temporal_kind)
+    meta.setdefault("confidence_basis", "asserted")
+    return meta
+
+
 def load_engine_yantrikdb_class() -> Any:
     """Return the engine's ``YantrikDB`` class, resilient to the package-name
     collision of issue #50.
@@ -691,6 +714,7 @@ class EmbeddedYantrikDBClient:
         ns = namespace or self.config.namespace
         mt = memory_type or "semantic"
         dom = domain or "general"
+        metadata = _with_default_provenance(metadata)
         if supersedes_rid:
             if idempotency_key:
                 raise YantrikDBClientError(
@@ -1448,7 +1472,7 @@ class EmbeddedYantrikDBClient:
             memory_type="procedural",
             namespace=SKILL_NAMESPACE,
             domain="skill",
-            metadata=metadata,
+            metadata=_with_default_provenance(metadata, temporal_kind="rule"),
         )
         return {"rid": rid, "skill_id": skill_id, "stored": True}
 
@@ -1484,7 +1508,7 @@ class EmbeddedYantrikDBClient:
             memory_type="episodic",
             namespace=OUTCOME_NAMESPACE,
             domain="skill_outcome",
-            metadata=metadata,
+            metadata=_with_default_provenance(metadata),
         )
         return {"rid": rid, "skill_id": skill_id, "recorded": True}
 

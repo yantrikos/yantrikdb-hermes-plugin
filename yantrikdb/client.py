@@ -1021,6 +1021,14 @@ class YantrikDBClient:
         idempotency_key: str | None = None,
         supersedes_rid: str | None = None,
     ) -> dict[str, Any]:
+        # Same provenance cut as the embedded backend (DD-01, 2026-11-21): the
+        # field pair is what a reader needs to tell "said" from "verified", and
+        # it must not depend on which transport wrote the record. Explicit
+        # values win; a payload that is not a dict is left alone.
+        if metadata is None or isinstance(metadata, dict):
+            metadata = dict(metadata or {})
+            metadata.setdefault("temporal_kind", "observation")
+            metadata.setdefault("confidence_basis", "asserted")
         # Correction chains are an embedded-only capability: the HTTP backend
         # has no endpoint for link creation. Refuse loudly instead of letting
         # the kwarg fall into a TypeError at the first tool call.
