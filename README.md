@@ -456,6 +456,15 @@ Calls that omit the new arguments behave exactly as before on both backends.
 write must never collapse onto an existing rid, because that would silently
 turn a correction into a no-op.
 
+### Recall feedback and write provenance (merged to `main`, unreleased)
+
+Two more additions landed on `main` after v0.28.0 but aren't in a tagged release yet — noted here so they aren't shipped-but-invisible before the next cut:
+
+- **`yantrikdb_reject_recalled(rids)`** marks recalled results irrelevant and sends the label to the engine's `recall_feedback`, the same call `recall(reinforce=[...])` now also makes. Previously `reinforce` only bumped a local JSON sidecar — the engine's own learning loop never received a label, so it could report having insufficient feedback to tune ranking even with real recall traffic already happening. Embedded-only, like the other link/correction primitives above.
+- **Write provenance.** Every new `yantrikdb_remember` write now carries `temporal_kind` (default `asserted`) and `confidence_basis` (default `observation`); explicit values always win and a partial claim is completed rather than overwritten. Existing records are not backfilled — a deliberate cut, not a migration, since inventing provenance for old writes would repeat the problem it's meant to fix.
+
+Once released, `yantrikdb_reject_recalled` joins the core tool set (core 9 / full 20 tools) — the [Context cost](#context-cost) counts above are current for the last tagged release, v0.28.0.
+
 ### Compared to other Hermes memory providers
 
 Each row in the table below is backed by [`tests/comparison/findings_scale_lxc/<provider>/`](tests/comparison/findings_scale_lxc/) — the actual `findings_scale.yaml`, `transcript.md`, and `raw/` response capture from running a 1000-fact + 20-query probe against that provider on a real Hermes 0.9.0 install (LXC 129, commit `4610551`). The corpus is deterministic (`fixtures/corpus_1k.json`, seed=20260512: 600 realistic agent-memory facts + 300 noise + 50 planted duplicates + 50 planted contradictions); the probe is provider-agnostic and reproducible. Methodology details in [`tests/comparison/README.md`](tests/comparison/README.md).
@@ -610,7 +619,7 @@ The maintainer doesn't promise "I won't quit" — promises like that aren't test
 
 - Every release ships with tests + CI (Python 3.11 / 3.12 / 3.13 / 3.14) + tagged CHANGELOG + a publish gate where the full test suite + ruff + mypy must pass before the wheel uploads to PyPI.
 - First user issue on this repo (multilingual embedding support) was filed and shipped to PyPI the same day — 25 minutes from raised to released.
-- Underlying yantrikdb engine: ~4.9k/mo PyPI downloads (pypistats `overall`, trailing 30 days); flagship server repo has 179 GitHub stars. Cross-stack ownership (engine + HTTP server + MCP server + this plugin) — 8+ months of parallel maintenance, not a one-week hobby.
+- Underlying yantrikdb engine: ~4.3k/mo PyPI downloads (pypistats `overall`, trailing 30 days); flagship server repo has 182 GitHub stars. Cross-stack ownership (engine + HTTP server + MCP server + this plugin) — 8+ months of parallel maintenance, not a one-week hobby.
 - Independent recognition: accepted into the [Cursor Directory](https://cursor.directory/plugins/yantrikdb) (300k+ developer reach) and (sibling project) the Anthropic MCP Directory.
 - Substrate design deposited as a peer-citable preprint: [10.5281/zenodo.20128887](https://doi.org/10.5281/zenodo.20128887).
 
