@@ -1522,6 +1522,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
         # One warning names it; the rest stay quiet so a persistently
         # unreachable store cannot flood a long-running agent's log.
         self._maintenance_failure_warned: bool = False
+        # Triggers of type `maintenance_incomplete` from the last think():
+        # a namespace whose conflict/redundancy scan could not be evaluated.
+        # "No conflicts found" and "conflicts could not be evaluated" must not
+        # look the same to the agent, so this is surfaced in the prompt.
+        self._maintenance_incomplete: list[dict[str, Any]] = []
 
         self._prefetch_results: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()
@@ -2198,6 +2203,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
             + self._format_recent_skills_block()
             + self._format_auto_skill_block()
             + self._format_pending_conflicts_block()
+            + self._format_maintenance_incomplete_block()
             + self._format_hygiene_block()
             + self._format_conversation_block()
             + self._format_pack_block()
@@ -4033,8 +4039,35 @@ class YantrikDBMemoryProvider(MemoryProvider):
         )
         return "\n".join(lines)
 
-    # -- v0.5.0 Wave A3: pending-conflict surface -------------------------
+    # -- maintenance diagnostics -------------------------------------------
 
+    def _format_maintenance_incomplete_block(self) -> str:
+        """Show maintenance phases whose last pass could not be evaluated.
+
+        `diagnostics` comes from the engine's `ThinkResult` and is not a
+        trigger: no lifecycle, no cooldown. That is why it can only surface
+        here. For a degraded phase, `conflicts_found = 0` means "not measured",
+        not "none exist" — an agent that reads it as a clean result will tell
+        the user their memory is consistent when it never looked.
+        """
+        if not self._maintenance_incomplete:
+            return ""
+        lines = ["", "## Memory maintenance is INCOMPLETE"]
+        for d in self._maintenance_incomplete[:5]:
+            phase = d.get("phase") or "unknown phase"
+            namespace = d.get("namespace") or "store-wide"
+            cause = (d.get("cause") or "no cause reported").strip()
+            status = d.get("status") or "incomplete"
+            lines.append(f"- `{phase}` on `{namespace}` ({status}): {cause[:300]}")
+        lines.append(
+            "Those phases did NOT run to completion. Do not report the memory "
+            "as consistent, and do not treat an empty conflict list as evidence "
+            "that there are none. Tell the user the store needs repair before "
+            "those answers mean anything."
+        )
+        return "\n".join(lines)
+
+    # -- v0.5.0 Wave A3: pending-conflict surface -------------------------
     def _format_pending_conflicts_block(self) -> str:
         """Show open conflicts() entries the agent should know about.
 
@@ -4245,6 +4278,29 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 stats.get("conflicts_found"),
                 stats.get("duration_ms"),
             )
+            # `diagnostics` is the operating channel: maintenance phases that
+            # could not run completely on this pass. It is deliberately NOT a
+            # trigger — no lifecycle, no cooldown — so the only place it can
+            # arrive is here, in the result. Dropping it made `conflicts_found=0`
+            # from a failed phase indistinguishable from "nothing to find".
+            diagnostics = stats.get("diagnostics") or []
+            self._maintenance_incomplete = [
+                d for d in diagnostics
+                if isinstance(d, dict)
+                and d.get("status") in ("incomplete", "failed")
+            ]
+            if self._maintenance_incomplete:
+                logger.warning(
+                    "YantrikDB %s think: maintenance INCOMPLETE (%d phase(s)): %s — "
+                    "conflicts_found=%s is a lower bound, not a clean result.",
+                    reason,
+                    len(self._maintenance_incomplete),
+                    [
+                        f"{d.get('phase')}@{(d.get('namespace') or '<store>')}"
+                        for d in self._maintenance_incomplete
+                    ],
+                    stats.get("conflicts_found"),
+                )
         except YantrikDBError as e:
             if not self._maintenance_failure_warned:
                 self._maintenance_failure_warned = True

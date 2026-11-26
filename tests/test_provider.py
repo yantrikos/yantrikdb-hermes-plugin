@@ -1040,6 +1040,83 @@ class TestOnSessionEnd:
         provider.on_session_end([])
         mock_client.think.assert_not_called()
 
+    # ----- maintenance diagnostics reach the agent, not just the log ----
+
+    def test_maintenance_incomplete_reaches_the_prompt(self, provider, mock_client):
+        """A namespace whose scan could not run must be visible to the agent.
+
+        `conflicts_found=0` from a failed index load is "not measured", not
+        "none exist". The trigger the engine emits for that case used to stop
+        at the info log line.
+        """
+        mock_client.think.return_value = {
+            "diagnostics": [
+                {
+                    "phase": "redundancy_scan",
+                    "namespace": "vela:hugo",
+                    "cause": "no such table: substitution_members",
+                    "status": "failed",
+                }
+            ],
+            "triggers": [],
+            "consolidation_count": 0,
+            "conflicts_found": 0,
+            "duration_ms": 5,
+        }
+
+        provider.on_session_end([])
+        block = provider.system_prompt_block()
+
+        assert "maintenance is INCOMPLETE" in block
+        assert "vela:hugo" in block
+        assert "no such table: substitution_members" in block
+        assert "redundancy_scan" in block
+
+    def test_clean_maintenance_run_clears_the_block(self, provider, mock_client):
+        """The block is a state of the last run, not a sticky flag."""
+        mock_client.think.return_value = {
+            "diagnostics": [
+                {
+                    "phase": "redundancy_scan",
+                    "namespace": "vela:hugo",
+                    "cause": "no such table: substitution_members",
+                    "status": "failed",
+                }
+            ],
+            "triggers": [],
+            "consolidation_count": 0,
+            "conflicts_found": 0,
+            "duration_ms": 5,
+        }
+        provider.on_session_end([])
+        assert "maintenance is INCOMPLETE" in provider.system_prompt_block()
+
+        mock_client.think.return_value = {
+            "diagnostics": [], "triggers": [], "consolidation_count": 0,
+            "conflicts_found": 0, "duration_ms": 5,
+        }
+        provider.on_session_end([])
+        assert "maintenance is INCOMPLETE" not in provider.system_prompt_block()
+
+    def test_diagnostics_are_not_read_from_triggers(self, provider, mock_client):
+        """An old-style trigger must NOT be mistaken for a diagnostic.
+
+        The separation is the point: a trigger has a lifecycle, a diagnostic
+        does not. A provider that scans `triggers` for a type name would
+        silently resurrect the coupling this change removed.
+        """
+        mock_client.think.return_value = {
+            "diagnostics": [],
+            "triggers": [
+                {"trigger_type": "maintenance_incomplete", "reason": "old-style"}
+            ],
+            "consolidation_count": 0,
+            "conflicts_found": 0,
+            "duration_ms": 5,
+        }
+        provider.on_session_end([])
+        assert "maintenance is INCOMPLETE" not in provider.system_prompt_block()
+
     # ----- Auto-acknowledge triggers (v0.4.15, closes #22) ---------
 
     def test_auto_acknowledge_off_by_default(self, provider, mock_client):
