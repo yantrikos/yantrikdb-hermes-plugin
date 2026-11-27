@@ -1475,6 +1475,29 @@ class EmbeddedYantrikDBClient:
         out.sort(key=lambda h: h.get("created_at") or 0.0, reverse=True)
         return out
 
+
+    def _active_successor(self, rid: str) -> dict[str, Any] | None:
+        """An inbound `supersedes` link that points at `rid`, if any exists.
+
+        This is the pre-write half of the concurrent-revision guard: if the
+        engine already holds a successor for the version the caller read, the
+        caller is stale and any write it makes would be refused by the engine
+        *after* the record was persisted — an orphan row, a raw RuntimeError
+        out of the extension, and two active versions served by search.
+        """
+        linked = getattr(self._db, "linked_records", None)
+        if not linked:
+            return None
+        try:
+            rows = linked(rid, direction="inbound", link_type="supersedes") or []
+        except Exception:  # noqa: BLE001 - a probe must never fail the write path
+            return None
+        for row in rows:
+            other = row.get("source_rid") or row.get("rid")
+            if other and other != rid:
+                return {"rid": other}
+        return None
+
     def _skill_current(self, skill_id: str) -> dict[str, Any] | None:
         """The version that is not superseded by another one."""
         versions = self._skill_versions(skill_id)
@@ -1560,31 +1583,52 @@ class EmbeddedYantrikDBClient:
                         f"skill {skill_id!r} already exists with different content "
                         "(on_conflict='reject'); pass supersedes or on_conflict='replace'"
                     )
+                # Stale writer: the version this caller read already has a
+                # successor. Refuse BEFORE the write — no orphan row, no link
+                # the engine will reject, and no second active version. The
+                # caller re-reads and supersedes the current one.
+                successor = self._active_successor(current["rid"])
+                if successor is not None:
+                    raise YantrikDBClientError(
+                        f"skill {skill_id!r} was revised concurrently; the current "
+                        f"version is {successor['rid']}, not {current['rid']}. "
+                        "Re-read it and supersede the current version."
+                    )
 
             links = []
             if current is not None:
                 links.append({"target_rid": current["rid"], "link_type": "supersedes"})
 
             record = getattr(self._db, "record_with_links", None)
-            if links and record is not None:
-                rid = record(
+            try:
+                if links and record is not None:
+                    rid = record(
                     body,
                     links,
                     memory_type="procedural",
                     namespace=SKILL_NAMESPACE,
                     domain="skill",
-                    metadata=_with_default_provenance(metadata, temporal_kind="rule"),
-                )
-            else:
-                # No predecessor (first version) or an old wheel without
-                # record_with_links: a single record needs no link.
-                rid = self._db.record_text(
-                    body,
-                    memory_type="procedural",
-                    namespace=SKILL_NAMESPACE,
-                    domain="skill",
-                    metadata=_with_default_provenance(metadata, temporal_kind="rule"),
-                )
+                        metadata=_with_default_provenance(metadata, temporal_kind="rule"),
+                    )
+                else:
+                    # No predecessor (first version) or an old wheel without
+                    # record_with_links: a single record needs no link.
+                    rid = self._db.record_text(
+                        body,
+                        memory_type="procedural",
+                        namespace=SKILL_NAMESPACE,
+                        domain="skill",
+                        metadata=_with_default_provenance(metadata, temporal_kind="rule"),
+                    )
+            except RuntimeError as exc:
+                # The guard above closes the stale-writer window; this closes
+                # the residual race between the check and the write. A raw
+                # RuntimeError out of the extension tells a caller nothing it
+                # can act on, and it hides whether a row was written.
+                raise YantrikDBClientError(
+                    f"skill_define: the engine refused the revision link ({exc}); "
+                    "another writer may have revised this skill concurrently"
+                ) from exc
 
             # Concurrent revision: if another writer superseded the same
             # predecessor, two active versions would coexist. Make the state

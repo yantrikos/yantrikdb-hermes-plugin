@@ -3092,3 +3092,53 @@ class TestWaveBExtractionStatsTool:
         # Canonical "k1" not counted
         assert sum(parsed["by_pattern"].values()) == parsed["total_candidates_sampled"]
         assert parsed["by_speaker"]["user"] >= 3
+
+
+class TestConcurrentRevision:
+    """F2: a stale writer must be refused before anything is written.
+
+    Before this guard the second writer got a raw `RuntimeError` from inside
+    the extension, its record was already persisted, and search served two
+    active versions.
+    """
+
+    class _StaleDB:
+        def __init__(self):
+            self.record_calls = 0
+
+        def recall(self, **kwargs):
+            return [{
+                "rid": "r-old",
+                "current_status": "active",
+                "created_at": 1.0,
+                "metadata": {
+                    "record_type": "skill", "skill_id": "git.commit_clean",
+                    "content_fingerprint": "older", "skill_type": "procedure",
+                    "applies_to": ["git"],
+                },
+            }]
+
+        def linked_records(self, rid, **kwargs):
+            return [{"source_rid": "r-newer", "target_rid": rid}]
+
+        def record_with_links(self, *args, **kwargs):
+            self.record_calls += 1
+            raise AssertionError("a stale revision must not reach the engine")
+
+    def test_stale_writer_is_refused_without_a_write(self, provider_module):
+        import importlib
+
+        emb = importlib.import_module(provider_module.__name__ + ".embedded")
+        client = emb.EmbeddedYantrikDBClient(emb.YantrikDBConfig(mode="embedded"))
+        client._db = self._StaleDB()
+
+        with pytest.raises(provider_module.YantrikDBClientError) as exc:
+            client.skill_define(
+                "git.commit_clean",
+                "Rebase before merging, but verify the remote first.",
+                "procedure", ["git"],
+                supersedes_skill_id="git.commit_clean",
+            )
+        assert "revised concurrently" in str(exc.value)
+        assert "r-newer" in str(exc.value)
+        assert client._db.record_calls == 0
