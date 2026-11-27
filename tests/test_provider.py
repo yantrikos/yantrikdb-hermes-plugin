@@ -224,6 +224,31 @@ class TestInitialize:
 # Tool schemas
 # ---------------------------------------------------------------------------
 
+
+def _engine_available() -> bool:
+    """Is the native engine wheel installed in this environment?
+
+    CI installs the plugin's pure-Python dependencies but not the engine, so a
+    test that constructs an EmbeddedYantrikDBClient must skip rather than fail
+    there. Same guard the rest of the suite uses (test_semantic_contract).
+    """
+    import importlib.util as _ilu
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    repo = _Path(__file__).resolve().parent.parent
+    saved = list(_sys.path)
+    try:
+        for entry in ("", str(repo)):
+            while entry in _sys.path:
+                _sys.path.remove(entry)
+        return _ilu.find_spec("yantrikdb._yantrikdb_rust") is not None
+    except (ImportError, ValueError):
+        return False
+    finally:
+        _sys.path[:] = saved
+
+
 EXPECTED_TOOL_NAMES = {
     "yantrikdb_remember",
     "yantrikdb_recall",
@@ -2858,6 +2883,10 @@ class TestWaveBExtractionStatsTool:
         assert parsed["by_speaker"]["user"] >= 3
 
 
+@pytest.mark.skipif(
+    not _engine_available(),
+    reason="native yantrikdb engine wheel not installed",
+)
 class TestNamespaceBoundary:
     """A rid is not a cross-namespace capability.
 
@@ -2921,6 +2950,10 @@ class TestNamespaceBoundary:
         assert client.get_memory("r-1") is None
 
 
+@pytest.mark.skipif(
+    not _engine_available(),
+    reason="native yantrikdb engine wheel not installed",
+)
 class TestDerivedNamespaceOwnership:
     """R3-01: a real session writes at `base:workspace:identity`, not at base.
 
@@ -2972,6 +3005,10 @@ class TestDerivedNamespaceOwnership:
         ))
         assert got["found"] is False, got
 
+@pytest.mark.skipif(
+    not _engine_available(),
+    reason="native yantrikdb engine wheel not installed",
+)
 class TestCorrect:
     """`yantrikdb_correct` — in-place correction, not forget + remember.
 
