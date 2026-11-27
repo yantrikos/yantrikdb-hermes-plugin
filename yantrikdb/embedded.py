@@ -1640,12 +1640,14 @@ class EmbeddedYantrikDBClient:
                     )
 
             links = []
+            predecessor_rid: str | None = None
             if current is not None:
-                links.append({"target_rid": current["rid"], "link_type": "supersedes"})
+                predecessor_rid = current["rid"]
+                links.append({"target_rid": predecessor_rid, "link_type": "supersedes"})
 
             record = getattr(self._db, "record_with_links", None)
             link_fn = getattr(self._db, "link", None)
-            if links and link_fn is not None:
+            if links and link_fn is not None and predecessor_rid is not None:
                 # Write, then link. `record_with_links` persists the record
                 # BEFORE it validates the supersedes link, so a writer that
                 # loses the race leaves an orphan active row behind — the
@@ -1661,7 +1663,7 @@ class EmbeddedYantrikDBClient:
                     metadata=_with_default_provenance(metadata, temporal_kind="rule"),
                 )
                 try:
-                    link_fn(rid, current["rid"], "supersedes")
+                    link_fn(rid, predecessor_rid, "supersedes")
                 except Exception as exc:
                     with contextlib.suppress(Exception):
                         self._db.forget(rid)
