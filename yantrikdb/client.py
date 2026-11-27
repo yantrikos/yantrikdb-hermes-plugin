@@ -1430,6 +1430,7 @@ class YantrikDBClient:
         *,
         top_k: int | None = None,
         applies_to: str | None = None,
+        include_history: bool = False,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "query": query,
@@ -1437,6 +1438,13 @@ class YantrikDBClient:
         }
         if applies_to:
             body["applies_to"] = applies_to
+        # The dispatch passes this on BOTH transports, so the HTTP client must
+        # accept it — a keyword the client does not take raises TypeError
+        # before a request is ever built, which is what made every HTTP
+        # skill_search call fail. Only sent when asked for, so an older server
+        # sees the pre-patch body.
+        if include_history:
+            body["include_history"] = True
         return self._request("POST", "/v1/skills/search", body)
 
     def skill_define(
@@ -1450,6 +1458,7 @@ class YantrikDBClient:
         on_conflict: str = "reject",
         version: str | None = None,
         supersedes_skill_id: str | None = None,
+        preconditions: list[str] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "skill_id": skill_id,
@@ -1464,6 +1473,8 @@ class YantrikDBClient:
             payload["version"] = version
         if supersedes_skill_id:
             payload["supersedes_skill_id"] = supersedes_skill_id
+        if preconditions:
+            payload["preconditions"] = list(preconditions)
         return self._request("POST", "/v1/skills/define", payload)
 
     def skill_outcome(
@@ -1472,12 +1483,60 @@ class YantrikDBClient:
         succeeded: bool,
         *,
         note: str | None = None,
+        phase: str | None = None,
+        task: str | None = None,
+        evidence_ref: str | None = None,
+        skill_version_rid: str | None = None,
+        corrects_rid: str | None = None,
+        observed_at: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {"succeeded": bool(succeeded)}
         if note:
             payload["note"] = note
+        # The provider tool forwards the full field set on both transports, so
+        # the HTTP client has to accept it too — otherwise every
+        # `yantrikdb_skill_outcome` call in http mode dies on a TypeError
+        # before the request is even built. Empty values are omitted so an
+        # existing server that ignores unknown fields sees the old payload.
+        for key, value in (
+            ("phase", phase),
+            ("task", task),
+            ("evidence_ref", evidence_ref),
+            ("skill_version_rid", skill_version_rid),
+            ("corrects_rid", corrects_rid),
+            ("observed_at", observed_at),
+        ):
+            if value:
+                payload[key] = value
         return self._request(
             "POST", f"/v1/skills/{skill_id}/outcome", payload,
+        )
+
+    # --- read side of the skill ledger ------------------------------------
+    # The embedded engine keeps outcomes in `outcome_substrate` and revision
+    # chains in `record_links`; yantrikdb-server has no route for either yet,
+    # so these two are embedded-only. Raising a typed error instead of letting
+    # an AttributeError escape `handle_tool_call` keeps the tool surface
+    # honest: the agent gets "not available on this transport", and the day
+    # the server exposes the routes this is the only place that changes.
+
+    def skill_outcomes(
+        self,
+        skill_id: str | None = None,
+        *,
+        query: str | None = None,
+        since: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        raise YantrikDBClientError(
+            "skill_outcomes requires the embedded engine: the HTTP server has "
+            "no outcome_substrate route yet (set YANTRIKDB_MODE=embedded)"
+        )
+
+    def skill_reify_revisions(self, skill_id: str | None = None) -> dict[str, Any]:
+        raise YantrikDBClientError(
+            "skill_reify_revisions requires the embedded engine: the HTTP "
+            "server has no revision-chain route yet (set YANTRIKDB_MODE=embedded)"
         )
 
     def close(self) -> None:

@@ -242,6 +242,8 @@ EXPECTED_TOOL_NAMES = {
     "yantrikdb_skill_search",
     "yantrikdb_skill_define",
     "yantrikdb_skill_outcome",
+    "yantrikdb_skill_outcomes",
+    "yantrikdb_skill_reify",
     "yantrikdb_extraction_stats",
     "yantrikdb_observability",
     "yantrikdb_hygiene",
@@ -289,7 +291,8 @@ class TestToolSchemas:
         # Skills and packs follow their own flags, not the profile.
         assert names == EXPECTED_TOOL_NAMES - {
             "yantrikdb_skill_search", "yantrikdb_skill_define",
-            "yantrikdb_skill_outcome", "yantrikdb_packs", "yantrikdb_fleet",
+            "yantrikdb_skill_outcome", "yantrikdb_skill_outcomes",
+            "yantrikdb_skill_reify", "yantrikdb_packs", "yantrikdb_fleet",
         }
         assert len(names) == 20
 
@@ -1602,11 +1605,63 @@ class TestSkillOutcome:
             "yantrikdb_skill_outcome",
             {"skill_id": "git.commit_clean", "succeeded": True, "note": "worked"},
         )
+        # The contract carries the full field set, not just the original two
+        # arguments: phase/task/evidence_ref/skill_version_rid/corrects_rid/
+        # observed_at are forwarded explicitly so a new field cannot be added
+        # to the schema and silently dropped on the way to the engine.
         mock_client.skill_outcome.assert_called_once_with(
-            "git.commit_clean", True, note="worked",
+            "git.commit_clean", True, note="worked", phase="execution",
+            task=None, evidence_ref=None, skill_version_rid=None,
+            corrects_rid=None, observed_at=None,
         )
         parsed = json.loads(out)
         assert parsed["recorded"] is True
+
+    def test_forwards_the_extended_fields(self, provider, mock_client):
+        provider.handle_tool_call(
+            "yantrikdb_skill_outcome",
+            {
+                "skill_id": "git.commit_clean",
+                "succeeded": False,
+                "note": "rebase conflict",
+                "phase": "later_confirmation",
+                "task": "merge two branches without a merge commit",
+                "evidence_ref": "run-2026-11-27",
+                "skill_version_rid": "01a1effc-b1b6-75c3-a593-309be8775a3d",
+                "corrects_rid": "01a1f158-4c59-7a9d-92db-799853a59be3",
+                "observed_at": "2026-11-27T09:00:00Z",
+            },
+        )
+        kwargs = mock_client.skill_outcome.call_args.kwargs
+        assert kwargs["phase"] == "later_confirmation"
+        assert kwargs["task"] == "merge two branches without a merge commit"
+        assert kwargs["evidence_ref"] == "run-2026-11-27"
+        assert kwargs["observed_at"] == "2026-11-27T09:00:00Z"
+
+    def test_outcomes_read_path_dispatches(self, provider, mock_client):
+        mock_client.skill_outcomes.return_value = {"outcomes": [], "count": 0}
+        out = provider.handle_tool_call(
+            "yantrikdb_skill_outcomes",
+            {"query": "merge two branches", "limit": 5},
+        )
+        mock_client.skill_outcomes.assert_called_once_with(
+            None, query="merge two branches", since=None, limit=5,
+        )
+        parsed = json.loads(out)
+        assert parsed["outcomes"] == []
+        assert parsed["count"] == 0
+
+    def test_outcomes_requires_an_anchor(self, provider, mock_client):
+        out = provider.handle_tool_call("yantrikdb_skill_outcomes", {})
+        mock_client.skill_outcomes.assert_not_called()
+        assert "skill_id or query" in json.loads(out)["error"]
+
+    def test_reify_dispatches(self, provider, mock_client):
+        mock_client.skill_reify_revisions.return_value = {"linked": 0}
+        provider.handle_tool_call(
+            "yantrikdb_skill_reify", {"skill_id": "git.commit_clean"},
+        )
+        mock_client.skill_reify_revisions.assert_called_once_with("git.commit_clean")
 
     def test_rejects_missing_succeeded(self, provider, mock_client):
         out = provider.handle_tool_call(
@@ -1621,6 +1676,233 @@ class TestSkillOutcome:
         )
         mock_client.skill_outcome.assert_not_called()
         assert "Missing required parameter: skill_id" in json.loads(out)["error"]
+
+
+class TestHttpTransportSeam:
+    """The dispatch must not pass a keyword the HTTP client refuses.
+
+    A `MagicMock(spec=YantrikDBClient)` cannot catch this class of defect: it
+    accepts whatever the class accepts *after* the change, so adding a keyword
+    to the dispatch and forgetting the client stays green. These tests use the
+    real client with `_request` stubbed.
+    """
+
+    def _http_client(self, provider_module):
+        client = provider_module.YantrikDBClient(
+            provider_module.YantrikDBConfig(mode="http")
+        )
+        calls = []
+
+        def fake_request(method, path, body=None, **kwargs):
+            calls.append({"method": method, "path": path, "body": body})
+            return {"skills": []}
+
+        client._request = fake_request
+        return client, calls
+
+    def test_skill_search_reaches_the_request(self, provider, provider_module):
+        client, calls = self._http_client(provider_module)
+        provider._client = client
+        out = provider._do_skill_search({"query": "git"})
+        assert len(calls) == 1, "the search must reach the transport, not die before it"
+        assert calls[0]["path"] == "/v1/skills/search"
+        assert "error" not in json.loads(out)
+
+    def test_history_flag_is_sent_only_when_asked_for(self, provider, provider_module):
+        client, calls = self._http_client(provider_module)
+        provider._client = client
+        provider._do_skill_search({"query": "git"})
+        # An older server must see exactly the pre-patch body.
+        assert "include_history" not in calls[-1]["body"]
+        provider._do_skill_search({"query": "git", "include_history": True})
+        assert calls[-1]["body"]["include_history"] is True
+
+
+class TestOutcomeRanking:
+    """Ranking is the engine's; overlap explains, it does not reorder.
+
+    Measured before the change: re-sorting by token overlap was not semantic
+    and was slightly worse than the engine's own order (MRR 0.8095 vs 0.8214),
+    and a shared German function word promoted an unrelated outcome.
+    """
+
+    class _FakeDB:
+        def __init__(self, hits):
+            self._hits = hits
+
+        def recall(self, **kwargs):
+            return self._hits
+
+    def _emb(self, provider_module):
+        import importlib
+
+        return importlib.import_module(provider_module.__name__ + ".embedded")
+
+    def _client(self, provider_module, hits):
+        emb = self._emb(provider_module)
+        cfg = emb.YantrikDBConfig(mode="embedded")
+        client = emb.EmbeddedYantrikDBClient(cfg)
+        client._db = self._FakeDB(hits)
+        return client
+
+    @staticmethod
+    def _hit(rid, task, created):
+        return {
+            "rid": rid,
+            "created_at": created,
+            "score": 0.5,
+            "metadata": {
+                "record_type": "skill_outcome", "skill_id": "s", "task": task,
+                "succeeded": True, "phase": "outcome",
+            },
+        }
+
+    def test_engine_order_is_preserved(self, provider_module):
+        # The engine ranked "weak lexical match" first on purpose (semantic
+        # similarity). Token overlap must not demote it.
+        hits = [
+            self._hit("r-engine-first", "revoke an ssh key", 1.0),
+            self._hit("r-late", "check the api authentication", 2.0),
+        ]
+        client = self._client(provider_module, hits)
+        res = client.skill_outcomes(query="check the api authentication", limit=5)
+        assert [o["rid"] for o in res["outcomes"]] == ["r-engine-first", "r-late"]
+        assert res["outcomes"][0]["task_overlap"] == 0
+        assert res["outcomes"][1]["task_overlap"] > 0
+
+    def test_no_overlap_is_reported_as_unmatched(self, provider_module):
+        hits = [self._hit("r-1", "renew the lease", 1.0)]
+        client = self._client(provider_module, hits)
+        res = client.skill_outcomes(query="quantum chromodynamics", limit=5)
+        assert res["matched"] is False
+        assert "note" in res
+
+    def test_overlap_reports_matched(self, provider_module):
+        hits = [self._hit("r-1", "renew the lease agreement", 1.0)]
+        client = self._client(provider_module, hits)
+        res = client.skill_outcomes(query="renew lease", limit=5)
+        assert res["matched"] is True
+        assert "note" not in res
+
+
+class TestSkillRevisionContract:
+    """Fields the schema advertises must survive the whole path.
+
+    Two failure modes this pins: a schema field dropped in
+    `_do_skill_define` (silent no-op), and a transport that cannot carry the
+    field at all (TypeError instead of a tool error).
+    """
+
+    def test_preconditions_reach_the_client(self, provider, mock_client):
+        # `preconditions` is part of the version identity — a changed
+        # precondition is a new version even with identical prose. A dispatch
+        # that drops it would make that contract false.
+        provider.handle_tool_call(
+            "yantrikdb_skill_define",
+            {
+                "skill_id": "git.commit_clean",
+                "body": "Always rebase before merge so history stays linear.",
+                "skill_type": "procedure",
+                "applies_to": ["git"],
+                "preconditions": ["a clean working tree"],
+            },
+        )
+        assert mock_client.skill_define.call_args.kwargs["preconditions"] == [
+            "a clean working tree"
+        ]
+
+    def _http_client(self, provider_module):
+        cfg = provider_module.YantrikDBConfig(mode="http")
+        return provider_module.YantrikDBClient(cfg)
+
+    def test_outcome_payload_carries_the_extended_fields(self, provider_module):
+        client = self._http_client(provider_module)
+        seen = {}
+
+        def fake_request(method, path, body=None, **kwargs):
+            seen["method"], seen["path"], seen["body"] = method, path, body
+            return {"rid": "r1", "recorded": True}
+
+        client._request = fake_request
+        client.skill_outcome(
+            "git.commit_clean", True, note="worked", phase="outcome",
+            task="merge branches", evidence_ref="run-7",
+            skill_version_rid="v-rid", corrects_rid="c-rid",
+            observed_at="2026-11-27T09:00:00Z",
+        )
+        assert seen["path"] == "/v1/skills/git.commit_clean/outcome"
+        assert seen["body"] == {
+            "succeeded": True,
+            "note": "worked",
+            "phase": "outcome",
+            "task": "merge branches",
+            "evidence_ref": "run-7",
+            "skill_version_rid": "v-rid",
+            "corrects_rid": "c-rid",
+            "observed_at": "2026-11-27T09:00:00Z",
+        }
+
+    def test_unset_extended_fields_keep_the_old_payload(self, provider_module):
+        client = self._http_client(provider_module)
+        seen = {}
+
+        def fake_request(method, path, body=None, **kwargs):
+            seen["body"] = body
+            return {"rid": "r1"}
+
+        client._request = fake_request
+        client.skill_outcome("git.commit_clean", True, note="worked")
+        # An older server sees exactly the pre-patch body.
+        assert seen["body"] == {"succeeded": True, "note": "worked"}
+
+    def test_define_payload_carries_preconditions(self, provider_module):
+        client = self._http_client(provider_module)
+        seen = {}
+
+        def fake_request(method, path, body=None, **kwargs):
+            seen["body"] = body
+            return {"stored": True}
+
+        client._request = fake_request
+        client.skill_define(
+            "git.commit_clean",
+            "Always rebase before merge so history stays linear.",
+            "procedure",
+            ["git"],
+            preconditions=["a clean working tree"],
+        )
+        assert seen["body"]["preconditions"] == ["a clean working tree"]
+
+    def test_read_paths_fail_as_typed_errors_not_attribute_errors(
+        self, provider_module
+    ):
+        client = self._http_client(provider_module)
+        for call in (
+            lambda: client.skill_outcomes("git.commit_clean"),
+            lambda: client.skill_reify_revisions("git.commit_clean"),
+        ):
+            with pytest.raises(provider_module.YantrikDBClientError) as exc:
+                call()
+            assert "embedded" in str(exc.value)
+
+    def test_dispatch_turns_the_typed_error_into_a_tool_error(
+        self, provider, provider_module
+    ):
+        # `handle_tool_call` must not let the transport limitation escape as
+        # a traceback: the agent needs a readable tool error it can act on.
+        def _raise(*a, **k):
+            raise provider_module.YantrikDBClientError("embedded only")
+
+        provider._client = type(
+            "_HttpShaped", (), {
+                "skill_outcomes": staticmethod(_raise),
+                "skill_reify_revisions": staticmethod(_raise),
+            },
+        )()
+        out = provider.handle_tool_call(
+            "yantrikdb_skill_outcomes", {"skill_id": "git.commit_clean"},
+        )
+        assert "embedded only" in json.loads(out)["error"]
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ Lifecycle / threading model (per yantrikdb-core guidance):
 
 from __future__ import annotations
 
+import contextlib
 import glob
 import logging
 import os
@@ -414,6 +415,11 @@ class EmbeddedYantrikDBClient:
 
     def __init__(self, config: YantrikDBConfig) -> None:
         self.config = config
+        # Per-skill serialisation for revision writes (one writer per skill_id,
+        # different skills stay parallel).
+        import threading as _threading
+        self._skill_locks: dict[str, Any] = {}
+        self._skill_locks_guard = _threading.Lock()
 
         YantrikDB = load_engine_yantrikdb_class()
 
@@ -1393,22 +1399,35 @@ class EmbeddedYantrikDBClient:
         *,
         top_k: int | None = None,
         applies_to: str | None = None,
+        include_history: bool = False,
     ) -> dict[str, Any]:
-        # Prefer the keyword-only namespace filter on `recall_text` (engine
-        # v0.7.7+); fall back to the lower-level `recall` for older wheels
-        # so users who haven't upgraded yet still get a working read path.
-        try:
-            results = self._db.recall_text(
-                query, top_k=int(top_k or self.config.top_k),
-                namespace=SKILL_NAMESPACE,
-            )
-        except TypeError:
-            # Pre-0.7.7 wheel: recall_text didn't accept `namespace`.
-            results = self._db.recall(
-                query=query,
-                top_k=int(top_k or self.config.top_k),
-                namespace=SKILL_NAMESPACE,
-            )
+        # Default path unchanged: recall_text keeps the ranking it had before
+        # this patch. Only the history path needs recall(), because that is
+        # where include_superseded lives.
+        if not include_history:
+            try:
+                results = self._db.recall_text(
+                    query, top_k=int(top_k or self.config.top_k),
+                    namespace=SKILL_NAMESPACE,
+                )
+            except TypeError:  # pre-0.7.7 wheel: no namespace kw
+                results = self._db.recall(
+                    query=query, top_k=int(top_k or self.config.top_k),
+                    namespace=SKILL_NAMESPACE,
+                )
+        else:
+            try:
+                results = self._db.recall(
+                    query=query,
+                    top_k=int(top_k or self.config.top_k),
+                    namespace=SKILL_NAMESPACE,
+                    include_superseded=True,
+                )
+            except TypeError:
+                results = self._db.recall(
+                    query=query, top_k=int(top_k or self.config.top_k),
+                    namespace=SKILL_NAMESPACE,
+                )
         items: list[dict[str, Any]] = list(results) if results else []
         # Optional client-side post-filter on applies_to — server's
         # /v1/skills/search does the same as a post-filter pattern.
@@ -1417,7 +1436,77 @@ class EmbeddedYantrikDBClient:
                 r for r in items
                 if applies_to in (r.get("metadata", {}) or {}).get("applies_to", [])
             ]
+        if include_history:
+            for r in items:
+                r["is_current"] = (r.get("current_status") != "superseded")
         return {"skills": items, "total": len(items)}
+
+    def _skill_lock(self, skill_id: str):
+        import threading
+        guard = getattr(self, "_skill_locks_guard", None)
+        if guard is None:  # constructed via __new__ (tests) or older instance
+            self._skill_locks, self._skill_locks_guard = {}, threading.Lock()
+            guard = self._skill_locks_guard
+        with guard:
+            lock = self._skill_locks.get(skill_id)
+            if lock is None:
+                lock = self._skill_locks[skill_id] = threading.Lock()
+            return lock
+
+    def _skill_versions(self, skill_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+        """All records for one skill_id, newest first, supersession-aware.
+
+        Uses the engine's native supersession state (`include_superseded=True`)
+        instead of a client-side metadata filter, so there is exactly one
+        revision semantics.
+        """
+        try:
+            hits = self._db.recall(
+                query=skill_id, top_k=int(limit), namespace=SKILL_NAMESPACE,
+                include_superseded=True,
+            )
+        except TypeError:  # pre-v0.10 wheel without include_superseded
+            hits = self._db.recall(query=skill_id, top_k=int(limit), namespace=SKILL_NAMESPACE)
+        out = []
+        for hit in hits or []:
+            meta = hit.get("metadata", {}) or {}
+            if meta.get("skill_id") == skill_id:
+                out.append(hit)
+        out.sort(key=lambda h: h.get("created_at") or 0.0, reverse=True)
+        return out
+
+    def _skill_current(self, skill_id: str) -> dict[str, Any] | None:
+        """The version that is not superseded by another one."""
+        versions = self._skill_versions(skill_id)
+        if not versions:
+            return None
+        superseded = {v["rid"] for v in versions if v.get("current_status") == "superseded"}
+        # A record stamped `superseded` by the engine is history; the first
+        # remaining one is current. Without engine stamping (legacy data),
+        # fall back to "newest wins" — same answer for a linear chain.
+        for v in versions:
+            if v["rid"] not in superseded:
+                return v
+        return versions[0]
+
+    @staticmethod
+    def _skill_fingerprint(body: str, metadata: dict[str, Any]) -> str:
+        """Identity of a skill *version*: body plus the fields that define
+        when it applies. A body hash alone is not identity — changing the
+        preconditions, scope or declared version makes it a new version even
+        when the prose is identical."""
+        import hashlib
+        import json as _json
+        material = {
+            "body": body,
+            "skill_type": metadata.get("skill_type"),
+            "applies_to": sorted(metadata.get("applies_to") or []),
+            "triggers": sorted(metadata.get("triggers") or []),
+            "version": metadata.get("version"),
+            "preconditions": metadata.get("preconditions"),
+        }
+        blob = _json.dumps(material, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
     def skill_define(
         self,
@@ -1430,28 +1519,9 @@ class EmbeddedYantrikDBClient:
         on_conflict: str = "reject",
         version: str | None = None,
         supersedes_skill_id: str | None = None,
+        preconditions: list[str] | None = None,
     ) -> dict[str, Any]:
-        # Reproduce server-side schema validation client-side. These
-        # raise YantrikDBClientError so the provider's 4xx handling
-        # surfaces them without tripping the breaker.
         validate_skill_define_args(skill_id, body, skill_type, applies_to)
-
-        # Best-effort uniqueness check. In embedded mode there's a
-        # TOCTOU window between this lookup and the record_text below,
-        # but single-agent embedded use is non-racy in practice. The
-        # constraint difference (server: 409 transactional; embedded:
-        # last-write-wins) is documented in the v0.3.0 changelog.
-        if on_conflict == "reject":
-            existing = self._db.recall(
-                query=skill_id, top_k=5, namespace=SKILL_NAMESPACE,
-            )
-            for hit in (existing or []):
-                meta = hit.get("metadata", {}) or {}
-                if meta.get("skill_id") == skill_id:
-                    raise YantrikDBClientError(
-                        f"skill {skill_id!r} already exists "
-                        "(on_conflict='reject'); use on_conflict='replace' or pick a new skill_id"
-                    )
 
         metadata: dict[str, Any] = {
             "record_type": "skill",
@@ -1464,17 +1534,86 @@ class EmbeddedYantrikDBClient:
             metadata["triggers"] = list(triggers)
         if version:
             metadata["version"] = version
-        if supersedes_skill_id:
-            metadata["supersedes_skill_id"] = supersedes_skill_id
+        if preconditions:
+            metadata["preconditions"] = list(preconditions)
+        fingerprint = self._skill_fingerprint(body, metadata)
+        metadata["content_fingerprint"] = fingerprint
 
-        rid = self._db.record_text(
-            body,
-            memory_type="procedural",
-            namespace=SKILL_NAMESPACE,
-            domain="skill",
-            metadata=_with_default_provenance(metadata, temporal_kind="rule"),
-        )
-        return {"rid": rid, "skill_id": skill_id, "stored": True}
+        with self._skill_lock(skill_id):
+            current = self._skill_current(skill_id)
+
+            # Idempotent rewrite: same version, no new row.
+            if current is not None:
+                cur_meta = current.get("metadata", {}) or {}
+                if cur_meta.get("content_fingerprint") == fingerprint:
+                    return {
+                        "rid": current["rid"], "skill_id": skill_id,
+                        "stored": False, "unchanged": True,
+                    }
+                if supersedes_skill_id and supersedes_skill_id != skill_id:
+                    raise YantrikDBClientError(
+                        f"supersedes_skill_id={supersedes_skill_id!r} does not match "
+                        f"skill_id={skill_id!r}; a revision can only supersede the same skill"
+                    )
+                if on_conflict == "reject" and not supersedes_skill_id:
+                    raise YantrikDBClientError(
+                        f"skill {skill_id!r} already exists with different content "
+                        "(on_conflict='reject'); pass supersedes or on_conflict='replace'"
+                    )
+
+            links = []
+            if current is not None:
+                links.append({"target_rid": current["rid"], "link_type": "supersedes"})
+
+            record = getattr(self._db, "record_with_links", None)
+            if links and record is not None:
+                rid = record(
+                    body,
+                    links,
+                    memory_type="procedural",
+                    namespace=SKILL_NAMESPACE,
+                    domain="skill",
+                    metadata=_with_default_provenance(metadata, temporal_kind="rule"),
+                )
+            else:
+                # No predecessor (first version) or an old wheel without
+                # record_with_links: a single record needs no link.
+                rid = self._db.record_text(
+                    body,
+                    memory_type="procedural",
+                    namespace=SKILL_NAMESPACE,
+                    domain="skill",
+                    metadata=_with_default_provenance(metadata, temporal_kind="rule"),
+                )
+
+            # Concurrent revision: if another writer superseded the same
+            # predecessor, two active versions would coexist. Make the state
+            # deterministic (the newest supersedes the other) and report it —
+            # an unlinked active duplicate is exactly the defect this patch fixes.
+            fork = []
+            if current is not None and getattr(self._db, "linked_records", None):
+                try:
+                    for row in self._db.linked_records(current["rid"], direction="inbound",
+                                                       link_type="supersedes") or []:
+                        other = row.get("source_rid") or row.get("rid")
+                        if other and other != rid:
+                            fork.append(other)
+                except Exception:  # noqa: BLE001 - fork detection must never fail a write
+                    pass
+                for other in list(fork):
+                    with contextlib.suppress(Exception):
+                        self._db.link(rid, other, "supersedes")
+
+        result: dict[str, Any] = {"rid": rid, "skill_id": skill_id, "stored": True}
+        if current is not None:
+            result["supersedes"] = current["rid"]
+        if fork:
+            result["concurrent_revisions"] = fork
+            result["warning"] = (
+                "another version superseded the same predecessor; both are stored — "
+                "resolve by recording an outcome or retiring one explicitly"
+            )
+        return result
 
     def skill_outcome(
         self,
@@ -1482,26 +1621,52 @@ class EmbeddedYantrikDBClient:
         succeeded: bool,
         *,
         note: str | None = None,
+        phase: str = "execution",
+        task: str | None = None,
+        evidence_ref: str | None = None,
+        skill_version_rid: str | None = None,
+        corrects_rid: str | None = None,
+        observed_at: float | None = None,
     ) -> dict[str, Any]:
-        # Append-only event log. NO auto-rollup of success_count on the
-        # parent skill record — agent-layer pedagogy decision per
-        # yantrikdb-server's "schema not semantics" rule (matches the
-        # WisePick pattern).
-        body_parts = [
-            f"outcome: skill={skill_id} succeeded={succeeded}",
-        ]
+        # Append-only event log. The three questions a review answers are NOT
+        # the same: did it run (execution), was the result right (outcome),
+        # did it help later (later_confirmation).
+        if phase not in ("execution", "outcome", "later_confirmation"):
+            raise YantrikDBClientError(
+                f"phase must be execution|outcome|later_confirmation, got {phase!r}"
+            )
+        # The body is what gets embedded and full-text indexed, so the task
+        # description must live HERE. Metadata-only task text is invisible to
+        # skill_outcomes(query=...) - the situational read would rank by the
+        # skill id alone.
+        body_parts = [f"outcome: skill={skill_id} succeeded={succeeded} phase={phase}"]
+        if task:
+            body_parts.append(f"task: {task}")
         if note:
             body_parts.append(f"note: {note}")
+        if evidence_ref:
+            body_parts.append(f"evidence: {evidence_ref}")
         body = "\n".join(body_parts)
 
         metadata: dict[str, Any] = {
             "record_type": "skill_outcome",
             "skill_id": skill_id,
             "succeeded": bool(succeeded),
+            "phase": phase,
             "source": "hermes",
         }
         if note:
             metadata["note"] = note
+        if task:
+            metadata["task"] = task
+        if evidence_ref:
+            metadata["evidence_ref"] = evidence_ref
+        if skill_version_rid:
+            metadata["skill_version_rid"] = skill_version_rid
+        if corrects_rid:
+            metadata["corrects_rid"] = corrects_rid
+        if observed_at is not None:
+            metadata["observed_at"] = float(observed_at)
 
         rid = self._db.record_text(
             body,
@@ -1510,7 +1675,160 @@ class EmbeddedYantrikDBClient:
             domain="skill_outcome",
             metadata=_with_default_provenance(metadata),
         )
-        return {"rid": rid, "skill_id": skill_id, "recorded": True}
+        return {"rid": rid, "skill_id": skill_id, "recorded": True, "phase": phase}
+
+    def skill_outcomes(
+        self,
+        skill_id: str | None = None,
+        *,
+        query: str | None = None,
+        since: float | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Read past outcomes — by skill_id and/or by a comparable task.
+
+        `query` answers the case the agent cannot name: "I have a task like
+        this, what happened last time?" Both filters can be combined.
+        """
+        if not skill_id and not query:
+            raise YantrikDBClientError("skill_outcomes needs skill_id or query")
+        probe = query or skill_id
+        # A comparable-task query needs a wider candidate net: the embedding of a
+        # short outcome body is a weak signal, so retrieval is hybrid - the engine
+        # supplies candidates, the provider re-ranks by task/notice token overlap.
+        fetch = int(limit) if not query else max(int(limit) * 5, 50)
+        try:
+            hits = self._db.recall(
+                query=probe, top_k=fetch, namespace=OUTCOME_NAMESPACE,
+                include_superseded=True,
+            )
+        except TypeError:
+            hits = self._db.recall(query=probe, top_k=int(limit), namespace=OUTCOME_NAMESPACE)
+        out = []
+        for hit in hits or []:
+            meta = hit.get("metadata", {}) or {}
+            if meta.get("record_type") != "skill_outcome":
+                continue
+            if skill_id and meta.get("skill_id") != skill_id:
+                continue
+            created = hit.get("created_at") or 0.0
+            if since is not None and created < float(since):
+                continue
+            out.append({
+                "rid": hit.get("rid"),
+                "skill_id": meta.get("skill_id"),
+                "succeeded": meta.get("succeeded"),
+                "phase": meta.get("phase", "execution"),
+                "task": meta.get("task"),
+                "evidence_ref": meta.get("evidence_ref"),
+                "skill_version_rid": meta.get("skill_version_rid"),
+                "corrects_rid": meta.get("corrects_rid"),
+                "observed_at": meta.get("observed_at"),
+                "created_at": created,
+                "note": meta.get("note"),
+                "score": hit.get("score"),
+            })
+        # Ranking is the engine's. An earlier version re-sorted these rows by
+        # token overlap and called itself "hybrid"; measured against the
+        # engine's own ordering on a labelled set it was neither semantic nor
+        # an improvement (MRR 0.8095 vs 0.8214, and a German function word
+        # promoted an unrelated outcome on a cross-lingual query). Overlap is
+        # now reported as an explanation signal, not used to reorder.
+        if query:
+            import re as _re
+            stop = {"the", "and", "for", "with", "how", "does", "did", "what", "when", "der",
+                    "die", "das", "und", "ein", "eine", "ist", "wie", "ich", "mir", "auf"}
+
+            def _tokens(text: str) -> set[str]:
+                return {w for w in _re.findall(r"[a-z0-9_]+", (text or "").lower())
+                        if len(w) > 2 and w not in stop}
+
+            q = _tokens(query)
+            for row in out:
+                hay = " ".join(str(row.get(k) or "") for k in ("task", "note", "skill_id"))
+                row["task_overlap"] = len(q & _tokens(hay)) if q else 0
+            best = max((r["task_overlap"] for r in out), default=0)
+            # An explicit "nothing matched" is a result the caller can act on;
+            # a confident-looking ranked list of unrelated outcomes is not.
+            matched = best > 0
+        else:
+            out.sort(key=lambda r: r.get("created_at") or 0.0, reverse=True)
+            matched = True
+        result = {"outcomes": out[: int(limit)], "total": len(out)}
+        if query:
+            result["matched"] = matched
+            if not matched:
+                result["note"] = (
+                    "no outcome task shares a token with the query; the rows "
+                    "above are the engine's own similarity ordering, not a match"
+                )
+        return result
+
+    def skill_reify_revisions(self, skill_id: str | None = None) -> dict[str, Any]:
+        """Materialise revision chains as real supersedes links.
+
+        Two sources: the engine's own legacy reification (`metadata.supersedes`,
+        one-shot, whole store) and the provider's older field
+        `metadata.supersedes_skill_id`, which stores only the skill id and no
+        rid — so the chain is rebuilt positionally: consecutive versions by
+        created_at get linked. Without that, existing records would keep the
+        duplicate that makes revisions ambiguous.
+        """
+        engine_links = 0
+        fn = getattr(self._db, "reify_supersedes_links", None)
+        if fn is not None:
+            try:
+                engine_links = int(fn() or 0)
+            except Exception:  # noqa: BLE001 - engine-side migration must not crash us
+                engine_links = 0
+
+        targets = [skill_id] if skill_id else []
+        if not skill_id:
+            # No list API for a namespace: collect the ids this provider has
+            # written, from the records the keyword lane can reach.
+            seen: set[str] = set()
+            for probe in ("skill", "procedure"):
+                try:
+                    hits = self._db.recall(
+                        query=probe, top_k=200, namespace=SKILL_NAMESPACE,
+                        include_superseded=True,
+                    )
+                except TypeError:
+                    hits = self._db.recall(query=probe, top_k=200, namespace=SKILL_NAMESPACE)
+                for hit in hits or []:
+                    sid = (hit.get("metadata", {}) or {}).get("skill_id")
+                    if sid:
+                        seen.add(sid)
+            targets = sorted(seen)
+
+        made = engine_links
+        per_skill: dict[str, int] = {}
+        for sid in targets:
+            versions = self._skill_versions(sid)  # newest first
+            if len(versions) < 2:
+                continue
+            existing = set()
+            for v in versions:
+                try:
+                    for row in self._db.linked_records(v["rid"], direction="inbound",
+                                                       link_type="supersedes") or []:
+                        existing.add(row.get("rid"))
+                except Exception:  # noqa: BLE001
+                    pass
+            created = 0
+            for newer, older in zip(versions, versions[1:], strict=False):
+                if older["rid"] in existing:
+                    continue
+                try:
+                    self._db.link(newer["rid"], older["rid"], "supersedes")
+                    created += 1
+                except Exception:  # noqa: BLE001 - one bad pair must not stop the sweep
+                    pass
+            if created:
+                per_skill[sid] = created
+                made += created
+        return {"ok": True, "links_created": made, "per_skill": per_skill}
+
 
     # -- Lifecycle ----------------------------------------------------
 

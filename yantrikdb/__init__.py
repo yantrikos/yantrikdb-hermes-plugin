@@ -609,133 +609,157 @@ ACT_ON_TRIGGER_SCHEMA = {
 # evolving, semantic-search-queryable. Different kinds of canonical;
 # the model picks the right substrate by lifecycle, not by competition.
 
-SKILL_SEARCH_SCHEMA = {
-    "name": "yantrikdb_skill_search",
-    "description": (
-        "Semantic search over agent-authored skills in the shared "
-        "skill_substrate. Use to find a procedural pattern relevant to "
-        "the current task before acting — agent-authored skills capture "
-        "what worked in previous similar situations. Distinct from "
-        "yantrikdb_recall (episodic/semantic memory): skills are "
-        "procedures, memories are facts."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "Natural-language description of the task or pattern.",
-            },
-            "top_k": {
-                "type": "integer",
-                "description": "Max results (default 10).",
-            },
-            "applies_to": {
-                "type": "string",
-                "description": (
-                    "Optional filter: only return skills tagged for this "
-                    "context (e.g. 'git', 'deploy', 'pgsql')."
-                ),
-            },
-        },
-        "required": ["query"],
-    },
-}
+SKILL_SEARCH_SCHEMA = {   'name': 'yantrikdb_skill_search',
+    'description': 'Find stored procedural skills by task description. Returns the current '
+                   'version of each; set include_history to also see superseded versions.',
+    'parameters': {   'type': 'object',
+                      'properties': {   'query': {   'type': 'string',
+                                                     'description': 'What you are trying to do.'},
+                                        'top_k': {   'type': 'integer',
+                                                     'description': 'Max results (default from '
+                                                                    'config, capped at 50).'},
+                                        'applies_to': {   'type': 'string',
+                                                          'description': 'Filter by an '
+                                                                         'applies_to tag, e.g. '
+                                                                         'review.'},
+                                        'include_history': {   'type': 'boolean',
+                                                               'description': 'Also return '
+                                                                              'superseded '
+                                                                              'versions, marked '
+                                                                              'is_current=false. '
+                                                                              'Default false.'}},
+                      'required': ['query']}}
 
-SKILL_DEFINE_SCHEMA = {
-    "name": "yantrikdb_skill_define",
-    "description": (
-        "Distill a procedural pattern into a reusable skill. Use when "
-        "you've observed a sequence that worked and want it findable next "
-        "session. The body should be a self-contained instruction — "
-        "future you (or another agent) reads it and follows it. Skill "
-        "naming convention: dot-separated lowercase, e.g. "
-        "'git.commit_clean', 'deploy.rolling_restart'."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "skill_id": {
-                "type": "string",
-                "description": (
-                    "Dot-separated lowercase identifier matching "
-                    "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$, length 4-200. "
-                    "First segment is the broad category, later segments "
-                    "narrow it (e.g. 'workflow.git.commit_clean')."
-                ),
-            },
-            "body": {
-                "type": "string",
-                "description": (
-                    "The procedural instructions, 50-5000 chars. Self-"
-                    "contained — assume the reader has no prior context."
-                ),
-            },
-            "skill_type": {
-                "type": "string",
-                "enum": ["procedure", "reference", "lesson", "pattern", "rule"],
-                "description": (
-                    "procedure: do these steps. reference: information to "
-                    "consult. lesson: things to remember from a past mistake. "
-                    "pattern: recognizable shape. rule: invariant to maintain."
-                ),
-            },
-            "applies_to": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Tags identifying when this skill is relevant. Lowercase "
-                    "+ digits + underscores ONLY (no hyphens, no dots, no "
-                    "spaces): each entry must match ^[a-z][a-z0-9_]*$. "
-                    "Max 10 entries. Examples: ['git', 'commit'], "
-                    "['postgres', 'migration', 'rollback']."
-                ),
-            },
-            "triggers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Optional natural-language phrases that should activate this skill.",
-            },
-            "version": {
-                "type": "string",
-                "description": "Optional version string (e.g. '1.0.0').",
-            },
-            "supersedes_skill_id": {
-                "type": "string",
-                "description": "Optional skill_id this skill replaces.",
-            },
-        },
-        "required": ["skill_id", "body", "skill_type", "applies_to"],
-    },
-}
+SKILL_DEFINE_SCHEMA = {   'name': 'yantrikdb_skill_define',
+    'description': 'Distill a procedural pattern into a reusable skill. A revision of an '
+                   'existing skill_id must pass supersedes_skill_id (or on_conflict=replace); it '
+                   'is stored with a native supersedes link.',
+    'parameters': {   'type': 'object',
+                      'properties': {   'skill_id': {   'type': 'string',
+                                                        'description': 'Dot-separated lowercase '
+                                                                       'identifier.'},
+                                        'body': {   'type': 'string',
+                                                    'description': 'Self-contained procedural '
+                                                                   'instructions, 50-5000 '
+                                                                   'chars.'},
+                                        'skill_type': {   'type': 'string',
+                                                          'description': 'Category, e.g. '
+                                                                         'procedure.'},
+                                        'applies_to': {   'type': 'array',
+                                                          'items': {'type': 'string'},
+                                                          'description': 'Tags for search '
+                                                                         'filtering.'},
+                                        'triggers': {   'type': 'array',
+                                                        'items': {'type': 'string'},
+                                                        'description': 'Situations that should '
+                                                                       'recall this skill.'},
+                                        'version': {   'type': 'string',
+                                                       'description': 'Declared version label; '
+                                                                      'part of the version '
+                                                                      'identity.'},
+                                        'preconditions': {   'type': 'array',
+                                                             'items': {'type': 'string'},
+                                                             'description': 'Conditions under '
+                                                                            'which the procedure '
+                                                                            'applies; part of '
+                                                                            'the version '
+                                                                            'identity.'},
+                                        'supersedes_skill_id': {   'type': 'string',
+                                                                   'description': 'Set when '
+                                                                                  'revising an '
+                                                                                  'existing '
+                                                                                  'skill; must '
+                                                                                  'equal '
+                                                                                  'skill_id.'},
+                                        'on_conflict': {   'type': 'string',
+                                                           'enum': ['reject', 'replace'],
+                                                           'description': 'reject refuses a '
+                                                                          'different body '
+                                                                          'without supersedes; '
+                                                                          'replace writes a new '
+                                                                          'version.'}},
+                      'required': ['skill_id', 'body', 'skill_type', 'applies_to']}}
 
-SKILL_OUTCOME_SCHEMA = {
-    "name": "yantrikdb_skill_outcome",
-    "description": (
-        "Record whether a skill succeeded when used. Append-only: each "
-        "call adds an event to the outcome log; success/failure rollup "
-        "is the agent's call, not the substrate's. Use after attempting "
-        "a skill to feed back signal for future search ranking."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "skill_id": {
-                "type": "string",
-                "description": "The skill_id that was applied.",
-            },
-            "succeeded": {
-                "type": "boolean",
-                "description": "True if the skill produced the intended outcome.",
-            },
-            "note": {
-                "type": "string",
-                "description": "Optional context — what worked, what didn't, what to adjust.",
-            },
-        },
-        "required": ["skill_id", "succeeded"],
-    },
-}
+SKILL_OUTCOME_SCHEMA = {   'name': 'yantrikdb_skill_outcome',
+    'description': 'Record whether a skill succeeded when used. Append-only. phase separates '
+                   'it-ran from result-was-right from benefit-observed-later; task is indexed '
+                   'for later retrieval.',
+    'parameters': {   'type': 'object',
+                      'properties': {   'skill_id': {   'type': 'string',
+                                                        'description': 'The skill_id that was '
+                                                                       'applied.'},
+                                        'succeeded': {   'type': 'boolean',
+                                                         'description': 'True if the skill '
+                                                                        'produced the intended '
+                                                                        'outcome.'},
+                                        'note': {   'type': 'string',
+                                                    'description': 'Optional context.'},
+                                        'phase': {   'type': 'string',
+                                                     'enum': [   'execution',
+                                                                 'outcome',
+                                                                 'later_confirmation'],
+                                                     'description': 'Did it run / was the result '
+                                                                    'right / did it help later.'},
+                                        'task': {   'type': 'string',
+                                                    'description': 'The task this outcome '
+                                                                   'belongs to; indexed.'},
+                                        'evidence_ref': {   'type': 'string',
+                                                            'description': 'Where the result can '
+                                                                           'be verified '
+                                                                           '(file:line, commit, '
+                                                                           'URL).'},
+                                        'skill_version_rid': {   'type': 'string',
+                                                                 'description': 'The skill '
+                                                                                'version this '
+                                                                                'outcome refers '
+                                                                                'to.'},
+                                        'corrects_rid': {   'type': 'string',
+                                                            'description': 'A previous outcome '
+                                                                           'rid this one '
+                                                                           'corrects.'},
+                                        'observed_at': {   'type': 'number',
+                                                           'description': 'When the effect was '
+                                                                          'observed.'}},
+                      'required': ['skill_id', 'succeeded']}}
+
+SKILL_REIFY_SCHEMA = {   'name': 'yantrikdb_skill_reify',
+    'description': 'Materialise legacy skill revision chains as native supersedes links. Use '
+                   'once after upgrading: records written before the revision fix carry '
+                   'supersedes_skill_id only in metadata, so their history is not walkable. '
+                   '[Embedded engine only: with YANTRIKDB_MODE=http this call returns a tool '
+                   'error, because the server exposes no revision-chain route yet.]',
+    'parameters': {   'type': 'object',
+                      'properties': {   'skill_id': {   'type': 'string',
+                                                        'description': 'Limit the sweep to one '
+                                                                       'skill; omit for all '
+                                                                       'discoverable skills.'}},
+                      'required': []}}
+
+SKILL_OUTCOMES_SCHEMA = {   'name': 'yantrikdb_skill_outcomes',
+    'description': 'Read past outcomes of a procedural skill. Use after (or instead of) '
+                   "skill_search when the question is 'how did this go last time?'. Pass "
+                   'skill_id when you know it; pass query with a comparable task description '
+                   'when you do not. Returns phase (execution|outcome|later_confirmation), '
+                   'task, evidence_ref, skill_version_rid and corrects_rid so execution '
+                   'success, factual correctness and observed benefit stay distinguishable. '
+                   '[Embedded engine only: with YANTRIKDB_MODE=http this call returns a tool '
+                   'error, because the server exposes no outcome route yet.]',
+    'parameters': {   'type': 'object',
+                      'properties': {   'skill_id': {   'type': 'string',
+                                                        'description': 'Skill identifier, e.g. '
+                                                                       'review.adversarial_validation.'},
+                                        'query': {   'type': 'string',
+                                                     'description': 'Comparable task '
+                                                                    'description, for when the '
+                                                                    'skill_id is unknown.'},
+                                        'since': {   'type': 'number',
+                                                     'description': 'Only outcomes created at '
+                                                                    'or after this unix '
+                                                                    'timestamp.'},
+                                        'limit': {   'type': 'integer',
+                                                     'description': 'Max outcomes (default '
+                                                                    '20).'}},
+                      'required': []}}
 
 OBSERVABILITY_SCHEMA = {
     "name": "yantrikdb_observability",
@@ -1056,6 +1080,8 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     SKILL_SEARCH_SCHEMA,
     SKILL_DEFINE_SCHEMA,
     SKILL_OUTCOME_SCHEMA,
+    SKILL_OUTCOMES_SCHEMA,
+    SKILL_REIFY_SCHEMA,
     EXTRACTION_STATS_SCHEMA,
     OBSERVABILITY_SCHEMA,
     HYGIENE_SCHEMA,
@@ -2697,6 +2723,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
                     raw = self._do_skill_define(args)
                 elif tool_name == "yantrikdb_skill_outcome":
                     raw = self._do_skill_outcome(args)
+                elif tool_name == "yantrikdb_skill_outcomes":
+                    raw = self._do_skill_outcomes(args)
+                elif tool_name == "yantrikdb_skill_reify":
+                    raw = self._do_skill_reify(args)
             if raw is None:
                 return tool_error(f"Unknown tool: {tool_name}", tool=tool_name)
             return _wrap_dispatch(tool_name, raw)
@@ -3792,6 +3822,28 @@ class YantrikDBMemoryProvider(MemoryProvider):
             "acted": bool(resp.get("acted", False)),
         })
 
+
+
+    def _do_skill_reify(self, args: dict[str, Any]) -> str:
+        skill_id = (args.get("skill_id") or "").strip() or None
+        resp = self._require_client().skill_reify_revisions(skill_id)
+        self._record_success()
+        return json.dumps(resp, ensure_ascii=False)
+
+    def _do_skill_outcomes(self, args: dict[str, Any]) -> str:
+        skill_id = (args.get("skill_id") or "").strip() or None
+        query = (args.get("query") or "").strip() or None
+        if not skill_id and not query:
+            return tool_error("Pass skill_id or query")
+        resp = self._require_client().skill_outcomes(
+            skill_id,
+            query=query,
+            since=args.get("since"),
+            limit=int(args.get("limit") or 20),
+        )
+        self._record_success()
+        return json.dumps(resp, ensure_ascii=False)
+
     def _do_skill_search(self, args: dict[str, Any]) -> str:
         query = (args.get("query") or "").strip()
         if not query:
@@ -3800,6 +3852,7 @@ class YantrikDBMemoryProvider(MemoryProvider):
         top_k = min(_coerce_int(args.get("top_k"), default_top_k), 50)
         resp = self._require_client().skill_search(
             query, top_k=top_k, applies_to=args.get("applies_to"),
+            include_history=bool(args.get("include_history")),
         )
         self._record_success()
         skills = resp.get("skills") or resp.get("results") or []
@@ -3836,6 +3889,11 @@ class YantrikDBMemoryProvider(MemoryProvider):
             on_conflict=args.get("on_conflict", "reject"),
             version=args.get("version"),
             supersedes_skill_id=args.get("supersedes_skill_id"),
+            # `preconditions` is part of the version identity (a changed
+            # precondition is a new version even with identical prose), so a
+            # schema that advertises it and a dispatch that drops it would
+            # make the identity claim false. Forward it explicitly.
+            preconditions=args.get("preconditions"),
         )
         self._record_success()
         stored = bool(resp.get("stored", True))
@@ -4299,6 +4357,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
             skill_id,
             bool(args.get("succeeded")),
             note=args.get("note"),
+            phase=(args.get("phase") or "execution"),
+            task=args.get("task"),
+            evidence_ref=args.get("evidence_ref"),
+            skill_version_rid=args.get("skill_version_rid"),
+            corrects_rid=args.get("corrects_rid"),
+            observed_at=args.get("observed_at"),
         )
         self._record_success()
         return json.dumps({
