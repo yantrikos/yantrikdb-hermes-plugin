@@ -1404,28 +1404,34 @@ class EmbeddedYantrikDBClient:
         # Default path unchanged: recall_text keeps the ranking it had before
         # this patch. Only the history path needs recall(), because that is
         # where include_superseded lives.
+        limit = int(top_k or self.config.top_k)
+        # Ask for one more than requested: the difference between "there are
+        # exactly `limit` versions" and "there are more, some are hidden" is
+        # the truncation flag. Without it a history walk silently stopped at
+        # the page size (12 versions, top_k=10, no indication).
+        fetch = limit + 1
         if not include_history:
             try:
                 results = self._db.recall_text(
-                    query, top_k=int(top_k or self.config.top_k),
+                    query, top_k=fetch,
                     namespace=SKILL_NAMESPACE,
                 )
             except TypeError:  # pre-0.7.7 wheel: no namespace kw
                 results = self._db.recall(
-                    query=query, top_k=int(top_k or self.config.top_k),
+                    query=query, top_k=fetch,
                     namespace=SKILL_NAMESPACE,
                 )
         else:
             try:
                 results = self._db.recall(
                     query=query,
-                    top_k=int(top_k or self.config.top_k),
+                    top_k=fetch,
                     namespace=SKILL_NAMESPACE,
                     include_superseded=True,
                 )
             except TypeError:
                 results = self._db.recall(
-                    query=query, top_k=int(top_k or self.config.top_k),
+                    query=query, top_k=fetch,
                     namespace=SKILL_NAMESPACE,
                 )
         items: list[dict[str, Any]] = list(results) if results else []
@@ -1439,7 +1445,14 @@ class EmbeddedYantrikDBClient:
         if include_history:
             for r in items:
                 r["is_current"] = (r.get("current_status") != "superseded")
-        return {"skills": items, "total": len(items)}
+        truncated = len(items) > limit
+        items = items[:limit]
+        return {
+            "skills": items,
+            "total": len(items),
+            "truncated": truncated,
+            "requested": limit,
+        }
 
     def _skill_lock(self, skill_id: str):
         import threading
@@ -1600,35 +1613,60 @@ class EmbeddedYantrikDBClient:
                 links.append({"target_rid": current["rid"], "link_type": "supersedes"})
 
             record = getattr(self._db, "record_with_links", None)
-            try:
-                if links and record is not None:
-                    rid = record(
+            link_fn = getattr(self._db, "link", None)
+            if links and link_fn is not None:
+                # Write, then link. `record_with_links` persists the record
+                # BEFORE it validates the supersedes link, so a writer that
+                # loses the race leaves an orphan active row behind — the
+                # engine's refusal arrives too late to undo it. Doing the two
+                # steps here gives us the rid, which lets us remove exactly
+                # that row when the link is refused: one active version or a
+                # typed error, never both.
+                rid = self._db.record_text(
                     body,
-                    links,
                     memory_type="procedural",
                     namespace=SKILL_NAMESPACE,
                     domain="skill",
-                        metadata=_with_default_provenance(metadata, temporal_kind="rule"),
-                    )
-                else:
-                    # No predecessor (first version) or an old wheel without
-                    # record_with_links: a single record needs no link.
-                    rid = self._db.record_text(
+                    metadata=_with_default_provenance(metadata, temporal_kind="rule"),
+                )
+                try:
+                    link_fn(rid, current["rid"], "supersedes")
+                except Exception as exc:
+                    with contextlib.suppress(Exception):
+                        self._db.forget(rid)
+                    raise YantrikDBClientError(
+                        f"skill_define: the engine refused the revision link ({exc}); "
+                        "another writer may have revised this skill concurrently; "
+                        "this write was rolled back"
+                    ) from exc
+            elif links and record is not None:
+                try:
+                    rid = record(
                         body,
+                        links,
                         memory_type="procedural",
                         namespace=SKILL_NAMESPACE,
                         domain="skill",
                         metadata=_with_default_provenance(metadata, temporal_kind="rule"),
                     )
-            except RuntimeError as exc:
-                # The guard above closes the stale-writer window; this closes
-                # the residual race between the check and the write. A raw
-                # RuntimeError out of the extension tells a caller nothing it
-                # can act on, and it hides whether a row was written.
-                raise YantrikDBClientError(
-                    f"skill_define: the engine refused the revision link ({exc}); "
-                    "another writer may have revised this skill concurrently"
-                ) from exc
+                except RuntimeError as exc:
+                    # Old wheel without `link`: `record_with_links` is the only
+                    # atomic-ish path, and a refusal may leave an orphan. Map
+                    # the raw extension error so the caller can act on it.
+                    raise YantrikDBClientError(
+                        f"skill_define: the engine refused the revision link ({exc}); "
+                        "another writer may have revised this skill concurrently"
+                    ) from exc
+            else:
+                # No predecessor (first version) or an old wheel without
+                # record_with_links: a single record needs no link.
+                rid = self._db.record_text(
+                    body,
+                    memory_type="procedural",
+                    namespace=SKILL_NAMESPACE,
+                    domain="skill",
+                    metadata=_with_default_provenance(metadata, temporal_kind="rule"),
+                )
 
             # Concurrent revision: if another writer superseded the same
             # predecessor, two active versions would coexist. Make the state
@@ -1848,15 +1886,23 @@ class EmbeddedYantrikDBClient:
         made = engine_links
         per_skill: dict[str, int] = {}
         for sid in targets:
-            versions = self._skill_versions(sid)  # newest first
+            # No cap at the default page size: a legacy chain longer than 50
+            # must be linkable in one pass, otherwise the oldest links are
+            # silently missing.
+            versions = self._skill_versions(sid, limit=1000)  # newest first
             if len(versions) < 2:
                 continue
             existing = set()
             for v in versions:
                 try:
-                    for row in self._db.linked_records(v["rid"], direction="inbound",
-                                                       link_type="supersedes") or []:
-                        existing.add(row.get("rid"))
+                    # An inbound `supersedes` row points AT this version; its
+                    # presence means the version already has a successor. The
+                    # old check stored `row["rid"]`, a key the link rows do not
+                    # have, so every call re-linked the oldest pair (11, then 1,
+                    # then 1 on an unchanged store).
+                    if self._db.linked_records(v["rid"], direction="inbound",
+                                               link_type="supersedes"):
+                        existing.add(v["rid"])
                 except Exception:  # noqa: BLE001
                     pass
             created = 0

@@ -904,6 +904,25 @@ class YantrikDBTransientError(YantrikDBError):
 # Client
 # ---------------------------------------------------------------------------
 
+_OUTCOME_PHASES = ("execution", "outcome", "later_confirmation")
+
+
+def _parse_observed_at(value: str) -> float:
+    """ISO-8601 → epoch seconds; numeric strings pass through as floats."""
+    import datetime as _dt
+
+    text = value.strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    normalized = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    parsed = _dt.datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_dt.UTC)
+    return parsed.timestamp()
+
+
 class YantrikDBClient:
     """HTTP client for yantrikdb-server.
 
@@ -1493,6 +1512,25 @@ class YantrikDBClient:
         payload: dict[str, Any] = {"succeeded": bool(succeeded)}
         if note:
             payload["note"] = note
+        # Transport-independent validation: the embedded client rejects an
+        # unknown phase and stores `observed_at` as epoch seconds. Without the
+        # same checks here, an invalid enum or an ISO string reached the server
+        # verbatim and the tool still answered ok:true.
+        if phase is not None and phase not in _OUTCOME_PHASES:
+            raise YantrikDBClientError(
+                f"phase must be {'|'.join(_OUTCOME_PHASES)}, got {phase!r}"
+            )
+        observed_epoch: float | None = None
+        if observed_at is not None:
+            if isinstance(observed_at, (int, float)):
+                observed_epoch = float(observed_at)
+            else:
+                try:
+                    observed_epoch = _parse_observed_at(str(observed_at))
+                except ValueError as exc:
+                    raise YantrikDBClientError(
+                        f"observed_at must be epoch seconds or ISO-8601, got {observed_at!r}"
+                    ) from exc
         # The provider tool forwards the full field set on both transports, so
         # the HTTP client has to accept it too — otherwise every
         # `yantrikdb_skill_outcome` call in http mode dies on a TypeError
@@ -1504,10 +1542,11 @@ class YantrikDBClient:
             ("evidence_ref", evidence_ref),
             ("skill_version_rid", skill_version_rid),
             ("corrects_rid", corrects_rid),
-            ("observed_at", observed_at),
         ):
             if value:
                 payload[key] = value
+        if observed_epoch is not None:
+            payload["observed_at"] = observed_epoch
         return self._request(
             "POST", f"/v1/skills/{skill_id}/outcome", payload,
         )

@@ -1839,7 +1839,9 @@ class TestSkillRevisionContract:
             "evidence_ref": "run-7",
             "skill_version_rid": "v-rid",
             "corrects_rid": "c-rid",
-            "observed_at": "2026-11-27T09:00:00Z",
+            # ISO-8601 is normalised to epoch seconds so both transports
+            # store the same value (F7).
+            "observed_at": 1795770000.0,
         }
 
     def test_unset_extended_fields_keep_the_old_payload(self, provider_module):
@@ -3142,3 +3144,126 @@ class TestConcurrentRevision:
         assert "revised concurrently" in str(exc.value)
         assert "r-newer" in str(exc.value)
         assert client._db.record_calls == 0
+
+
+class TestRealConcurrentRevision:
+    """F2 on a real engine: two writers, one predecessor, no orphan row.
+
+    The stub test above pins the pre-write guard. This one exercises the
+    residual race — both writers read v1, then both try to write — against
+    the actual Rust engine. Exactly one revision may survive; the loser must
+    get a typed error and must not leave an active duplicate behind.
+    """
+
+    def test_two_real_writers_leave_one_active_version(self, provider_module, tmp_path):
+        import importlib
+        import threading
+
+        emb = importlib.import_module(provider_module.__name__ + ".embedded")
+        cfg = emb.YantrikDBConfig(mode="embedded", db_path=str(tmp_path / "store.db"))
+        first = emb.EmbeddedYantrikDBClient(cfg)
+        body1 = "VERSION ONE original body — a sufficiently long procedure description for the race probe"
+        v1 = first.skill_define("race.skill", body1, "procedure", ["git"])
+
+        a = emb.EmbeddedYantrikDBClient(cfg)
+        b = emb.EmbeddedYantrikDBClient(cfg)
+        barrier = threading.Barrier(2)
+        outcome: dict[str, object] = {}
+
+        def make_writer(name, client, body):
+            real_current = client._skill_current
+
+            def synced_current(skill_id):
+                current = real_current(skill_id)
+                barrier.wait(timeout=10)   # both writers read v1 before either writes
+                return current
+
+            client._skill_current = synced_current
+
+            def run():
+                try:
+                    outcome[name] = client.skill_define(
+                        "race.skill", body, "procedure", ["git"],
+                        supersedes_skill_id="race.skill",
+                    )
+                except Exception as exc:  # noqa: BLE001 - the assertion is the result
+                    outcome[name] = exc
+
+            return threading.Thread(target=run)
+
+        ta = make_writer("a", a, "VERSION TWO from A — a sufficiently long procedure description for the race probe")
+        tb = make_writer("b", b, "VERSION TWO from B — a sufficiently long procedure description for the race probe")
+        ta.start()
+        tb.start()
+        ta.join(timeout=30)
+        tb.join(timeout=30)
+
+        winners = [v for v in outcome.values() if isinstance(v, dict)]
+        losers = [v for v in outcome.values() if isinstance(v, Exception)]
+        assert len(winners) == 1, outcome
+        assert len(losers) == 1, outcome
+        assert isinstance(losers[0], provider_module.YantrikDBClientError)
+        assert "revised this skill concurrently" in str(losers[0])
+
+        reader = emb.EmbeddedYantrikDBClient(cfg)
+        history = reader.skill_search("VERSION", top_k=50, include_history=True)["skills"]
+        assert len(history) == 2, [(h["rid"], h.get("current_status")) for h in history]
+        assert sum(1 for h in history if h.get("is_current")) == 1
+        assert v1["rid"] in {h["rid"] for h in history}
+        active = reader.skill_search("VERSION", top_k=20)["skills"]
+        assert len(active) == 1
+
+
+class TestLegacyReifyIdempotency:
+    """F3: reify must link the whole chain once, and report 0 afterwards."""
+
+    def test_chain_is_linked_once_and_reported(self, provider_module, tmp_path):
+        import importlib
+
+        emb = importlib.import_module(provider_module.__name__ + ".embedded")
+        cfg = emb.YantrikDBConfig(mode="embedded", db_path=str(tmp_path / "store.db"))
+        client = emb.EmbeddedYantrikDBClient(cfg)
+
+        meta = {
+            "record_type": "skill", "skill_id": "legacy.skill",
+            "skill_type": "procedure", "applies_to": ["git"], "source": "hermes",
+        }
+        for i in range(12):
+            m = dict(meta)
+            m["supersedes_skill_id"] = "legacy.skill"
+            m["version"] = f"v{i}"
+            client._db.record_text(
+                f"legacy.skill body version {i} ".ljust(80, "x"),
+                memory_type="procedural", namespace=emb.SKILL_NAMESPACE,
+                domain="skill", metadata=m,
+            )
+
+        assert client.skill_reify_revisions("legacy.skill")["links_created"] == 11
+        assert client.skill_reify_revisions("legacy.skill")["links_created"] == 0
+        assert client.skill_reify_revisions("legacy.skill")["links_created"] == 0
+
+
+class TestHistoryTruncation:
+    """F8: a history page must say when it is only a page."""
+
+    def test_history_reports_truncation(self, provider_module, tmp_path):
+        import importlib
+
+        emb = importlib.import_module(provider_module.__name__ + ".embedded")
+        cfg = emb.YantrikDBConfig(mode="embedded", db_path=str(tmp_path / "store.db"))
+        client = emb.EmbeddedYantrikDBClient(cfg)
+        for i in range(12):
+            client.skill_define(
+                "deep.skill", f"deep.skill version {i} ".ljust(80, "x"),
+                "procedure", ["git"],
+                supersedes_skill_id="deep.skill" if i else None,
+            )
+
+        short = client.skill_search("deep.skill", top_k=5, include_history=True)
+        assert len(short["skills"]) == 5
+        assert short["truncated"] is True
+        assert short["requested"] == 5
+
+        full = client.skill_search("deep.skill", top_k=20, include_history=True)
+        assert len(full["skills"]) == 12
+        assert full["truncated"] is False

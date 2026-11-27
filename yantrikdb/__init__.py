@@ -3869,7 +3869,12 @@ class YantrikDBMemoryProvider(MemoryProvider):
             }
             for s in skills
         ]
-        return json.dumps({"count": len(compact), "skills": compact})
+        return json.dumps({
+            "count": len(compact),
+            "skills": compact,
+            "total": resp.get("total", len(compact)),
+            "truncated": bool(resp.get("truncated")),
+        })
 
     def _do_skill_define(self, args: dict[str, Any]) -> str:
         skill_id = (args.get("skill_id") or "").strip()
