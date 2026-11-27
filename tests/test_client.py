@@ -544,3 +544,29 @@ class TestEmbeddedOnlyGuards:
     def test_error_names_the_alternative(self, client, client_module):
         with pytest.raises(client_module.YantrikDBClientError, match="YANTRIKDB_MODE=embedded"):
             client.linked_records("01a10000-0000-7000-8000-000000000000")
+
+
+class TestSkillOutcomeValidation:
+    """F7: the HTTP transport validates like the embedded one."""
+
+    def test_invalid_phase_is_a_typed_error_before_the_request(self, client, mock_session):
+        with pytest.raises(Exception) as exc:
+            client.skill_outcome("git.commit_clean", True, phase="nonsense")
+        assert "phase must be" in str(exc.value)
+        mock_session.request.assert_not_called()
+        mock_session.post.assert_not_called()
+
+    def test_iso_observed_at_is_normalised_to_epoch(self, client, mock_session, client_module):
+        mock_session.request.return_value = _make_response(200, {"ok": True})
+        client.skill_outcome(
+            "git.commit_clean", True, observed_at="2026-11-27T12:00:00Z",
+        )
+        payload = mock_session.request.call_args.kwargs.get("json") or mock_session.request.call_args[1].get("json")
+        assert isinstance(payload["observed_at"], float)
+        assert payload["observed_at"] > 1_700_000_000
+
+    def test_unparseable_observed_at_is_a_typed_error(self, client, mock_session):
+        with pytest.raises(Exception) as exc:
+            client.skill_outcome("git.commit_clean", True, observed_at="not-a-time")
+        assert "observed_at" in str(exc.value)
+        mock_session.request.assert_not_called()

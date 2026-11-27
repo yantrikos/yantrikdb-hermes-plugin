@@ -904,6 +904,25 @@ class YantrikDBTransientError(YantrikDBError):
 # Client
 # ---------------------------------------------------------------------------
 
+_OUTCOME_PHASES = ("execution", "outcome", "later_confirmation")
+
+
+def _parse_observed_at(value: str) -> float:
+    """ISO-8601 → epoch seconds; numeric strings pass through as floats."""
+    import datetime as _dt
+
+    text = value.strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    normalized = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    parsed = _dt.datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_dt.UTC)
+    return parsed.timestamp()
+
+
 class YantrikDBClient:
     """HTTP client for yantrikdb-server.
 
@@ -1430,6 +1449,7 @@ class YantrikDBClient:
         *,
         top_k: int | None = None,
         applies_to: str | None = None,
+        include_history: bool = False,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "query": query,
@@ -1437,6 +1457,13 @@ class YantrikDBClient:
         }
         if applies_to:
             body["applies_to"] = applies_to
+        # The dispatch passes this on BOTH transports, so the HTTP client must
+        # accept it — a keyword the client does not take raises TypeError
+        # before a request is ever built, which is what made every HTTP
+        # skill_search call fail. Only sent when asked for, so an older server
+        # sees the pre-patch body.
+        if include_history:
+            body["include_history"] = True
         return self._request("POST", "/v1/skills/search", body)
 
     def skill_define(
@@ -1450,6 +1477,7 @@ class YantrikDBClient:
         on_conflict: str = "reject",
         version: str | None = None,
         supersedes_skill_id: str | None = None,
+        preconditions: list[str] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "skill_id": skill_id,
@@ -1464,6 +1492,8 @@ class YantrikDBClient:
             payload["version"] = version
         if supersedes_skill_id:
             payload["supersedes_skill_id"] = supersedes_skill_id
+        if preconditions:
+            payload["preconditions"] = list(preconditions)
         return self._request("POST", "/v1/skills/define", payload)
 
     def skill_outcome(
@@ -1472,12 +1502,80 @@ class YantrikDBClient:
         succeeded: bool,
         *,
         note: str | None = None,
+        phase: str | None = None,
+        task: str | None = None,
+        evidence_ref: str | None = None,
+        skill_version_rid: str | None = None,
+        corrects_rid: str | None = None,
+        observed_at: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {"succeeded": bool(succeeded)}
         if note:
             payload["note"] = note
+        # Transport-independent validation: the embedded client rejects an
+        # unknown phase and stores `observed_at` as epoch seconds. Without the
+        # same checks here, an invalid enum or an ISO string reached the server
+        # verbatim and the tool still answered ok:true.
+        if phase is not None and phase not in _OUTCOME_PHASES:
+            raise YantrikDBClientError(
+                f"phase must be {'|'.join(_OUTCOME_PHASES)}, got {phase!r}"
+            )
+        observed_epoch: float | None = None
+        if observed_at is not None:
+            if isinstance(observed_at, (int, float)):
+                observed_epoch = float(observed_at)
+            else:
+                try:
+                    observed_epoch = _parse_observed_at(str(observed_at))
+                except ValueError as exc:
+                    raise YantrikDBClientError(
+                        f"observed_at must be epoch seconds or ISO-8601, got {observed_at!r}"
+                    ) from exc
+        # The provider tool forwards the full field set on both transports, so
+        # the HTTP client has to accept it too — otherwise every
+        # `yantrikdb_skill_outcome` call in http mode dies on a TypeError
+        # before the request is even built. Empty values are omitted so an
+        # existing server that ignores unknown fields sees the old payload.
+        for key, value in (
+            ("phase", phase),
+            ("task", task),
+            ("evidence_ref", evidence_ref),
+            ("skill_version_rid", skill_version_rid),
+            ("corrects_rid", corrects_rid),
+        ):
+            if value:
+                payload[key] = value
+        if observed_epoch is not None:
+            payload["observed_at"] = observed_epoch
         return self._request(
             "POST", f"/v1/skills/{skill_id}/outcome", payload,
+        )
+
+    # --- read side of the skill ledger ------------------------------------
+    # The embedded engine keeps outcomes in `outcome_substrate` and revision
+    # chains in `record_links`; yantrikdb-server has no route for either yet,
+    # so these two are embedded-only. Raising a typed error instead of letting
+    # an AttributeError escape `handle_tool_call` keeps the tool surface
+    # honest: the agent gets "not available on this transport", and the day
+    # the server exposes the routes this is the only place that changes.
+
+    def skill_outcomes(
+        self,
+        skill_id: str | None = None,
+        *,
+        query: str | None = None,
+        since: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        raise YantrikDBClientError(
+            "skill_outcomes requires the embedded engine: the HTTP server has "
+            "no outcome_substrate route yet (set YANTRIKDB_MODE=embedded)"
+        )
+
+    def skill_reify_revisions(self, skill_id: str | None = None) -> dict[str, Any]:
+        raise YantrikDBClientError(
+            "skill_reify_revisions requires the embedded engine: the HTTP "
+            "server has no revision-chain route yet (set YANTRIKDB_MODE=embedded)"
         )
 
     def close(self) -> None:

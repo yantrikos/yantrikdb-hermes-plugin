@@ -178,6 +178,30 @@ def _reset_engine_cache():
     _clear()
 
 
+@pytest.fixture
+def needs_engine(provider_module):
+    """Skip when the compiled engine is not installed.
+
+    The CI matrix job runs with no engine on purpose ("the matrix above must
+    keep passing with no engine present, the way a contributor runs it"); the
+    separate engine-contract job installs it. Tests that do real writes need
+    the engine and must skip rather than fail there.
+    """
+    import importlib
+    import os
+
+    emb = importlib.import_module(provider_module.__name__ + ".embedded")
+    if os.environ.get("YDB_TEST_NO_ENGINE"):
+        # Local switch for the same configuration the CI matrix runs: it has no
+        # engine installed, and that job must stay green.
+        pytest.skip("YDB_TEST_NO_ENGINE set: pretending the engine is absent")
+    try:
+        emb.load_engine_yantrikdb_class()
+    except Exception as exc:  # noqa: BLE001 - any failure means "no engine here"
+        pytest.skip(f"real engine not installed here: {type(exc).__name__}")
+    return emb
+
+
 @pytest.fixture(autouse=True)
 def _clean_yantrikdb_env(monkeypatch):
     for var in (
