@@ -3151,8 +3151,17 @@ class TestRealConcurrentRevision:
 
     The stub test above pins the pre-write guard. This one exercises the
     residual race — both writers read v1, then both try to write — against
-    the actual Rust engine. Exactly one revision may survive; the loser must
-    get a typed error and must not leave an active duplicate behind.
+    the actual Rust engine, in the configuration the provider actually runs:
+    two CLIENTs on ONE engine.
+
+    Cross-handle behaviour is measured, not asserted here:
+    `docs/supersedes-concurrency.md` records it (two engine handles on one
+    file: 12 of 40 runs accepted two successors) and
+    `benchmarks/supersedes_race.py` reproduces it. The engine does not
+    guarantee a single winner across handles — its gate is atomic per
+    connection, and the schema does not back the invariant — so freezing that
+    case into a green/red assertion would pin a behaviour that is not
+    promised.
     """
 
     def test_two_real_writers_leave_one_active_version(self, provider_module, tmp_path):
@@ -3163,13 +3172,6 @@ class TestRealConcurrentRevision:
         # Two CLIENTS, one engine. share_engine defaults to True and the cache
         # key is the db path, so this is the in-process case the guard actually
         # covers — deterministic, and the one the guarantee is about.
-        #
-        # Measured, NOT asserted: across two separate engines (share_engine
-        # =False) both writers can win. Over 20 runs that happened once, and in
-        # a further 12 runs the fork report itself appeared only 10 times — so
-        # neither "one winner" nor "the fork is always reported" is a property
-        # this code provides cross-instance. That is documented as a limitation
-        # rather than frozen into a flaky assertion.
         cfg = emb.YantrikDBConfig(mode="embedded", db_path=str(tmp_path / "store.db"))
         first = emb.EmbeddedYantrikDBClient(cfg)
         body1 = "VERSION ONE original body — a sufficiently long procedure description for the race probe"
@@ -3177,6 +3179,14 @@ class TestRealConcurrentRevision:
 
         a = emb.EmbeddedYantrikDBClient(cfg)
         b = emb.EmbeddedYantrikDBClient(cfg)
+        # The premise is observable, not assumed: this test is about two
+        # CLIENTS on ONE engine. If a future change drops the cache (or the
+        # engine fails to publish), the test would silently start measuring
+        # the cross-engine case instead — assert the premise.
+        assert a._db is b._db is first._db, (
+            "the engine cache did not hand both clients the same engine; "
+            "this test would measure the cross-engine case, not the guard"
+        )
         barrier = threading.Barrier(2)
         outcome: dict[str, object] = {}
 
