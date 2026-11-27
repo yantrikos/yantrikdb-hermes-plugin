@@ -389,6 +389,78 @@ FORGET_SCHEMA = {
     },
 }
 
+GET_MEMORY_SCHEMA = {
+    "name": "yantrikdb_get_memory",
+    "description": (
+        "Fetch one memory by its rid — the record itself, whatever its "
+        "consolidation status. Use this when you already hold a rid (from "
+        "yantrikdb_conflicts, yantrikdb_links, a trigger or a task) and need "
+        "its text; recall is semantic and paging a namespace is the wrong "
+        "tool for that. Returns found=false for an unknown rid, and for a rid that belongs to another namespace. [Embedded engine only: with YANTRIKDB_MODE=http this call returns a tool error.]"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "rid": {
+                "type": "string",
+                "description": "Memory id returned by any YantrikDB tool.",
+            },
+        },
+        "required": ["rid"],
+    },
+}
+
+CORRECT_SCHEMA = {
+    "name": "yantrikdb_correct",
+    "description": (
+        "Correct a memory in place: new text, merged metadata, or a new "
+        "importance/valence, with a required reason. The rid and the "
+        "creation time are preserved, a revision row records the PRIOR "
+        "state, and the correction is visible in the record's history. "
+        "Use this instead of forget+remember when the fact was wrong "
+        "rather than obsolete — the identity of the memory stays the same. "
+        "Note: this does not restore a decayed record to visibility; "
+        "correction is not reinforcement. [Embedded engine only: with "
+        "YANTRIKDB_MODE=http this call returns a tool error.]"
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "rid": {
+                "type": "string",
+                "description": "Memory id to correct in place.",
+            },
+            "reason": {
+                "type": "string",
+                "description": (
+                    "Why the record is being corrected. Required and must be "
+                    "non-empty: the revision row keeps it for audit."
+                ),
+            },
+            "new_text": {
+                "type": "string",
+                "description": "Replacement text. Omit to keep the current text.",
+            },
+            "metadata_merge": {
+                "type": "object",
+                "description": (
+                    "Keys merged into the existing metadata. Omit to keep it. "
+                    "Keys present are overwritten, absent keys are preserved."
+                ),
+            },
+            "new_importance": {
+                "type": "number",
+                "description": "Replacement importance, 0.0-1.0. Omit to keep.",
+            },
+            "new_valence": {
+                "type": "number",
+                "description": "Replacement valence, -1.0-1.0. Omit to keep.",
+            },
+        },
+        "required": ["rid", "reason"],
+    },
+}
+
 THINK_SCHEMA = {
     "name": "yantrikdb_think",
     "description": (
@@ -1043,6 +1115,8 @@ ALL_TOOL_SCHEMAS: list[dict[str, Any]] = [
     RECALL_SCHEMA,
     LINKS_SCHEMA,
     FORGET_SCHEMA,
+    GET_MEMORY_SCHEMA,
+    CORRECT_SCHEMA,
     REJECT_RECALLED_SCHEMA,
     THINK_SCHEMA,
     CONFLICTS_SCHEMA,
@@ -2101,6 +2175,23 @@ class YantrikDBMemoryProvider(MemoryProvider):
             if k not in {"owner_actors", "shared_owner_ids"}
         }
 
+
+    def _record_scope(self) -> set[str]:
+        """Namespaces this session legitimately owns.
+
+        Not `config.namespace`: that is the un-derived base, while the writer
+        uses `self._namespace` (derived from the workspace/identity kwargs)
+        and recall additionally unions `_fallback_recall_namespaces()`. A rid
+        this session can recall is a rid it owns, so the guard gets the same
+        set — comparing against the base alone refused the agent's own rows.
+        """
+        scope = {getattr(self, "_namespace", ""), getattr(self, "_base_namespace", "")}
+        try:  # noqa: SIM105 - scope derivation must not break a read
+            scope.update(self._fallback_recall_namespaces())
+        except Exception:  # noqa: BLE001
+            pass
+        return {s for s in scope if s}
+
     def _fallback_recall_namespaces(self) -> list[str]:
         namespaces: list[str] = []
         namespaces.extend(self._legacy_actor_namespaces())
@@ -2646,6 +2737,10 @@ class YantrikDBMemoryProvider(MemoryProvider):
                 raw = self._do_recall(args)
             elif tool_name == "yantrikdb_forget":
                 raw = self._do_forget(args)
+            elif tool_name == "yantrikdb_get_memory":
+                raw = self._do_get_memory(args)
+            elif tool_name == "yantrikdb_correct":
+                raw = self._do_correct(args)
             elif tool_name == "yantrikdb_reject_recalled":
                 raw = self._do_reject_recalled(args)
             elif tool_name == "yantrikdb_links":
@@ -2970,6 +3065,51 @@ class YantrikDBMemoryProvider(MemoryProvider):
         resp = self._require_client().forget(rid)
         self._record_success()
         return json.dumps({"rid": rid, "found": bool(resp.get("found", False))})
+
+    def _do_get_memory(self, args: dict[str, Any]) -> str:
+        rid = (args.get("rid") or "").strip()
+        if not rid:
+            return tool_error("Missing required parameter: rid")
+        resp = self._require_client().get_memory(
+            rid, allowed=self._record_scope()
+        )
+        self._record_success()
+        if not resp:
+            # An unknown rid is an answer, not an error: the caller asked
+            # "what is this record", and the record does not exist.
+            return json.dumps({"rid": rid, "found": False})
+        return json.dumps(
+            {"rid": rid, "found": True, "memory": resp}, ensure_ascii=False,
+        )
+
+
+    def _do_correct(self, args: dict[str, Any]) -> str:
+        rid = (args.get("rid") or "").strip()
+        reason = (args.get("reason") or "").strip()
+        if not rid:
+            return tool_error("Missing required parameter: rid")
+        if not reason:
+            # The engine rejects an empty reason too; failing here saves a
+            # round-trip and gives the model a message it can act on.
+            return tool_error("Missing required parameter: reason (non-empty)")
+        resp = self._require_client().correct(
+            rid,
+            reason,
+            allowed=self._record_scope(),
+            new_text=args.get("new_text"),
+            metadata_merge=args.get("metadata_merge"),
+            new_importance=args.get("new_importance"),
+            new_valence=args.get("new_valence"),
+        )
+        self._record_success()
+        return json.dumps(
+            {
+                "rid": resp.get("corrected_rid", rid),
+                "revision_num": resp.get("revision_num"),
+                "original_tombstoned": bool(resp.get("original_tombstoned", False)),
+            },
+            ensure_ascii=False,
+        )
 
     def _do_reject_recalled(self, args: dict[str, Any]) -> str:
         rids = _coerce_str_list(args.get("rids"))

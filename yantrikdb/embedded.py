@@ -835,6 +835,87 @@ class EmbeddedYantrikDBClient:
             raise YantrikDBClientError(f"forget failed: {e}") from e
         return {"rid": rid, "found": found}
 
+    def _same_namespace(
+        self, record: dict[str, Any] | None, allowed: set[str] | None = None
+    ) -> bool:
+        """Does this record belong to the namespace this client is bound to?
+
+        `config.namespace` is the provider's existing boundary: every read
+        path passes it to the engine (`recall`, `list_memories`, `conflicts`,
+        ...). The two rid-addressed calls cannot — the engine API takes a rid
+        and nothing else — so the same rule is applied here rather than
+        trusted to the caller's rid. A record without a namespace field is
+        treated as foreign: refusing an unknown is cheaper than leaking one.
+        """
+        if record is None:
+            return False
+        scope = allowed if allowed else {self.config.namespace}
+        return record.get("namespace") in scope
+
+    def get_memory(
+        self, rid: str, *, allowed: set[str] | None = None
+    ) -> dict[str, Any] | None:
+        """Fetch one memory by rid, or None.
+
+        Naming a rid asks for THAT record, so the engine returns it whatever
+        its consolidation status — a superseded or tombstoned row is still a
+        row. The provider turns None into ``found=false`` rather than an
+        error, because "no such record" is an answer.
+        """
+        try:
+            memory = self._db.get_memory(rid)
+        except Exception as e:
+            raise _map_engine_error("get_memory", e) from e
+        if memory is None:
+            return None
+        record = dict(memory)
+        # A foreign record is reported exactly like a missing one: the caller
+        # learns nothing about another namespace's contents or existence.
+        return record if self._same_namespace(record, allowed) else None
+
+    def correct(
+        self,
+        rid: str,
+        reason: str,
+        *,
+        allowed: set[str] | None = None,
+        new_text: str | None = None,
+        metadata_merge: dict[str, Any] | None = None,
+        new_importance: float | None = None,
+        new_valence: float | None = None,
+    ) -> dict[str, Any]:
+        """Correct a record in place; the rid survives, history records the prior state.
+
+        A text-changing correction re-embeds, so it needs an embedder; the
+        engine's NoEmbedder surfaces here as a client error rather than a
+        silent half-write.
+        """
+        # Checked BEFORE the write: an unauthorised correction must leave the
+        # row untouched and write no revision row. A missing rid and a foreign
+        # one take the same path, so the refusal is not an existence oracle.
+        try:
+            existing = self._db.get_memory(rid)
+        except Exception as e:
+            raise _map_engine_error("correct", e) from e
+        if not self._same_namespace(
+            dict(existing) if existing is not None else None, allowed
+        ):
+            raise YantrikDBClientError(
+                "correct: no record with that rid in this namespace"
+            )
+        try:
+            result = self._db.correct(
+                rid,
+                reason,
+                new_text=new_text,
+                metadata_merge=metadata_merge,
+                new_importance=new_importance,
+                new_valence=new_valence,
+            )
+        except Exception as e:
+            raise _map_engine_error("correct", e) from e
+        return dict(result)
+
     def linked_records(self, rid: str, *, link_type: str | None = None,
                        direction: str = "both") -> dict[str, Any]:
         try:

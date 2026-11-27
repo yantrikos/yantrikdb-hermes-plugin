@@ -224,11 +224,38 @@ class TestInitialize:
 # Tool schemas
 # ---------------------------------------------------------------------------
 
+
+def _engine_available() -> bool:
+    """Is the native engine wheel installed in this environment?
+
+    CI installs the plugin's pure-Python dependencies but not the engine, so a
+    test that constructs an EmbeddedYantrikDBClient must skip rather than fail
+    there. Same guard the rest of the suite uses (test_semantic_contract).
+    """
+    import importlib.util as _ilu
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    repo = _Path(__file__).resolve().parent.parent
+    saved = list(_sys.path)
+    try:
+        for entry in ("", str(repo)):
+            while entry in _sys.path:
+                _sys.path.remove(entry)
+        return _ilu.find_spec("yantrikdb._yantrikdb_rust") is not None
+    except (ImportError, ValueError):
+        return False
+    finally:
+        _sys.path[:] = saved
+
+
 EXPECTED_TOOL_NAMES = {
     "yantrikdb_remember",
     "yantrikdb_recall",
     "yantrikdb_links",
     "yantrikdb_forget",
+    "yantrikdb_get_memory",
+    "yantrikdb_correct",
     "yantrikdb_reject_recalled",
     "yantrikdb_think",
     "yantrikdb_conflicts",
@@ -291,7 +318,9 @@ class TestToolSchemas:
             "yantrikdb_skill_search", "yantrikdb_skill_define",
             "yantrikdb_skill_outcome", "yantrikdb_packs", "yantrikdb_fleet",
         }
-        assert len(names) == 20
+        # Set equality above is the real guard: it forbids both a missing and
+        # an unexpected tool. A hardcoded count on top of it only adds a
+        # number that has to be edited on every deliberate addition.
 
     def test_core_profile_is_materially_cheaper(self, provider_module, monkeypatch):
         """The point of the profile is per-turn token cost — pin the win so a
@@ -1596,6 +1625,48 @@ class TestSkillDefine:
         mock_client.skill_define.assert_not_called()
 
 
+class TestGetMemory:
+    """`yantrikdb_get_memory` — a rid point-read, not a semantic search.
+
+    The defect it closes: every tool returned rids (conflicts, links,
+    triggers, tasks) and none could resolve one back to its text without
+    paging a namespace.
+    """
+
+    def test_dispatches_and_returns_the_record(self, provider, mock_client):
+        mock_client.get_memory.return_value = {
+            "rid": "r-1", "text": "Redis is the cache layer.",
+        }
+        out = provider.handle_tool_call("yantrikdb_get_memory", {"rid": "r-1"})
+        mock_client.get_memory.assert_called_once()
+        assert mock_client.get_memory.call_args.args[0] == "r-1"
+        parsed = json.loads(out)
+        assert parsed["found"] is True
+        assert parsed["memory"]["text"] == "Redis is the cache layer."
+
+    def test_unknown_rid_is_an_answer_not_an_error(self, provider, mock_client):
+        mock_client.get_memory.return_value = None
+        out = provider.handle_tool_call("yantrikdb_get_memory", {"rid": "r-nope"})
+        parsed = json.loads(out)
+        assert parsed["found"] is False
+        assert parsed["rid"] == "r-nope"
+        # No error key: "no such record" is a result the caller can act on.
+        assert "error" not in parsed
+
+    def test_rejects_missing_rid(self, provider, mock_client):
+        out = provider.handle_tool_call("yantrikdb_get_memory", {"rid": "  "})
+        mock_client.get_memory.assert_not_called()
+        assert "Missing required parameter: rid" in json.loads(out)["error"]
+
+    def test_http_transport_fails_as_a_typed_tool_error(self, provider_module):
+        client = provider_module.YantrikDBClient(
+            provider_module.YantrikDBConfig(mode="http")
+        )
+        with pytest.raises(provider_module.YantrikDBClientError) as exc:
+            client.get_memory("r-1")
+        assert "embedded" in str(exc.value)
+
+
 class TestSkillOutcome:
     def test_dispatches(self, provider, mock_client):
         out = provider.handle_tool_call(
@@ -2810,3 +2881,197 @@ class TestWaveBExtractionStatsTool:
         # Canonical "k1" not counted
         assert sum(parsed["by_pattern"].values()) == parsed["total_candidates_sampled"]
         assert parsed["by_speaker"]["user"] >= 3
+
+
+@pytest.mark.skipif(
+    not _engine_available(),
+    reason="native yantrikdb engine wheel not installed",
+)
+class TestNamespaceBoundary:
+    """A rid is not a cross-namespace capability.
+
+    The engine's `get_memory(rid)` / `correct(rid, ...)` take no namespace, so
+    the provider enforces the boundary with its **resolved** scope
+    (`_namespace`, the base and the legitimate fallback namespaces) — not the
+    un-derived `config.namespace`. A foreign record must be indistinguishable
+    from a missing one, and a refused correction must not mutate or write a
+    revision.
+    """
+
+    class _DB:
+        def __init__(self, record):
+            self.record = record
+            self.reads = 0
+            self.correct_calls = 0
+
+        def get_memory(self, rid):
+            self.reads += 1
+            return self.record
+
+        def correct(self, *args, **kwargs):
+            self.correct_calls += 1
+            return {"corrected_rid": "r-1", "revision_num": 1}
+
+    def _client(self, provider_module, namespace, record):
+        import importlib
+
+        emb = importlib.import_module(provider_module.__name__ + ".embedded")
+        cfg = emb.YantrikDBConfig(mode="embedded", namespace=namespace)
+        client = emb.EmbeddedYantrikDBClient(cfg)
+        client._db = self._DB(record)
+        return client
+
+    def test_foreign_record_is_indistinguishable_from_a_missing_one(
+        self, provider_module
+    ):
+        client = self._client(
+            provider_module, "ns-b", {"rid": "r-1", "namespace": "ns-a",
+                                      "text": "secret of namespace A"},
+        )
+        assert client.get_memory("r-1") is None, (
+            "a record from another namespace must not be returned — not its "
+            "text, not its metadata, not an existence signal"
+        )
+
+    def test_own_namespace_record_is_returned(self, provider_module):
+        client = self._client(
+            provider_module, "ns-b", {"rid": "r-1", "namespace": "ns-b",
+                                      "text": "mine"},
+        )
+        got = client.get_memory("r-1")
+        assert got is not None and got["text"] == "mine"
+
+    def test_record_without_a_namespace_field_is_treated_as_foreign(
+        self, provider_module
+    ):
+        client = self._client(
+            provider_module, "ns-b", {"rid": "r-1", "text": "unscoped"},
+        )
+        assert client.get_memory("r-1") is None
+
+
+@pytest.mark.skipif(
+    not _engine_available(),
+    reason="native yantrikdb engine wheel not installed",
+)
+class TestDerivedNamespaceOwnership:
+    """R3-01: a real session writes at `base:workspace:identity`, not at base.
+
+    The guard once compared against `config.namespace` ("hermes"), so the
+    agent's own record — written at "hermes:workspace:coder" and returned by
+    recall — was declared foreign. These tests use the real provider
+    initialisation path and a real engine, because the stub rows used the base
+    namespace and could never catch that mismatch.
+    """
+
+    def _provider(self, provider_module, tmp_path, monkeypatch, *, identity="coder"):
+        monkeypatch.setenv("YANTRIKDB_MODE", "embedded")
+        monkeypatch.setenv("YANTRIKDB_DB_PATH", str(tmp_path / "store.db"))
+        monkeypatch.setenv("YANTRIKDB_NAMESPACE", "hermes")
+        p = provider_module.YantrikDBMemoryProvider()
+        p.initialize(
+            "derived-session", agent_workspace="workspace",
+            agent_identity=identity, hermes_home=tmp_path,
+        )
+        assert getattr(p, "_init_error", None) is None
+        return p
+
+    def test_own_record_in_the_derived_namespace_is_found(
+        self, provider_module, tmp_path, monkeypatch
+    ):
+        p = self._provider(provider_module, tmp_path, monkeypatch)
+        assert p._namespace == "hermes:workspace:coder"
+        out = json.loads(p.handle_tool_call(
+            "yantrikdb_remember", {"text": "R3-01 own record probe"},
+        ))
+        rid = out["rid"]
+        got = json.loads(p.handle_tool_call(
+            "yantrikdb_get_memory", {"rid": rid},
+        ))
+        assert got["found"] is True, got
+        assert got["memory"]["namespace"] == "hermes:workspace:coder"
+
+    def test_another_identitys_record_is_not_found(
+        self, provider_module, tmp_path, monkeypatch
+    ):
+        other = self._provider(provider_module, tmp_path, monkeypatch, identity="other")
+        rid = json.loads(other.handle_tool_call(
+            "yantrikdb_remember", {"text": "another identity's record"},
+        ))["rid"]
+
+        p = self._provider(provider_module, tmp_path, monkeypatch)
+        got = json.loads(p.handle_tool_call(
+            "yantrikdb_get_memory", {"rid": rid},
+        ))
+        assert got["found"] is False, got
+
+@pytest.mark.skipif(
+    not _engine_available(),
+    reason="native yantrikdb engine wheel not installed",
+)
+class TestCorrect:
+    """`yantrikdb_correct` — in-place correction, not forget + remember.
+
+    The namespace guard is the one already present in this tree: a correction
+    aimed at a foreign record must be refused before the engine is touched.
+    """
+
+    class _DB:
+        def __init__(self, record, namespace="ns-b"):
+            self.record = record
+            self.namespace = namespace
+            self.correct_calls = 0
+
+        def get_memory(self, rid):
+            return self.record
+
+        def correct(self, *args, **kwargs):
+            self.correct_calls += 1
+            return {
+                "original_rid": args[0], "corrected_rid": args[0],
+                "original_tombstoned": False, "revision_num": 2,
+            }
+
+    def _client(self, provider_module, namespace, record):
+        import importlib
+
+        emb = importlib.import_module(provider_module.__name__ + ".embedded")
+        cfg = emb.YantrikDBConfig(mode="embedded", namespace=namespace)
+        client = emb.EmbeddedYantrikDBClient(cfg)
+        client._db = self._DB(record)
+        return client
+
+    def test_own_namespace_record_can_be_corrected(self, provider_module):
+        client = self._client(
+            provider_module, "ns-b",
+            {"rid": "r-1", "namespace": "ns-b", "text": "mine"},
+        )
+        out = client.correct("r-1", "fix the port", new_text="mine, fixed")
+        assert out["revision_num"] == 2
+        assert client._db.correct_calls == 1
+
+    def test_foreign_record_cannot_be_corrected(self, provider_module):
+        client = self._client(
+            provider_module, "ns-b",
+            {"rid": "r-1", "namespace": "ns-a", "text": "secret"},
+        )
+        with pytest.raises(provider_module.YantrikDBClientError) as exc:
+            client.correct("r-1", "rewrite it", new_text="hijacked")
+        assert "no record" in str(exc.value)
+        assert client._db.correct_calls == 0, (
+            "a refused correction must not reach the engine: no mutation, no revision row"
+        )
+
+    def test_missing_record_takes_the_same_refusal_path(self, provider_module):
+        client = self._client(provider_module, "ns-b", None)
+        with pytest.raises(provider_module.YantrikDBClientError):
+            client.correct("r-1", "why not")
+        assert client._db.correct_calls == 0
+
+    def test_http_transport_is_a_typed_error_not_a_traceback(self, provider_module):
+        client = provider_module.YantrikDBClient(
+            provider_module.YantrikDBConfig(mode="http")
+        )
+        with pytest.raises(provider_module.YantrikDBClientError) as exc:
+            client.correct("r-1", "why not")
+        assert "embedded" in str(exc.value)

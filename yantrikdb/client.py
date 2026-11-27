@@ -1124,6 +1124,35 @@ class YantrikDBClient:
     def forget(self, rid: str) -> dict[str, Any]:
         return self._request("POST", "/v1/forget", {"rid": rid})
 
+    def get_memory(
+        self, rid: str, *, allowed: set[str] | None = None
+    ) -> dict[str, Any] | None:
+        # Point-read by rid is an embedded-only capability; the HTTP backend
+        # has no single-record GET route (only the /v1/records listing).
+        raise YantrikDBClientError(
+            "get_memory is not available over the HTTP backend; "
+            "use YANTRIKDB_MODE=embedded or page /v1/records instead"
+        )
+
+    def correct(
+        self,
+        rid: str,
+        reason: str,
+        *,
+        allowed: set[str] | None = None,
+        new_text: str | None = None,
+        metadata_merge: dict[str, Any] | None = None,
+        new_importance: float | None = None,
+        new_valence: float | None = None,
+    ) -> dict[str, Any]:
+        # In-place correction with a revision row is embedded-only; the HTTP
+        # backend has no /v1/correct route (forget + remember is the only write
+        # pair it exposes, and that is a different operation).
+        raise YantrikDBClientError(
+            "correct is not available over the HTTP backend; "
+            "use YANTRIKDB_MODE=embedded"
+        )
+
     def linked_records(self, rid: str, *, link_type: str | None = None,
                        direction: str = "both") -> dict[str, Any]:
         # Link traversal is an embedded-only capability; the HTTP backend has
