@@ -1426,18 +1426,47 @@ class EmbeddedYantrikDBClient:
                     namespace=SKILL_NAMESPACE,
                 )
         else:
-            try:
-                results = self._db.recall(
-                    query=query,
-                    top_k=fetch,
-                    namespace=SKILL_NAMESPACE,
-                    include_superseded=True,
-                )
-            except TypeError:
-                results = self._db.recall(
-                    query=query, top_k=fetch,
-                    namespace=SKILL_NAMESPACE,
-                )
+            # `applies_to` is a post-filter, so a fixed limit+1 window can be
+            # filtered away entirely while more matching rows sit behind it —
+            # the page would then report `truncated: false` and be wrong. Widen
+            # until the window holds more matches than the page, the window is
+            # exhausted (fewer rows than asked for), or the cap is reached.
+            cap = max(fetch, limit * 10)
+            want = fetch
+            while True:
+                try:
+                    results = self._db.recall(
+                        query=query,
+                        top_k=want,
+                        namespace=SKILL_NAMESPACE,
+                        include_superseded=True,
+                    )
+                except TypeError:
+                    results = self._db.recall(
+                        query=query, top_k=want,
+                        namespace=SKILL_NAMESPACE,
+                    )
+                raw = list(results) if results else []
+                if not applies_to:
+                    matches = raw
+                else:
+                    matches = [
+                        r for r in raw
+                        if applies_to in (r.get("metadata", {}) or {}).get("applies_to", [])
+                    ]
+                if len(matches) > limit or len(raw) < want or want >= cap:
+                    break
+                want = min(want * 2, cap)
+            for r in matches:
+                r["is_current"] = (r.get("current_status") != "superseded")
+            return {
+                "skills": matches[:limit],
+                "total": len(matches[:limit]),
+                # Exact when false; a lower bound (limit+1) when true.
+                "matched": len(matches),
+                "truncated": len(matches) > limit,
+                "requested": limit,
+            }
         items: list[dict[str, Any]] = list(results) if results else []
         # Optional client-side post-filter on applies_to — server's
         # /v1/skills/search does the same as a post-filter pattern.
@@ -1446,14 +1475,12 @@ class EmbeddedYantrikDBClient:
                 r for r in items
                 if applies_to in (r.get("metadata", {}) or {}).get("applies_to", [])
             ]
-        if include_history:
-            for r in items:
-                r["is_current"] = (r.get("current_status") != "superseded")
         truncated = len(items) > limit
         items = items[:limit]
         return {
             "skills": items,
             "total": len(items),
+            "matched": len(items),
             "truncated": truncated,
             "requested": limit,
         }
@@ -1890,9 +1917,10 @@ class EmbeddedYantrikDBClient:
         made = engine_links
         per_skill: dict[str, int] = {}
         for sid in targets:
-            # No cap at the default page size: a legacy chain longer than 50
-            # must be linkable in one pass, otherwise the oldest links are
-            # silently missing.
+            # Not the default page size: a legacy chain longer than 50 must be
+            # linkable in one pass, otherwise the oldest links are silently
+            # missing. The bound is 1000, not "unbounded" — a longer chain is
+            # still only partially linked, and reify reports what it did.
             versions = self._skill_versions(sid, limit=1000)  # newest first
             if len(versions) < 2:
                 continue

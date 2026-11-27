@@ -3289,6 +3289,49 @@ class TestHistoryTruncation:
         assert len(full["skills"]) == 12
         assert full["truncated"] is False
 
+    def test_truncation_survives_the_applies_to_post_filter(self, provider_module, tmp_path):
+        """A page must not claim completeness when the filter ate the window.
+
+        `applies_to` is applied after retrieval. With a fixed limit+1 window the
+        matching rows can all sit behind rows the filter drops, and the page
+        then reports `truncated: false` while more matches exist.
+        """
+        import importlib
+
+        emb = importlib.import_module(provider_module.__name__ + ".embedded")
+        cfg = emb.YantrikDBConfig(mode="embedded", db_path=str(tmp_path / "store.db"))
+        client = emb.EmbeddedYantrikDBClient(cfg)
+
+        # Noise that ranks high: the query term appears many times.
+        for i in range(6):
+            client.skill_define(
+                "noise.skill", ("filter probe " * 12) + f"noise {i}",
+                "procedure", ["git"],
+                supersedes_skill_id="noise.skill" if i else None,
+            )
+        # The rows the caller wants, deliberately less prominent.
+        for i in range(4):
+            client.skill_define(
+                "wanted.skill", f"filter probe wanted {i} " + "y" * 40,
+                "procedure", ["ops"],
+                supersedes_skill_id="wanted.skill" if i else None,
+            )
+
+        page = client.skill_search(
+            "filter probe", top_k=2, applies_to="ops", include_history=True,
+        )
+        assert len(page["skills"]) == 2
+        assert all("ops" in (r.get("metadata", {}) or {}).get("applies_to", []) for r in page["skills"])
+        assert page["matched"] >= 3, page["matched"]
+        assert page["truncated"] is True, page
+
+        wide = client.skill_search(
+            "filter probe", top_k=10, applies_to="ops", include_history=True,
+        )
+        assert len(wide["skills"]) == 4
+        assert wide["matched"] == 4
+        assert wide["truncated"] is False
+
 
 class TestSkillSearchFetchWidth:
     """A pre-existing `applies_to` caller must get what it got before.
