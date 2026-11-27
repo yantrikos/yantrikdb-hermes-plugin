@@ -63,7 +63,7 @@ def prov(provider_module):
 
 
 @pytest.fixture
-def embedded_client(prov, provider_module):
+def embedded_client(prov, provider_module, needs_engine):
     import importlib
 
     emb = importlib.import_module(provider_module.__name__ + ".embedded")

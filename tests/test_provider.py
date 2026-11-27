@@ -1740,8 +1740,10 @@ class TestOutcomeRanking:
 
     def _client(self, provider_module, hits):
         emb = self._emb(provider_module)
-        cfg = emb.YantrikDBConfig(mode="embedded")
-        client = emb.EmbeddedYantrikDBClient(cfg)
+        # No __init__: this test is about the provider's ordering logic, not
+        # about the engine, and the CI matrix job runs without one.
+        client = emb.EmbeddedYantrikDBClient.__new__(emb.EmbeddedYantrikDBClient)
+        client.config = emb.YantrikDBConfig(mode="embedded")
         client._db = self._FakeDB(hits)
         return client
 
@@ -3131,7 +3133,8 @@ class TestConcurrentRevision:
         import importlib
 
         emb = importlib.import_module(provider_module.__name__ + ".embedded")
-        client = emb.EmbeddedYantrikDBClient(emb.YantrikDBConfig(mode="embedded"))
+        client = emb.EmbeddedYantrikDBClient.__new__(emb.EmbeddedYantrikDBClient)
+        client.config = emb.YantrikDBConfig(mode="embedded")
         client._db = self._StaleDB()
 
         with pytest.raises(provider_module.YantrikDBClientError) as exc:
@@ -3164,7 +3167,7 @@ class TestRealConcurrentRevision:
     promised.
     """
 
-    def test_two_real_writers_leave_one_active_version(self, provider_module, tmp_path):
+    def test_two_real_writers_leave_one_active_version(self, provider_module, needs_engine, tmp_path):
         import importlib
         import threading
 
@@ -3223,7 +3226,13 @@ class TestRealConcurrentRevision:
         assert len(winners) == 1, outcome
         assert len(losers) == 1, outcome
         assert isinstance(losers[0], provider_module.YantrikDBClientError)
-        assert "revised this skill concurrently" in str(losers[0])
+        message = str(losers[0])
+        # Two typed paths produce the refusal: the pre-write guard ("was
+        # revised concurrently") and the engine's own rejection ("may have
+        # revised this skill concurrently"). Which one fires depends on
+        # whether the other writer's edge landed before this writer's
+        # check. Assert the shared facts, not one wording.
+        assert "revised" in message and "concurrently" in message, message
 
         reader = emb.EmbeddedYantrikDBClient(cfg)
         history = reader.skill_search("VERSION", top_k=50, include_history=True)["skills"]
@@ -3238,7 +3247,7 @@ class TestRealConcurrentRevision:
 class TestLegacyReifyIdempotency:
     """F3: reify must link the whole chain once, and report 0 afterwards."""
 
-    def test_chain_is_linked_once_and_reported(self, provider_module, tmp_path):
+    def test_chain_is_linked_once_and_reported(self, provider_module, needs_engine, tmp_path):
         import importlib
 
         emb = importlib.import_module(provider_module.__name__ + ".embedded")
@@ -3267,7 +3276,7 @@ class TestLegacyReifyIdempotency:
 class TestHistoryTruncation:
     """F8: a history page must say when it is only a page."""
 
-    def test_history_reports_truncation(self, provider_module, tmp_path):
+    def test_history_reports_truncation(self, provider_module, needs_engine, tmp_path):
         import importlib
 
         emb = importlib.import_module(provider_module.__name__ + ".embedded")
@@ -3289,7 +3298,7 @@ class TestHistoryTruncation:
         assert len(full["skills"]) == 12
         assert full["truncated"] is False
 
-    def test_truncation_survives_the_applies_to_post_filter(self, provider_module, tmp_path):
+    def test_truncation_survives_the_applies_to_post_filter(self, provider_module, needs_engine, tmp_path):
         """A page must not claim completeness when the filter ate the window.
 
         `applies_to` is applied after retrieval. With a fixed limit+1 window the
@@ -3358,7 +3367,10 @@ class TestSkillSearchFetchWidth:
         import importlib
 
         emb = importlib.import_module(provider_module.__name__ + ".embedded")
-        client = emb.EmbeddedYantrikDBClient(emb.YantrikDBConfig(mode="embedded"))
+        # No engine needed: the stub records the requested width. The CI matrix
+        # job has no engine installed.
+        client = emb.EmbeddedYantrikDBClient.__new__(emb.EmbeddedYantrikDBClient)
+        client.config = emb.YantrikDBConfig(mode="embedded")
         client._db = self._DB()
         return client
 
