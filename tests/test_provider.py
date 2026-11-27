@@ -3267,3 +3267,46 @@ class TestHistoryTruncation:
         full = client.skill_search("deep.skill", top_k=20, include_history=True)
         assert len(full["skills"]) == 12
         assert full["truncated"] is False
+
+
+class TestSkillSearchFetchWidth:
+    """A pre-existing `applies_to` caller must get what it got before.
+
+    The history path fetches one row more so it can report truncation. That
+    widening must not reach the default path: the post-filter runs after
+    retrieval, so an extra row there hands an existing caller a result the
+    base never returned.
+    """
+
+    class _DB:
+        def __init__(self):
+            self.calls = []
+
+        def recall_text(self, query, *, top_k=None, namespace=None):
+            self.calls.append({"path": "recall_text", "top_k": top_k})
+            return []
+
+        def recall(self, **kwargs):
+            self.calls.append({"path": "recall", "top_k": kwargs.get("top_k")})
+            return []
+
+    def _client(self, provider_module):
+        import importlib
+
+        emb = importlib.import_module(provider_module.__name__ + ".embedded")
+        client = emb.EmbeddedYantrikDBClient(emb.YantrikDBConfig(mode="embedded"))
+        client._db = self._DB()
+        return client
+
+    def test_applies_to_fetches_exactly_the_requested_width(self, provider_module):
+        client = self._client(provider_module)
+        client.skill_search("deploy", top_k=2, applies_to="ops")
+        assert client._db.calls[-1]["top_k"] == 2, (
+            "the default path must fetch exactly top_k — the extra row is a "
+            "history-path concern and would leak through the applies_to filter"
+        )
+
+    def test_history_path_still_widens_for_the_truncation_flag(self, provider_module):
+        client = self._client(provider_module)
+        client.skill_search("deploy", top_k=2, include_history=True)
+        assert client._db.calls[-1]["top_k"] == 3

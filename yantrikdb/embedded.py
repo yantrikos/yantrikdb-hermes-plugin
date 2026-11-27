@@ -1409,7 +1409,11 @@ class EmbeddedYantrikDBClient:
         # exactly `limit` versions" and "there are more, some are hidden" is
         # the truncation flag. Without it a history walk silently stopped at
         # the page size (12 versions, top_k=10, no indication).
-        fetch = limit + 1
+        # Widen ONLY the history path. The default path must return exactly
+        # what it returned before: with `applies_to` the post-filter runs
+        # after retrieval, so fetching one extra row there would hand an
+        # existing caller a result the base never returned.
+        fetch = limit + 1 if include_history else limit
         if not include_history:
             try:
                 results = self._db.recall_text(
