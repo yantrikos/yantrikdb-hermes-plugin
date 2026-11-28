@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yantrikdb-hermes-plugin"
-version = "0.28.0"
+version = "0.29.0"
 description = "YantrikDB memory provider for NousResearch/hermes-agent — self-maintaining memory with benchmarked recall, self-tuning ranking, contradiction tracking, proactive hygiene, and explainable recall."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -42,7 +42,7 @@ classifiers = [
 # shipped 2.0.0 against an unbounded pin. tests/test_dependency_pins.py enforces
 # this; raise a ceiling only after testing against the new major.
 dependencies = [
-  "yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0",
+  "yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.25.0",
   "requests>=2.31,<3.0.0",
   "model2vec>=0.3,<1.0.0",
 ]
@@ -164,7 +164,7 @@ exclude = ["reference/", "tests/", "^__init__\\.py$"]
 # matching `## [X.Y.Z] — YYYY-MM-DD — Summary` header. The CI `version-sync`
 # job blocks merge if the three sources drift.
 [tool.bumpversion]
-current_version = "0.28.0"
+current_version = "0.29.0"
 commit = false       # let the human author the commit message + body
 tag = false          # tag via `gh release create`, not on bump
 allow_dirty = true

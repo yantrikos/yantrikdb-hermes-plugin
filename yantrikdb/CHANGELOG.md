@@ -3,6 +3,62 @@
 All notable changes to the YantrikDB Hermes memory plugin.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); semantic versioning. Distributed standalone per Hermes maintainer guidance (PR #9989 closed 2026-05-13).
 
+## [0.29.0] — 2026-11-28 — engine 0.24.x, recall labels reach the engine, write provenance
+
+### Engine 0.24.x admitted
+
+- The engine range is now `>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.25.0`
+  (`pyproject.toml`, both `plugin.yaml` manifests, CI). Engine 0.24.0 moves the
+  store to schema v55 on first open, with no down-migration, and its Python
+  methods release the GIL; see the engine's 0.24.0 release notes.
+- Gated on LXC 120 (hermes-lab): this plugin at `4f2a7c6` against the engine
+  0.24.0 candidate wheel, with PyPI 0.23.6 as the baseline.
+
+### Recall labels reach the engine (#107)
+
+- `yantrikdb_recall(reinforce=[...])` now also sends each rid to the engine's
+  `recall_feedback` as `relevant`. Before, `reinforce` only fed a local JSON
+  sidecar, so the engine's learning loop never received a label. The sidecar
+  still drives the local re-rank boost; the engine label does not depend on
+  `self_tuning_recall`.
+- New core tool `yantrikdb_reject_recalled(rids)` labels recalled results
+  `irrelevant`. Nothing is deleted. The core profile is now 9 tools, `full` 20
+  (with skills, packs and fleet view off).
+- A failing label never breaks a recall. Over the HTTP backend, which has no
+  feedback route, both calls raise a named error instead of doing nothing.
+
+### Write provenance (#109)
+
+- Every new write from the plugin carries `temporal_kind` (default
+  `observation`; `rule` for a skill definition) and `confidence_basis` (default
+  `asserted`) in its metadata. Explicit values win, and a partial claim is
+  completed rather than overwritten. Applies to both backends.
+- Existing records are not backfilled, on purpose: their origin is not knowable.
+
+### An empty scope is named (#106)
+
+- When the agent's derived namespace is empty but the configured base namespace
+  holds records, the provider logs a warning and puts a one-line scope note in
+  the prompt block, instead of reporting a healthy memory that recalls nothing.
+  A probe that cannot be read (an older engine without `list_records`, a failed
+  HTTP call) stays silent.
+
+### `YANTRIKDB_EMBEDDER_FILE` (#105)
+
+- Loads a custom embedder class from a file path, for classes outside `sys.path`.
+  Hermes starts the gateway with `python3 -I`, so `YANTRIKDB_EMBEDDER_CLASS`
+  alone cannot reach them. A missing or unloadable file raises with the path in
+  the message. Without the variable nothing changes.
+
+### Behaviour change: `relate(namespace=...)` raises (#108)
+
+- The client's `relate()` accepted `namespace` and silently dropped it, because
+  an engine edge has no namespace. It now raises, naming the engine's contract;
+  filter by namespace on the records instead. `yantrikdb_relate` no longer sends
+  one. Code that passed `namespace` to the client's `relate()` must drop it.
+
+All five contributed by @Huy3ko. Thank you.
+
 ## [0.28.0] — 2026-11-03 — correction chains, historical recall and link traversal
 
 ### Correction chains, historical recall and `yantrikdb_links`

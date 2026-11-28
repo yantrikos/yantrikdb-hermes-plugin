@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/yantrikdb-hermes-plugin)](https://pypi.org/project/yantrikdb-hermes-plugin/)
 [![Downloads](https://img.shields.io/pypi/dm/yantrikdb-hermes-plugin)](https://pypi.org/project/yantrikdb-hermes-plugin/)
-[![YantrikDB engine](https://img.shields.io/badge/yantrikdb%20engine-%E2%89%A50.12.1,%3C0.24.0-orange)](https://github.com/yantrikos/yantrikdb)
+[![YantrikDB engine](https://img.shields.io/badge/yantrikdb%20engine-%E2%89%A50.12.1,%3C0.25.0-orange)](https://github.com/yantrikos/yantrikdb)
 [![Hermes Agent](https://img.shields.io/badge/hermes--agent-plugin-8a2be2)](https://github.com/NousResearch/hermes-agent)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![mypy](https://img.shields.io/badge/mypy-checked-2a6db2)](https://mypy-lang.org/)
@@ -124,12 +124,12 @@ Mounting is refused when a pack's vectors come from a different embedding space 
 
 ### Context cost
 
-Tool schemas are re-sent on every request, so the tool surface is a per-turn cost. Since v0.10.0 the default profile is `core` — 8 tools, ~1.7k tokens — instead of all 19 (~3.6k). (Tool counts verified against `CORE_TOOL_NAMES`/`ALL_TOOL_SCHEMAS` in `yantrikdb/__init__.py` as of v0.28.0, which added `yantrikdb_links` to both; the ≈tokens/turn figures predate that addition and haven't been re-measured.)
+Tool schemas are re-sent on every request, so the tool surface is a per-turn cost. Since v0.10.0 the default profile is `core` — 9 tools — instead of all 20. (Tool counts verified against `CORE_TOOL_NAMES`/`ALL_TOOL_SCHEMAS` in `yantrikdb/__init__.py` as of v0.29.0, with skills, packs and fleet view off, their defaults. v0.28.0 added `yantrikdb_links` and v0.29.0 added `yantrikdb_reject_recalled` to both. The ≈tokens/turn figures below were measured at 8 and 19 tools, before those two additions, and haven't been re-measured.)
 
 | `YANTRIKDB_TOOL_PROFILE` | tools | ≈ tokens/turn |
 |---|---|---|
-| `core` (default) | 8 | ~1,725 |
-| `full` | 19 | ~3,606 |
+| `core` (default) | 9 | ~1,725 at 8 tools |
+| `full` | 20 | ~3,606 at 19 tools |
 
 Nothing is disabled by `core`: `think()` runs automatically at session end, conflicts/hygiene/gaps surface in the system prompt, and the remaining tools are operator diagnostics that stay fully callable. Set `full` to expose them to the model.
 
@@ -456,14 +456,12 @@ Calls that omit the new arguments behave exactly as before on both backends.
 write must never collapse onto an existing rid, because that would silently
 turn a correction into a no-op.
 
-### Recall feedback and write provenance (merged to `main`, unreleased)
-
-Two more additions landed on `main` after v0.28.0 but aren't in a tagged release yet — noted here so they aren't shipped-but-invisible before the next cut:
+### Recall feedback and write provenance (v0.29.0)
 
 - **`yantrikdb_reject_recalled(rids)`** marks recalled results irrelevant and sends the label to the engine's `recall_feedback`, the same call `recall(reinforce=[...])` now also makes. Previously `reinforce` only bumped a local JSON sidecar — the engine's own learning loop never received a label, so it could report having insufficient feedback to tune ranking even with real recall traffic already happening. Embedded-only, like the other link/correction primitives above.
-- **Write provenance.** Every new `yantrikdb_remember` write now carries `temporal_kind` (default `asserted`) and `confidence_basis` (default `observation`); explicit values always win and a partial claim is completed rather than overwritten. Existing records are not backfilled — a deliberate cut, not a migration, since inventing provenance for old writes would repeat the problem it's meant to fix.
+- **Write provenance.** Every new `yantrikdb_remember` write now carries `temporal_kind` (default `observation`; `rule` for a skill definition) and `confidence_basis` (default `asserted`), in the record's metadata; explicit values always win and a partial claim is completed rather than overwritten. Existing records are not backfilled — a deliberate cut, not a migration, since inventing provenance for old writes would repeat the problem it's meant to fix.
 
-Once released, `yantrikdb_reject_recalled` joins the core tool set (core 9 / full 20 tools) — the [Context cost](#context-cost) counts above are current for the last tagged release, v0.28.0.
+`yantrikdb_reject_recalled` is in the core tool set (core 9 / full 20 tools).
 
 ### Compared to other Hermes memory providers
 
@@ -587,7 +585,7 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 
 ## Status
 
-**v0.28.0** (current, 2026-11-03) — correction chains (`supersedes_rid`), historical recall (`include_superseded`, `as_of`) and the `yantrikdb_links` tool; `model2vec` is now a manifest hard dependency (fixes #92); the `sentence-transformers` extra no longer breaks Hermes' resolve on android/emscripten. v0.27.1 (2026-10-05) — embedder `ImportError`s now name `sys.executable`/`sys.path`; the v0.27.0 multiplexed gateway reads each profile's `YANTRIKDB_*` settings from that profile's own `.env` instead of the launch profile's environment; v0.26.0 fixed `think()` (consolidation, conflict scan) failing on every call on the embedded backend with engine 0.15.3 and later. Engine range `>=0.12.1,<0.24.0`. 500+ tests, CI on Python 3.11–3.14. **Standalone-by-design** per Hermes maintainer guidance — Hermes is not accepting new memory providers upstream; standalone plugins installed via `pip` are the recommended pattern. PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989) closed 2026-05-13 with that resolution.
+**v0.29.0** (current, 2026-11-28) — admits engine 0.24.x; recall labels reach the engine's learning loop (`yantrikdb_reject_recalled`, `reinforce`); every new write carries a provenance claim; an empty agent scope over a populated store is named instead of looking healthy; `YANTRIKDB_EMBEDDER_FILE` loads a custom embedder class from a file path; `relate(namespace=...)` now raises instead of silently dropping the namespace. v0.28.0 (2026-11-03) — correction chains (`supersedes_rid`), historical recall (`include_superseded`, `as_of`) and the `yantrikdb_links` tool; `model2vec` is now a manifest hard dependency (fixes #92); the `sentence-transformers` extra no longer breaks Hermes' resolve on android/emscripten. v0.27.1 (2026-10-05) — embedder `ImportError`s now name `sys.executable`/`sys.path`; the v0.27.0 multiplexed gateway reads each profile's `YANTRIKDB_*` settings from that profile's own `.env` instead of the launch profile's environment; v0.26.0 fixed `think()` (consolidation, conflict scan) failing on every call on the embedded backend with engine 0.15.3 and later. Engine range `>=0.12.1,<0.25.0` (excluding 0.15.0–0.15.2). 500+ tests, CI on Python 3.11–3.14. **Standalone-by-design** per Hermes maintainer guidance — Hermes is not accepting new memory providers upstream; standalone plugins installed via `pip` are the recommended pattern. PR [#9989](https://github.com/NousResearch/hermes-agent/pull/9989) closed 2026-05-13 with that resolution.
 
 ### Release cadence
 
@@ -610,8 +608,9 @@ YANTRIKDB_INTEGRATION_TOKEN=ydb_... \
 | v0.27.0 | 2026-09-19 | Multiplexed gateway keeps each profile's settings separate |
 | v0.27.1 | 2026-10-05 | Embedder ImportErrors name `sys.executable`/`sys.path` |
 | v0.28.0 | 2026-11-03 | Correction chains, historical recall, `yantrikdb_links`; `model2vec` hard dependency; android/emscripten-safe extra |
+| v0.29.0 | 2026-11-28 | Engine 0.24.x; recall labels reach the engine; write provenance; empty-scope warning; `YANTRIKDB_EMBEDDER_FILE` |
 
-60 tagged releases in total; every one is in the [CHANGELOG](yantrikdb/CHANGELOG.md) (v0.27.2 was never tagged separately; it ships inside v0.28.0).
+61 tagged releases in total; every one is in the [CHANGELOG](yantrikdb/CHANGELOG.md) (v0.27.2 was never tagged separately; it ships inside v0.28.0).
 
 ### Durability signals
 

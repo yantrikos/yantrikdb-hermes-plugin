@@ -120,7 +120,7 @@ jobs:
           pip install requests pytest
           # Same range pyproject.toml declares, so this job tests the newest
           # engine a user can actually install alongside the plugin.
-          pip install "yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.24.0"
+          pip install "yantrikdb>=0.12.1,!=0.15.0,!=0.15.1,!=0.15.2,<0.25.0"
           python -c "from importlib import metadata; print('engine', metadata.version('yantrikdb'))"
 
       - name: Fail if the engine did not actually install
