@@ -215,6 +215,11 @@ class YantrikDBConfig:
     # whose recall is scoped to its own namespace sets this to one it reads, so
     # a skill written today is a recall candidate tomorrow. Widens no read scope.
     skill_namespace: str | None = None
+    # How much recorded outcomes move the order in skill_search. 0.0 restores
+    # pure relevance; 0.15 is a bounded nudge (rate 0.0 vs 1.0 at three or more
+    # events is about ±0.15 score). History decides near-ties; it does not lift
+    # an unsuitable skill over a clearly better match.
+    skill_outcome_weight: float = 0.15
     # Packs to mount on initialize, comma-separated paths or bare filenames
     # resolved against the engine's pack directory. Mounted transiently and
     # unmounted on shutdown, so a session that ends leaves nothing behind.

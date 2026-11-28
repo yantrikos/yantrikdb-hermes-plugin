@@ -1395,6 +1395,71 @@ class EmbeddedYantrikDBClient:
     # of their searches. Outcomes go to ``outcome_substrate`` as an
     # append-only event log; consumers compute their own success metrics.
 
+    @staticmethod
+    def _record_skill_id(record: dict[str, Any]) -> str | None:
+        """skill_id of a recalled row — top level first, then metadata.
+
+        `skill_search` returns raw recall rows: the field is written into
+        `metadata`, not onto the row. A consumer reading `row["skill_id"]` gets
+        None and silently matches nothing.
+        """
+        import json as _json
+        md = record.get("metadata")
+        if isinstance(md, str):
+            try:
+                md = _json.loads(md)
+            except Exception:
+                md = {}
+        md = md if isinstance(md, dict) else {}
+        return record.get("skill_id") or md.get("skill_id")
+
+    def _skill_outcome_stats(self, skill_ids: set[str]) -> dict[str, dict[str, Any]]:
+        """Aggregate recorded outcomes per skill id.
+
+        Phases are not additive. `execution` says the skill ran, `outcome` says
+        the result was right, `later_confirmation` says it helped later —
+        counting all three would reinforce one success up to three times. The
+        strongest phase present decides the rate; every phase is reported so the
+        aggregation stays auditable.
+        """
+        import json as _json
+        precedence = ("later_confirmation", "outcome", "execution")
+        stats: dict[str, dict[str, Any]] = {}
+        for sid in skill_ids:
+            if not sid:
+                continue
+            try:
+                hits = self._db.recall(query=sid, top_k=25, namespace=OUTCOME_NAMESPACE)
+            except Exception:
+                continue
+            rows = hits if isinstance(hits, list) else (hits or {}).get("results", [])
+            events: list[dict[str, Any]] = []
+            for row in rows:
+                md = row.get("metadata")
+                if isinstance(md, str):
+                    try:
+                        md = _json.loads(md)
+                    except Exception:
+                        md = {}
+                md = md if isinstance(md, dict) else {}
+                if md.get("record_type") != "skill_outcome" or md.get("skill_id") != sid:
+                    continue
+                events.append(md)
+            if not events:
+                continue
+            by_phase: dict[str, list[bool]] = {}
+            for e in events:
+                by_phase.setdefault(str(e.get("phase") or "execution"), []).append(bool(e.get("succeeded")))
+            best = next((p for p in precedence if p in by_phase), None)
+            vals = by_phase.get(best or "", [])
+            stats[sid] = {
+                "n": len(vals),
+                "success_rate": (sum(1 for v in vals if v) / len(vals)) if vals else None,
+                "phase": best,
+                "by_phase": {p: {"n": len(v), "ok": sum(1 for x in v if x)} for p, v in by_phase.items()},
+            }
+        return stats
+
     def skill_search(
         self,
         query: str,
@@ -1425,6 +1490,25 @@ class EmbeddedYantrikDBClient:
                 r for r in items
                 if applies_to in (r.get("metadata", {}) or {}).get("applies_to", [])
             ]
+        # Outcome-aware re-rank: an applied skill that failed every time must
+        # not rank like one that worked. Bounded by sample size so a single run
+        # is not a reputation; weight 0.0 restores pure relevance order.
+        ids = {sid for sid in (self._record_skill_id(r) for r in items) if sid}
+        stats = self._skill_outcome_stats(ids) if ids else {}
+        if stats:
+            for r in items:
+                r["outcomes"] = stats.get(self._record_skill_id(r) or "")
+            weight = float(getattr(self.config, "skill_outcome_weight", 0.15) or 0.0)
+            if weight:
+                def _adjusted(row: dict[str, Any]) -> float:
+                    base = float(row.get("score") or 0.0)
+                    st = row.get("outcomes") or {}
+                    rate, n = st.get("success_rate"), int(st.get("n") or 0)
+                    if rate is None or n == 0:
+                        return base
+                    confidence = min(n / 3.0, 1.0)
+                    return base + weight * (float(rate) - 0.5) * 2.0 * confidence
+                items.sort(key=_adjusted, reverse=True)
         return {"skills": items, "total": len(items)}
 
     def skill_define(
