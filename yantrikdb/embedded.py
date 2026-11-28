@@ -146,6 +146,12 @@ _SKILL_ID_MAX = 200
 _APPLIES_TO_MAX = 10
 
 SKILL_NAMESPACE = "skill_substrate"
+# Where skill records are written and searched. Default keeps the shared
+# substrate so existing callers see no change; a host whose recall is scoped to
+# its own namespace sets config.skill_namespace to one it actually reads.
+# Setting it widens no read scope: it changes where THIS client writes and
+# which single namespace its skill tools query.
+SKILL_NAMESPACE_DEFAULT = SKILL_NAMESPACE
 OUTCOME_NAMESPACE = "outcome_substrate"
 
 
@@ -414,6 +420,8 @@ class EmbeddedYantrikDBClient:
 
     def __init__(self, config: YantrikDBConfig) -> None:
         self.config = config
+        # Namespace for skill records; default keeps the shared substrate.
+        self._skill_ns = getattr(config, "skill_namespace", None) or SKILL_NAMESPACE
 
         YantrikDB = load_engine_yantrikdb_class()
 
@@ -1400,14 +1408,14 @@ class EmbeddedYantrikDBClient:
         try:
             results = self._db.recall_text(
                 query, top_k=int(top_k or self.config.top_k),
-                namespace=SKILL_NAMESPACE,
+                namespace=self._skill_ns,
             )
         except TypeError:
             # Pre-0.7.7 wheel: recall_text didn't accept `namespace`.
             results = self._db.recall(
                 query=query,
                 top_k=int(top_k or self.config.top_k),
-                namespace=SKILL_NAMESPACE,
+                namespace=self._skill_ns,
             )
         items: list[dict[str, Any]] = list(results) if results else []
         # Optional client-side post-filter on applies_to — server's
@@ -1443,7 +1451,7 @@ class EmbeddedYantrikDBClient:
         # last-write-wins) is documented in the v0.3.0 changelog.
         if on_conflict == "reject":
             existing = self._db.recall(
-                query=skill_id, top_k=5, namespace=SKILL_NAMESPACE,
+                query=skill_id, top_k=5, namespace=self._skill_ns,
             )
             for hit in (existing or []):
                 meta = hit.get("metadata", {}) or {}
@@ -1470,7 +1478,7 @@ class EmbeddedYantrikDBClient:
         rid = self._db.record_text(
             body,
             memory_type="procedural",
-            namespace=SKILL_NAMESPACE,
+            namespace=self._skill_ns,
             domain="skill",
             metadata=_with_default_provenance(metadata, temporal_kind="rule"),
         )

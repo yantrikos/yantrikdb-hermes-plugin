@@ -210,6 +210,11 @@ class YantrikDBConfig:
     # knows, and mounting somebody else's knowledge is a decision an operator
     # makes, not a default they discover. Same precedent as skills_enabled.
     packs_enabled: bool = False
+    # Where skill records are written and searched. None keeps the shared
+    # ``skill_substrate`` — the behaviour every existing caller has. A host
+    # whose recall is scoped to its own namespace sets this to one it reads, so
+    # a skill written today is a recall candidate tomorrow. Widens no read scope.
+    skill_namespace: str | None = None
     # Packs to mount on initialize, comma-separated paths or bare filenames
     # resolved against the engine's pack directory. Mounted transiently and
     # unmounted on shutdown, so a session that ends leaves nothing behind.
