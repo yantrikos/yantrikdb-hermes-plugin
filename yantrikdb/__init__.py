@@ -4331,10 +4331,29 @@ class YantrikDBMemoryProvider(MemoryProvider):
         if self._breaker_open():
             return
         try:
-            stats = self._client.think(
-                run_pattern_mining=False,
-                run_personality=False,
-            )
+            # Native cognitive cycle where the backend supports it: think plus
+            # the belief phases, everything that rewrites the corpus left out
+            # (measured: 5.6 s on 48k records; the default cycle is 634 s,
+            # dominated by the entity backfill). Older backends and the HTTP
+            # client have no run_maintenance_cycle — the AttributeError falls
+            # through to think() below, so the switch is version-tolerant.
+            try:
+                stats = self._client.run_maintenance_cycle(
+                    run_think=True,
+                    burn_down_conflicts=False,
+                    prune_triggers=False,
+                    recalibrate_importance=False,
+                    backfill_entities=False,
+                    auto_relate=False,
+                    form_beliefs=True,
+                    form_lesson_beliefs=True,
+                    dry_run=False,
+                )
+            except (AttributeError, TypeError):
+                stats = self._client.think(
+                    run_pattern_mining=False,
+                    run_personality=False,
+                )
             logger.info(
                 "YantrikDB %s think: consolidated=%s conflicts=%s duration_ms=%s",
                 reason,

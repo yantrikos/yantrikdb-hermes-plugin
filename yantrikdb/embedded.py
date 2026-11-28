@@ -22,6 +22,7 @@ Lifecycle / threading model (per yantrikdb-core guidance):
 from __future__ import annotations
 
 import glob
+import json
 import logging
 import os
 import re
@@ -845,6 +846,28 @@ class EmbeddedYantrikDBClient:
         return {"rid": rid, "links": [dict(x) for x in (links or [])]}
 
     # -- Maintenance --------------------------------------------------
+
+    # ── Native cognitive cycle (opt-in by the host) ──────────────────
+    #
+    # These three are thin passthroughs on purpose: the provider must be able
+    # to drive what the engine already implements, without re-implementing any
+    # of it. Each raises AttributeError on an engine that predates the method,
+    # which is what the caller's version-tolerant fallback keys on.
+
+    def run_maintenance_cycle(self, **kwargs: Any) -> dict[str, Any]:
+        """Run the engine's maintenance cycle and return its report as a dict."""
+        raw = self._db.run_maintenance_cycle(**kwargs)
+        if isinstance(raw, str):
+            return json.loads(raw)
+        return raw
+
+    def form_lesson_beliefs(self) -> dict[str, Any]:
+        raw = self._db.form_lesson_beliefs()
+        return json.loads(raw) if isinstance(raw, str) else raw
+
+    def observe_batch(self, events: list[dict[str, Any]]) -> int:
+        """Feed observed events (list of SystemEvent dicts) into the observer."""
+        return int(self._db.observe_batch(json.dumps(events)))
 
     def think(
         self,
